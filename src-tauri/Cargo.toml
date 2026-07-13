@@ -1,0 +1,93 @@
+[package]
+name = "serverus"
+version = "1.0.0"
+description = "SSH/SFTP/FTP connection manager for macOS"
+authors = ["Fedor Ananin <i@fedorananin.me>"]
+license = "MIT"
+repository = "https://github.com/fedorananin/serverus"
+edition = "2021"
+
+[lib]
+name = "serverus_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+
+# Vault crypto — audited crates only (see SPEC §2.2)
+argon2 = "0.5"
+aes-gcm = "0.10"
+rand = "0.8"
+zeroize = { version = "1", features = ["derive"] }
+
+# Protocols
+russh = "0.62"
+russh-sftp = "2.3"
+suppaftp = { version = "10", features = ["tokio-rustls-ring"] }
+# S3-compatible storage (SPEC §4.4); default-https-client uses rustls/aws-lc —
+# the FTP rustls config pins the ring provider explicitly to coexist with it.
+aws-sdk-s3 = { version = "1", default-features = false, features = [
+    "behavior-version-latest",
+    "rt-tokio",
+    "rustls",
+    "http-1x",
+    "default-https-client",
+] }
+percent-encoding = "2"
+
+# Remote edit watcher
+notify = "8"
+
+# Transfer helpers
+tar = "0.4"
+filetime = "0.2"
+
+# Misc
+uuid = { version = "1", features = ["v4", "serde"] }
+dirs = "6"
+base64 = "0.22"
+log = "0.4"
+
+# Type generation (single source of truth for TS bindings)
+specta = "=2.0.0-rc.25"
+specta-typescript = "0.0.12"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+async-trait = "0.1.89"
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+webpki-roots = "1"
+chrono = "0.4.45"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+tokio-util = { version = "0.7.18", features = ["io", "io-util"] }
+tauri-plugin-drag = "2"
+tauri-plugin-dialog = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = { version = "3", features = ["OSX_10_15"] }
+core-foundation = "0.10"
+objc2-local-authentication = "0.3"
+objc2-foundation = "0.3"
+objc2 = "0.6"
+block2 = "0.6"
+
+[dev-dependencies]
+libunftp = "0.23.0"
+tempfile = "3"
+unftp-sbe-fs = "0.4.0"
+# In-process S3 server for integration tests (SPEC §7.3)
+s3s = "0.14"
+s3s-fs = "0.14"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "http1"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

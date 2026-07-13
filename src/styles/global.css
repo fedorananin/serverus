@@ -1,0 +1,153 @@
+/* Serverus design tokens — dark theme only in v1, but everything goes through
+   CSS variables so a light theme can be added later without rewrites (SPEC §5.6). */
+
+:root {
+  /* Surfaces */
+  --bg-0: #0d1117; /* app background */
+  --bg-1: #141a22; /* panels, sidebar */
+  --bg-2: #1c232e; /* raised elements, inputs */
+  --bg-3: #242d3a; /* hover */
+  --border: #2a323e;
+  --border-strong: #3a4452;
+
+  /* Text — contrast >= WCAG AA on the surfaces above */
+  --text-0: #e6edf3;
+  --text-1: #a3adba;
+  --text-2: #6e7987;
+
+  /* Single accent */
+  --accent: #3fb950;
+  --accent-dim: #2ea043;
+  --accent-subtle: rgba(63, 185, 80, 0.15);
+
+  /* Signals */
+  --danger: #e5484d;
+  --danger-subtle: rgba(229, 72, 77, 0.15);
+  --warning: #d29922;
+
+  /* Typography */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --radius: 6px;
+  --radius-lg: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+#app {
+  height: 100%;
+}
+
+/* Form controls */
+input[type="text"],
+input[type="password"],
+input[type="number"],
+select,
+textarea {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-0);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 9px;
+  outline: none;
+  user-select: text;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-2);
+}
+
+button {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-0);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--bg-3);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
+  color: #fff;
+  font-weight: 500;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* Opaque lock screen overlay — hides the still-mounted main screen. */
+.unlock-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-0);
+  z-index: 1000;
+}
