@@ -145,7 +145,7 @@
         </label>
         <label class="checkbox">
           <input type="checkbox" bind:checked={settings.security.lock_on_sleep} />
-          <span>Lock when Mac sleeps</span>
+          <span>Lock when the computer sleeps</span>
         </label>
       </div>
       <label class="checkbox">
@@ -324,7 +324,7 @@
           github.com/fedorananin/serverus
         </button>
       </div>
-      <div class="about-note">Written entirely by AI · MIT-licensed · macOS</div>
+      <div class="about-note">Free &amp; open source · MIT license</div>
     </fieldset>
 
     {#if error}

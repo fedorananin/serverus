@@ -115,10 +115,28 @@ impl Hop {
 /// following hop is reached through a direct-tcpip channel of the previous
 /// one (SPEC §4.1 jump hosts). Returns the handle of the *last* hop.
 pub async fn connect_chain(chain: &[Hop]) -> AppResult<ConnectOutcome> {
+    connect_chain_with_progress(chain, &|_| {}).await
+}
+
+/// Like [`connect_chain`], reporting human-readable stage messages
+/// ("Connecting to…", "Authenticating…") so the UI can show what a slow
+/// connect is actually doing instead of a frozen screen.
+pub async fn connect_chain_with_progress(
+    chain: &[Hop],
+    progress: &(dyn Fn(String) + Send + Sync),
+) -> AppResult<ConnectOutcome> {
     assert!(!chain.is_empty());
     let mut previous: Option<Handle<ClientHandler>> = None;
 
     for hop in chain {
+        progress(if previous.is_none() {
+            format!("Connecting to {}:{}…", hop.host, hop.port)
+        } else {
+            format!(
+                "Connecting to {}:{} through the bastion…",
+                hop.host, hop.port
+            )
+        });
         let seen = Arc::new(std::sync::Mutex::new(None));
         let handler = ClientHandler {
             expected: hop.known_host_line.clone(),
@@ -160,6 +178,10 @@ pub async fn connect_chain(chain: &[Hop]) -> AppResult<ConnectOutcome> {
             }
         };
 
+        progress(format!(
+            "Authenticating as {}@{}…",
+            hop.auth.username, hop.host
+        ));
         authenticate(&mut handle, &hop.auth).await?;
         previous = Some(handle);
     }

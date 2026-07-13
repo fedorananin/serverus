@@ -264,7 +264,23 @@ impl SessionManager {
         }
         .emit(app);
 
-        match ssh::connect_chain(&chain).await {
+        // Stage messages ("Connecting…", "Authenticating…") stream to the UI
+        // as `connecting` events so a slow connect doesn't look frozen.
+        let progress = {
+            let app = app.clone();
+            let session_id = session_id.clone();
+            let connection_id = connection_id.to_string();
+            move |message: String| {
+                let _ = SessionStateEvent {
+                    session_id: session_id.clone(),
+                    connection_id: connection_id.clone(),
+                    state: "connecting".into(),
+                    message: Some(message),
+                }
+                .emit(&app);
+            }
+        };
+        match ssh::connect_chain_with_progress(&chain, &progress).await {
             Ok(ConnectOutcome::Connected(handle)) => {
                 let entry = Arc::new(SessionEntry {
                     id: session_id.clone(),

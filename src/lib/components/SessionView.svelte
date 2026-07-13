@@ -24,6 +24,19 @@
     if (tab.view === "terminal" && (filesOnly || terminalDisabled)) tab.view = "files";
     if (tab.view === "tunnels" && (filesOnly || !hasTunnels)) tab.view = "files";
   });
+
+  // Elapsed-seconds ticker while connecting: a slow connect (DNS, far-away
+  // host, bastion chain) must look alive, not frozen.
+  let elapsed = $state(0);
+  $effect(() => {
+    if (tab.state !== "connecting") return;
+    elapsed = 0;
+    const started = Date.now();
+    const ticker = setInterval(() => {
+      elapsed = Math.floor((Date.now() - started) / 1000);
+    }, 1000);
+    return () => clearInterval(ticker);
+  });
 </script>
 
 <div class="session">
@@ -62,7 +75,14 @@
       </div>
     {:else if tab.state === "connecting"}
       <div class="center">
+        <div class="spinner" aria-hidden="true"></div>
         <p class="dim">Connecting to {connection?.host}…</p>
+        {#if tab.connectMessage}
+          <p class="stage">{tab.connectMessage}</p>
+        {/if}
+        {#if elapsed >= 5}
+          <p class="stage">{elapsed}s — a slow network or a far-away host can take a while</p>
+        {/if}
       </div>
     {:else if tab.sessionId}
       {#key tab.sessionId}
@@ -175,6 +195,27 @@
 
   .dim {
     color: var(--text-2);
+  }
+
+  .stage {
+    color: var(--text-2);
+    font-size: 11px;
+    margin: 0;
+  }
+
+  .spinner {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid var(--bg-3);
+    border-top-color: var(--accent);
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .error {

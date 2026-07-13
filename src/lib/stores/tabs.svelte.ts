@@ -16,6 +16,8 @@ export interface Tab {
   sessionId: string | null;
   state: TabState;
   error: string | null;
+  /** Current connect stage ("Authenticating…") streamed from the backend. */
+  connectMessage: string | null;
   /** Last remote dir, restored after reconnect (SPEC §4.1). */
   lastRemoteDir: string | null;
   /** Consecutive automatic reconnect attempts. */
@@ -33,11 +35,22 @@ class TabsStore {
     return this.tabs.find((t) => t.id === this.activeId) ?? null;
   }
 
-  /** Watch for dropped sessions and reconnect automatically (SPEC §4.1). */
+  /** Watch session lifecycle events: connect-stage messages for the
+   *  progress indicator, and drops for auto-reconnect (SPEC §4.1). */
   private async listenForDisconnects() {
     if (this.listening) return;
     this.listening = true;
     await events.sessionStateEvent.listen((e) => {
+      if (e.payload.state === "connecting" && e.payload.message) {
+        // The session id isn't known to the tab until connect returns —
+        // match by connection instead (a same-server twin tab is harmless).
+        for (const t of this.tabs) {
+          if (t.connectionId === e.payload.connection_id && t.state === "connecting") {
+            t.connectMessage = e.payload.message;
+          }
+        }
+        return;
+      }
       if (e.payload.state !== "disconnected") return;
       const tab = this.tabs.find((t) => t.sessionId === e.payload.session_id);
       if (!tab) return;
@@ -69,6 +82,7 @@ class TabsStore {
       sessionId: null,
       state: "connecting",
       error: null,
+      connectMessage: null,
       lastRemoteDir: null,
       reconnectAttempts: 0,
     };
@@ -84,10 +98,12 @@ class TabsStore {
     if (!tab) return;
     tab.state = "connecting";
     tab.error = null;
+    tab.connectMessage = null;
     try {
       const dto = await unwrap(commands.sessionConnect(tab.connectionId));
       tab.sessionId = dto.session_id;
       tab.state = "connected";
+      tab.connectMessage = null;
       tab.reconnectAttempts = 0;
     } catch (e) {
       if (isApiError(e) && e.code === "host_key_prompt" && e.host_key) {

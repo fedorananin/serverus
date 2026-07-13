@@ -339,8 +339,8 @@
               Import into vault as text
             </button>
             <span class="hint">
-              A file path breaks on another Mac; imported text is encrypted in the vault and
-              travels with backups.
+              A file path breaks on another computer; imported text is encrypted in the vault
+              and travels with backups.
             </span>
           </div>
         {:else}
