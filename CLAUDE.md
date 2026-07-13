@@ -4,10 +4,10 @@ SSH/SFTP/FTP/S3 connection manager for macOS. Replaces electerm + Cyberduck:
 terminal, dual-pane file manager, and SSH tunnels in one window, with a single
 encrypted vault file unlocked via master password / Touch ID.
 
-**The full spec is the source of truth: [docs/SPEC.md](docs/SPEC.md).**
-Read it before implementing any feature. Do not silently deviate from it —
-if a spec decision turns out to be wrong or impractical, raise it and update
-the spec in the same change.
+The original Russian spec (`docs/SPEC.md`) served its purpose and was removed
+in v1.1.0 — it lives in git history. Comments citing "SPEC §n" refer to it;
+keep them as historical anchors, don't add new ones. The behavior contract now
+lives in this file, README.md, and the tests.
 
 ## Stack
 
@@ -102,11 +102,15 @@ manager, SSH terminal (multiple per tab), dual-pane SFTP/FTP file manager with
 per-connection transfer queue, tar acceleration, remote edit, tunnels, jump
 hosts, auto-lock. Post-M7 additions: pointer-based drag-and-drop with Finder
 in/out, cleartext secrets in the edit form, SFTP-only connections, and S3
-support (SPEC §4.4) — any S3-compatible endpoint, prefixes-as-folders,
+support — any S3-compatible endpoint, prefixes-as-folders,
 multipart uploads, public/private ACLs with background badge loading, an
 upload-ACL mode switch (private/public/ask), and "Copy public URL".
+v1.1.0: config import (`vault/import.rs`, format documented in
+`docs/CONFIG_FORMAT.md`), SSH key-file → vault-text import, native pickers for
+the vault path and config import, folder badges applied at creation, and the
+folder item count shown only while collapsed.
 Integration tests (32) run against a local unprivileged `sshd`, an in-process
-libunftp FTP server and an in-process `s3s` S3 server (SPEC §7.3) — no docker
+libunftp FTP server and an in-process `s3s` S3 server — no docker
 needed. Personal use for now; the repo is written to open-source quality
 (MIT, CI in `.github/workflows/ci.yml`).
 
@@ -117,5 +121,5 @@ needed. Personal use for now; the repo is written to open-source quality
   `~/.cache/serverus-target` — do not remove that file, and never place
   `target/` inside the project tree. `node_modules/` stays gitignored.
 - Integration tests run against a local unprivileged `sshd` (bundled with
-  macOS/CI) and an in-process libunftp server — no docker. See SPEC.md §7.3
-  and `src-tauri/tests/support/mod.rs`.
+  macOS/CI) and an in-process libunftp server — no docker. See
+  `src-tauri/tests/support/mod.rs`.

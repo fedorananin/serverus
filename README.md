@@ -14,7 +14,7 @@ A native macOS connection manager. Built with Tauri 2, a Rust backend and a Svel
 ![Built with Rust](https://img.shields.io/badge/backend-Rust-orange)
 ![Built with Tauri](https://img.shields.io/badge/shell-Tauri%202-24C8DB)
 ![Frontend Svelte](https://img.shields.io/badge/frontend-Svelte%205-FF3E00)
-![Version](https://img.shields.io/badge/version-1.0.0-brightgreen)
+![Version](https://img.shields.io/badge/version-1.1.0-brightgreen)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
@@ -97,6 +97,14 @@ suite runs against **real** SSH/FTP/S3 servers, not mocks.
 - **Atomic, crash‑safe writes**: temp file → `rename`, with a `.bak` copy of
   the previous version kept alongside. The payload is never written to disk
   unencrypted.
+- **Config export & import** — a plain‑JSON, secret‑free export of everything,
+  and an import that merges a Serverus export *or a hand‑written file* back in
+  (handy for migrating from another app). The format is documented in
+  [docs/CONFIG_FORMAT.md](docs/CONFIG_FORMAT.md).
+- SSH keys can live **as text inside the vault** — one click imports a key
+  file and converts it, so backups and machine moves carry your keys too.
+- The vault file location is picked **visually** (native save panel) or typed
+  as a path.
 
 ### 👆 Touch ID unlock
 - After the first master‑password unlock, the data key is stored in the
@@ -209,7 +217,7 @@ _Coming soon._
 Serverus targets **macOS 12+ on Apple Silicon**.
 
 ### Download
-Grab `Serverus_1.0.0_aarch64.dmg` from the releases, open it and drag
+Grab `Serverus_1.1.0_aarch64.dmg` from the releases, open it and drag
 **Serverus** to Applications.
 
 > The app is **not code‑signed or notarized** (out of scope for v1). On first

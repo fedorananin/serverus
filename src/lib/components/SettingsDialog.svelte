@@ -3,6 +3,7 @@
   import { commands, errorMessage, unwrap } from "$lib/api";
   import { vault } from "$lib/stores/vault.svelte";
   import { getVersion } from "@tauri-apps/api/app";
+  import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
   import Modal from "./Modal.svelte";
 
   const REPO_URL = "https://github.com/fedorananin/serverus";
@@ -50,6 +51,18 @@
     }
   }
 
+  /** Native save panel: pick the new vault location visually; the text
+   *  field stays for pasting a path by hand. */
+  async function pickVaultPath() {
+    const current = vault.info?.path ?? "";
+    const picked = await saveFileDialog({
+      title: "Move vault to…",
+      defaultPath: current.split("/").pop() || "main.serverus",
+      filters: [{ name: "Serverus vault", extensions: ["serverus"] }],
+    });
+    if (typeof picked === "string") newVaultPath = picked;
+  }
+
   async function exportConfig() {
     exportStatus = null;
     try {
@@ -59,6 +72,25 @@
       exportStatus = `Saved to ${path} ✓`;
     } catch (e) {
       exportStatus = errorMessage(e);
+    }
+  }
+
+  let importStatus = $state<string | null>(null);
+
+  async function importConfig() {
+    importStatus = null;
+    const picked = await openFileDialog({
+      multiple: false,
+      directory: false,
+      title: "Import Serverus config",
+      filters: [{ name: "JSON config", extensions: ["json"] }],
+    });
+    if (typeof picked !== "string") return;
+    try {
+      const count = await vault.importConfig(picked);
+      importStatus = `Imported ${count} connection${count === 1 ? "" : "s"} ✓`;
+    } catch (e) {
+      importStatus = errorMessage(e);
     }
   }
 
@@ -219,6 +251,7 @@
           placeholder="New vault path (e.g. ~/Dropbox/main.serverus)"
           bind:value={newVaultPath}
         />
+        <button type="button" onclick={() => void pickVaultPath()}>Choose…</button>
         <button type="button" disabled={!newVaultPath.trim()} onclick={() => void moveVault()}>
           Move vault
         </button>
@@ -245,11 +278,20 @@
         <button type="button" onclick={() => void exportConfig()}>
           Export config (no secrets)…
         </button>
-        <span class="hint">Writes an UNENCRYPTED JSON copy — passwords and keys are omitted.</span>
+        <button type="button" onclick={() => void importConfig()}>Import config…</button>
+        <span class="hint">
+          Export writes an UNENCRYPTED JSON copy — passwords and keys are omitted. Import merges
+          a Serverus export or a hand-written file (see docs/CONFIG_FORMAT.md).
+        </span>
       </div>
       {#if exportStatus}
         <div class:error={!exportStatus.endsWith("✓")} class:ok={exportStatus.endsWith("✓")}>
           {exportStatus}
+        </div>
+      {/if}
+      {#if importStatus}
+        <div class:error={!importStatus.endsWith("✓")} class:ok={importStatus.endsWith("✓")}>
+          {importStatus}
         </div>
       {/if}
     </fieldset>

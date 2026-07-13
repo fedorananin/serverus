@@ -29,7 +29,7 @@
       if (existing) {
         await vault.updateFolder(existing.id, name.trim(), badge);
       } else {
-        await vault.createFolder(name.trim(), parentFolder);
+        await vault.createFolder(name.trim(), parentFolder, badge);
       }
       onclose();
     } catch (e) {

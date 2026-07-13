@@ -1,6 +1,6 @@
 [package]
 name = "serverus"
-version = "1.0.0"
+version = "1.1.0"
 description = "SSH/SFTP/FTP connection manager for macOS"
 authors = ["Fedor Ananin <i@fedorananin.me>"]
 license = "MIT"

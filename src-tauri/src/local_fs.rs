@@ -65,6 +65,27 @@ pub fn expand(path: &str) -> PathBuf {
     PathBuf::from(expanded)
 }
 
+/// Read a private key file so the UI can convert it into vault-stored key
+/// text. Refuses anything that does not look like a PEM private key, so a
+/// mis-picked file cannot leak arbitrary contents to the frontend.
+pub fn read_private_key(path: &str) -> AppResult<String> {
+    let p = expand(path);
+    let meta = fs::metadata(&p)?;
+    if meta.len() > 256 * 1024 {
+        return Err(AppError::Other(
+            "file is too large to be a private key".into(),
+        ));
+    }
+    let text =
+        fs::read_to_string(&p).map_err(|_| AppError::Other("file is not readable text".into()))?;
+    if !text.contains("PRIVATE KEY-----") {
+        return Err(AppError::Other(
+            "not a private key (no '-----BEGIN … PRIVATE KEY-----' block)".into(),
+        ));
+    }
+    Ok(text)
+}
+
 pub fn mkdir(path: &str) -> AppResult<()> {
     fs::create_dir(expand(path)).map_err(Into::into)
 }

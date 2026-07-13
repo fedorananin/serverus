@@ -297,6 +297,7 @@ pub async fn folder_create(
     state: State<'_, AppState>,
     name: String,
     parent_folder: Option<String>,
+    badge: Option<Badge>,
 ) -> ApiResult<PublicVault> {
     let vault = state.vault.clone();
     blocking(move || {
@@ -308,7 +309,7 @@ pub async fn folder_create(
                 TreeNode::Folder {
                     id: uuid::Uuid::new_v4().to_string(),
                     name,
-                    badge: None,
+                    badge,
                     children: vec![],
                 },
             )?;
@@ -1082,6 +1083,45 @@ pub async fn vault_export_config(state: State<'_, AppState>, path: String) -> Ap
         Ok(())
     })
     .await
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+pub struct ImportReport {
+    /// Number of connections created or updated by the import.
+    pub connections: u32,
+    pub vault: PublicVault,
+}
+
+/// Import a config file (a Serverus export or a hand-written file following
+/// docs/CONFIG_FORMAT.md) into the unlocked vault. Merge semantics live in
+/// `vault::import`.
+#[tauri::command]
+#[specta::specta]
+pub async fn vault_import_config(
+    state: State<'_, AppState>,
+    path: String,
+) -> ApiResult<ImportReport> {
+    let vault = state.vault.clone();
+    blocking(move || {
+        let json = std::fs::read_to_string(&path)?;
+        let mut mgr = vault.lock().unwrap();
+        let mut connections = 0;
+        let vault = mgr.with_payload(|p| {
+            connections = crate::vault::import::apply(p, &json)?;
+            Ok(p.to_public())
+        })?;
+        Ok(ImportReport { connections, vault })
+    })
+    .await
+}
+
+/// Read a private key file so the UI can store its text inside the vault
+/// (the key then travels with vault backups). Validated in `local_fs` —
+/// only PEM-looking files are returned.
+#[tauri::command]
+#[specta::specta]
+pub async fn ssh_key_read_file(path: String) -> ApiResult<String> {
+    blocking(move || local_fs::read_private_key(&path)).await
 }
 
 /// Decrypted secrets for one connection, for pre-filling the edit form.

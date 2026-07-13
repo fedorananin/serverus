@@ -121,7 +121,11 @@
     <span class="chevron" class:open={isOpen}>▸</span>
     <BadgeIcon badge={node.badge} fallback={isOpen ? "📂" : "📁"} />
     <span class="name">{node.name}</span>
-    <span class="count">{node.children?.length ?? 0}</span>
+    <!-- The count helps decide whether a closed folder is worth opening;
+         once it's open the contents are visible anyway. -->
+    {#if !isOpen}
+      <span class="count">{node.children?.length ?? 0}</span>
+    {/if}
   {:else if connection}
     <span class="chevron"></span>
     <BadgeIcon

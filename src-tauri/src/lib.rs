@@ -79,6 +79,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::tunnel_list,
             commands::vault_touch_activity,
             commands::vault_export_config,
+            commands::vault_import_config,
+            commands::ssh_key_read_file,
             commands::open_external,
         ])
         .events(collect_events![

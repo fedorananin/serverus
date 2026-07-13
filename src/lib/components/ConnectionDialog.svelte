@@ -110,6 +110,33 @@
     if (typeof picked === "string") keyPath = picked;
   }
 
+  let keyImportError = $state<string | null>(null);
+
+  /** Read a key file and store its text in the vault instead — the key then
+   *  survives backups and machine moves, unlike a path to a file on disk. */
+  async function importKeyFile(path: string) {
+    keyImportError = null;
+    try {
+      keyInline = await unwrap(commands.sshKeyReadFile(path));
+      keySource = "text";
+      keyPath = "";
+    } catch (e) {
+      keyImportError = errorMessage(e);
+    }
+  }
+
+  async function pickKeyToImport() {
+    keyImportError = null;
+    const home = await unwrap(commands.localHome()).catch(() => null);
+    const picked = await openFileDialog({
+      multiple: false,
+      directory: false,
+      title: "Import SSH private key into the vault",
+      defaultPath: home ? `${home}/.ssh` : undefined,
+    });
+    if (typeof picked === "string") await importKeyFile(picked);
+  }
+
   const sshCandidates = $derived(
     Object.values(vault.data?.connections ?? {}).filter(
       (c) => c.protocol === "ssh" && c.id !== existing?.id,
@@ -303,9 +330,27 @@
               <button type="button" onclick={() => void pickKeyFile()}>Browse…</button>
             </div>
           </label>
+          <div class="key-import">
+            <button
+              type="button"
+              onclick={() =>
+                void (keyPath.trim() !== "" ? importKeyFile(keyPath.trim()) : pickKeyToImport())}
+            >
+              Import into vault as text
+            </button>
+            <span class="hint">
+              A file path breaks on another Mac; imported text is encrypted in the vault and
+              travels with backups.
+            </span>
+          </div>
         {:else}
           <label>
-            <span>Private key (paste the PEM; encrypted inside the vault, travels with backups)</span>
+            <span class="secret-label">
+              Private key (encrypted inside the vault, travels with backups)
+              <button type="button" class="reveal" onclick={() => void pickKeyToImport()}>
+                import from file…
+              </button>
+            </span>
             <textarea
               rows="5"
               class="mono key-text"
@@ -314,6 +359,9 @@
               spellcheck="false"
             ></textarea>
           </label>
+        {/if}
+        {#if keyImportError}
+          <div class="error">{keyImportError}</div>
         {/if}
         <label>
           <span>Key passphrase</span>
@@ -503,6 +551,17 @@
     resize: vertical;
     font-size: 11px;
     white-space: pre;
+  }
+
+  .key-import {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .key-import .hint {
+    font-size: 10px;
+    color: var(--text-2);
   }
 
   fieldset {

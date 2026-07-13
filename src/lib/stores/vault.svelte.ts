@@ -92,8 +92,8 @@ class VaultStore {
     return this.mutate(() => unwrap(commands.connectionDelete(id)));
   }
 
-  createFolder(name: string, parentFolder: string | null) {
-    return this.mutate(() => unwrap(commands.folderCreate(name, parentFolder)));
+  createFolder(name: string, parentFolder: string | null, badge: Badge | null) {
+    return this.mutate(() => unwrap(commands.folderCreate(name, parentFolder, badge)));
   }
 
   updateFolder(id: string, name: string, badge: Badge | null) {
@@ -110,6 +110,13 @@ class VaultStore {
 
   updateSettings(settings: Settings) {
     return this.mutate(() => unwrap(commands.settingsUpdate(settings)));
+  }
+
+  /** Import a config file; returns how many connections it brought in. */
+  async importConfig(path: string): Promise<number> {
+    const report = await unwrap(commands.vaultImportConfig(path));
+    this.data = report.vault;
+    return report.connections;
   }
 
   removeKnownHost(host: string) {

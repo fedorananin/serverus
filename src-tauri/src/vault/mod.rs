@@ -3,6 +3,7 @@
 //! and the in-memory unlocked state.
 
 pub mod format;
+pub mod import;
 pub mod model;
 pub mod quick_unlock;
 pub mod tree;

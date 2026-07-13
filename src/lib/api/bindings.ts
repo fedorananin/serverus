@@ -20,7 +20,11 @@ export const commands = {
 	connectionSecrets: (id: string) => typedError<ConnectionSecrets, ApiError>(__TAURI_INVOKE("connection_secrets", { id })),
 	connectionDuplicate: (id: string) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("connection_duplicate", { id })),
 	connectionDelete: (id: string) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("connection_delete", { id })),
-	folderCreate: (name: string, parentFolder: string | null) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("folder_create", { name, parentFolder })),
+	folderCreate: (name: string, parentFolder: string | null, badge: {
+	kind: BadgeKind,
+	/**  Emoji character or hex color like `#e5484d`. */
+	value: string,
+} | null) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("folder_create", { name, parentFolder, badge })),
 	folderUpdate: (id: string, name: string, badge: {
 	kind: BadgeKind,
 	/**  Emoji character or hex color like `#e5484d`. */
@@ -128,6 +132,18 @@ export const commands = {
 	 */
 	vaultExportConfig: (path: string) => typedError<null, ApiError>(__TAURI_INVOKE("vault_export_config", { path })),
 	/**
+	 *  Import a config file (a Serverus export or a hand-written file following
+	 *  docs/CONFIG_FORMAT.md) into the unlocked vault. Merge semantics live in
+	 *  `vault::import`.
+	 */
+	vaultImportConfig: (path: string) => typedError<ImportReport, ApiError>(__TAURI_INVOKE("vault_import_config", { path })),
+	/**
+	 *  Read a private key file so the UI can store its text inside the vault
+	 *  (the key then travels with vault backups). Validated in `local_fs` —
+	 *  only PEM-looking files are returned.
+	 */
+	sshKeyReadFile: (path: string) => typedError<string, ApiError>(__TAURI_INVOKE("ssh_key_read_file", { path })),
+	/**
 	 *  Open an http(s) URL in the user's default browser (used by the About
 	 *  section). Mirrors the `open` invocation already used for remote edit.
 	 */
@@ -231,6 +247,12 @@ export type HostKeyPrompt = {
 	key_line: string,
 	/**  A different key was stored before — show the scary red variant. */
 	changed: boolean,
+};
+
+export type ImportReport = {
+	/**  Number of connections created or updated by the import. */
+	connections: number,
+	vault: PublicVault,
 };
 
 export type PanelSettings = {
