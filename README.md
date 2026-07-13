@@ -111,6 +111,8 @@ suite runs against **real** SSH/FTP/S3 servers, not mocks.
   file and converts it, so backups and machine moves carry your keys too.
 - The vault file location is picked **visually** (native save panel) or typed
   as a path.
+- The lock screen can **switch to another vault file or create a fresh one** —
+  a forgotten master password never locks you out of the app itself.
 
 ### 👆 Touch ID / Windows Hello unlock
 - After the first master‑password unlock, the data key is stored behind

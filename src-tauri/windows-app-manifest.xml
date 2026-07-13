@@ -1,8 +1,8 @@
-<!-- Windows application manifest embedded into TEST executables only (see
-     build.rs). Declares the Common Controls v6 side-by-side dependency that
-     tauri-build embeds into the real app binary; without it test binaries
-     load comctl32 v5 and abort at startup with STATUS_ENTRYPOINT_NOT_FOUND
-     (TaskDialogIndirect exists only in v6). Mirrors tauri-build's
+<!-- Windows application manifest embedded into EVERY link target — the app
+     binary and test executables alike (see build.rs). Declares the Common
+     Controls v6 side-by-side dependency; without it a binary loads comctl32
+     v5 and aborts at startup with STATUS_ENTRYPOINT_NOT_FOUND
+     (TaskDialogIndirect exists only in v6). Content mirrors tauri-build's
      windows-app-manifest.xml. -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <dependency>

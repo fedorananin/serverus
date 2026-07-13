@@ -74,6 +74,19 @@ class VaultStore {
     await this.refreshInfo();
   }
 
+  /** Lock-screen action: point the app at a different vault file. An
+   *  existing file shows its unlock form, a fresh path the create form. */
+  async switchVault(path: string) {
+    this.error = null;
+    try {
+      await unwrap(commands.vaultSwitchPath(path));
+    } catch (e) {
+      this.error = errorMessage(e);
+      return;
+    }
+    await this.refreshInfo();
+  }
+
   // -- Connections & tree (M1). All mutations return the fresh PublicVault. --
 
   private async mutate(op: () => Promise<PublicVault>): Promise<void> {

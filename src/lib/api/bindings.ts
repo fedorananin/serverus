@@ -46,6 +46,14 @@ export const commands = {
 	 */
 	vaultSetPath: (path: string) => typedError<null, ApiError>(__TAURI_INVOKE("vault_set_path", { path })),
 	/**
+	 *  Point the app at a different vault file WITHOUT unlocking anything —
+	 *  available from the lock screen (forgot password, multiple vaults).
+	 *  An existing file gets the unlock form, a fresh path gets the create
+	 *  form. The current vault is locked (secrets zeroized) before switching;
+	 *  nothing is moved or rewritten on disk.
+	 */
+	vaultSwitchPath: (path: string) => typedError<null, ApiError>(__TAURI_INVOKE("vault_switch_path", { path })),
+	/**
 	 *  Open an SSH session. On an unknown or changed host key this fails with
 	 *  code `host_key_prompt` and a `host_key` payload; the UI confirms with the
 	 *  user, calls `host_key_accept`, then retries.

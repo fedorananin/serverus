@@ -446,15 +446,45 @@ pub async fn vault_set_path(state: State<'_, AppState>, path: String) -> ApiResu
             return Err(AppError::VaultLocked);
         }
         let old_id = mgr.vault_id();
-        mgr.set_path(std::path::PathBuf::from(&path))?;
+        mgr.set_path(local_fs::expand(&path))?;
+        // Persist the path the vault actually ended up at — set_path may
+        // have appended the file name when given a folder.
         crate::app_config::save(&crate::app_config::AppConfig {
-            vault_path: Some(path),
+            vault_path: Some(mgr.vault_id()),
         })?;
         // Quick-unlock entries are keyed by path — move them along.
         if mgr.payload()?.settings.security.touch_id && quick.is_available() {
             quick.clear(&old_id);
             let _ = quick.store_dek(&mgr.vault_id(), mgr.dek()?);
         }
+        Ok(())
+    })
+    .await
+}
+
+/// Point the app at a different vault file WITHOUT unlocking anything —
+/// available from the lock screen (forgot password, multiple vaults).
+/// An existing file gets the unlock form, a fresh path gets the create
+/// form. The current vault is locked (secrets zeroized) before switching;
+/// nothing is moved or rewritten on disk.
+#[tauri::command]
+#[specta::specta]
+pub async fn vault_switch_path(state: State<'_, AppState>, path: String) -> ApiResult<()> {
+    let vault = state.vault.clone();
+    blocking(move || {
+        let mut target = local_fs::expand(&path);
+        let mut mgr = vault.lock().unwrap();
+        // A folder means "the vault file inside it", keeping the file name.
+        if target.is_dir() {
+            if let Some(name) = mgr.path().file_name() {
+                target = target.join(name);
+            }
+        }
+        mgr.lock();
+        *mgr = crate::vault::VaultManager::new(target);
+        crate::app_config::save(&crate::app_config::AppConfig {
+            vault_path: Some(mgr.vault_id()),
+        })?;
         Ok(())
     })
     .await

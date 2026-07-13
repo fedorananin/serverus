@@ -1,9 +1,31 @@
 <script lang="ts">
+  import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
   import { vault } from "$lib/stores/vault.svelte";
 
   let password = $state("");
   let confirm = $state("");
   let passwordInput: HTMLInputElement | undefined = $state();
+
+  /** Escape hatches for the lock screen: forgot the password, or the vault
+   *  lives elsewhere — no unlock required to re-point the app. */
+  async function openOtherVault() {
+    const picked = await openFileDialog({
+      multiple: false,
+      directory: false,
+      title: "Open vault",
+      filters: [{ name: "Serverus vault", extensions: ["serverus"] }],
+    });
+    if (typeof picked === "string") await vault.switchVault(picked);
+  }
+
+  async function createNewVault() {
+    const picked = await saveFileDialog({
+      title: "Create new vault",
+      defaultPath: "main.serverus",
+      filters: [{ name: "Serverus vault", extensions: ["serverus"] }],
+    });
+    if (typeof picked === "string") await vault.switchVault(picked);
+  }
 
   function focusOnMount(node: HTMLInputElement) {
     node.focus();
@@ -88,6 +110,15 @@
     </form>
 
     <div class="path mono" title={vault.info?.path}>{vault.info?.path}</div>
+    <div class="vault-actions">
+      <button type="button" class="subtle" disabled={vault.busy} onclick={() => void openOtherVault()}>
+        Open another vault…
+      </button>
+      <span class="sep">·</span>
+      <button type="button" class="subtle" disabled={vault.busy} onclick={() => void createNewVault()}>
+        New vault…
+      </button>
+    </div>
   </div>
 </div>
 
@@ -173,5 +204,29 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .vault-actions {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .vault-actions .sep {
+    color: var(--text-2);
+    font-size: 10px;
+  }
+
+  .subtle {
+    background: transparent;
+    border-color: transparent;
+    color: var(--text-1);
+    font-size: 11px;
+    padding: 2px 4px;
+  }
+
+  .subtle:hover {
+    color: var(--accent);
   }
 </style>

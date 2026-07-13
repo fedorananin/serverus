@@ -41,12 +41,34 @@ impl VaultManager {
 
     /// Move the vault to a new location: write there atomically, then switch.
     /// The previous file is left in place as a manual backup.
+    /// Move the vault file. A directory target (an existing folder, or a
+    /// path spelled with a trailing slash) means "move into that folder" —
+    /// the current file name is kept. Missing parent folders are created.
+    /// The old file stays at the previous location as a manual backup.
     pub fn set_path(&mut self, path: PathBuf) -> AppResult<()> {
+        let spelled_as_dir = {
+            let s = path.to_string_lossy();
+            s.ends_with('/') || (cfg!(windows) && s.ends_with('\\'))
+        };
+        let path = if path.is_dir() || spelled_as_dir {
+            match self.path.file_name() {
+                Some(name) => path.join(name),
+                None => path,
+            }
+        } else {
+            path
+        };
         if path == self.path {
             return Ok(());
         }
         if path.exists() {
-            return Err(AppError::VaultExists);
+            return Err(AppError::Other(format!(
+                "{} already exists — pick another name or remove that file first",
+                path.display()
+            )));
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
         }
         let old = std::mem::replace(&mut self.path, path);
         if let Err(e) = self.save() {
@@ -367,5 +389,35 @@ mod tests {
         mgr.lock();
         let wrong = [0u8; 32];
         assert!(mgr.unlock_with_dek(&wrong).is_err());
+    }
+
+    #[test]
+    fn set_path_handles_folders_conflicts_and_missing_parents() {
+        let (dir, mut mgr) = temp_vault();
+        mgr.create("pw", test_kdf()).unwrap();
+
+        // A directory target keeps the current file name.
+        let sub = dir.path().join("backups");
+        fs::create_dir(&sub).unwrap();
+        mgr.set_path(sub.clone()).unwrap();
+        assert_eq!(mgr.path(), sub.join("test.serverus"));
+        assert!(sub.join("test.serverus").is_file());
+
+        // An occupied target is a clear error and the vault stays put.
+        let occupied = dir.path().join("other.serverus");
+        fs::write(&occupied, b"x").unwrap();
+        let err = mgr.set_path(occupied).unwrap_err();
+        assert!(err.to_string().contains("already exists"));
+        assert_eq!(mgr.path(), sub.join("test.serverus"));
+
+        // Missing parent folders are created for a full file path.
+        let deep = dir.path().join("a").join("b").join("moved.serverus");
+        mgr.set_path(deep.clone()).unwrap();
+        assert!(deep.is_file());
+
+        // Trailing slash = "into this folder", even if it doesn't exist yet.
+        let slashed = format!("{}/", dir.path().join("slashdir").display());
+        mgr.set_path(PathBuf::from(slashed)).unwrap();
+        assert!(dir.path().join("slashdir").join("moved.serverus").is_file());
     }
 }

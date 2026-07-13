@@ -254,7 +254,7 @@
         <input
           type="text"
           class="mono"
-          placeholder="New vault path (e.g. ~/Dropbox/main.serverus)"
+          placeholder="Folder or file path (e.g. ~/Dropbox or ~/Dropbox/main.serverus)"
           bind:value={newVaultPath}
         />
         <button type="button" onclick={() => void pickVaultPath()}>Choose…</button>
@@ -355,6 +355,10 @@
     flex-direction: column;
     gap: 10px;
     margin: 0;
+    /* Fieldsets refuse to shrink below their content by default
+       (min-inline-size: min-content) — a long vault path would force
+       a horizontal scrollbar on the whole dialog. */
+    min-width: 0;
   }
 
   legend {
@@ -399,9 +403,8 @@
   .vault-path {
     font-size: 11px;
     color: var(--text-1);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /* Long paths wrap instead of scrolling the dialog sideways. */
+    overflow-wrap: anywhere;
   }
 
   .pw-change {
@@ -417,6 +420,7 @@
 
   .move-vault input {
     flex: 1;
+    min-width: 0;
     font-size: 11px;
   }
 
@@ -446,11 +450,13 @@
   .error {
     color: var(--danger);
     font-size: 12px;
+    overflow-wrap: anywhere;
   }
 
   .ok {
     color: var(--accent);
     font-size: 12px;
+    overflow-wrap: anywhere;
   }
 
   .about {

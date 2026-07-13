@@ -35,6 +35,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::settings_update,
             commands::known_host_remove,
             commands::vault_set_path,
+            commands::vault_switch_path,
             commands::session_connect,
             commands::session_disconnect,
             commands::host_key_accept,
