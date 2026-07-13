@@ -166,18 +166,50 @@ async fn upload_back(
 }
 
 fn open_in_editor(path: &Path, editor: &EditorSettings) -> AppResult<()> {
-    let mut cmd = std::process::Command::new("open");
-    if !editor.use_system_default {
-        if let Some(app) = editor.custom_app.as_deref().filter(|a| !a.is_empty()) {
+    let custom = if editor.use_system_default {
+        None
+    } else {
+        editor.custom_app.as_deref().filter(|a| !a.is_empty())
+    };
+
+    #[cfg(target_os = "macos")]
+    {
+        // `open` delegates to LaunchServices and returns immediately.
+        let mut cmd = std::process::Command::new("open");
+        if let Some(app) = custom {
             cmd.arg("-a").arg(app);
         }
+        cmd.arg(path);
+        let status = cmd
+            .status()
+            .map_err(|e| AppError::Other(format!("open editor: {e}")))?;
+        if !status.success() {
+            return Err(AppError::Other("editor failed to open the file".into()));
+        }
+        Ok(())
     }
-    cmd.arg(path);
-    let status = cmd
-        .status()
-        .map_err(|e| AppError::Other(format!("open editor: {e}")))?;
-    if !status.success() {
-        return Err(AppError::Other("editor failed to open the file".into()));
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let mut cmd = match custom {
+            // A specific editor (name on PATH or a full path) is launched
+            // directly — spawn, don't wait: it may stay open for hours.
+            Some(app) => {
+                let mut c = std::process::Command::new(app);
+                c.arg(path);
+                c
+            }
+            None => {
+                #[cfg(target_os = "windows")]
+                let mut c = std::process::Command::new("explorer");
+                #[cfg(not(target_os = "windows"))]
+                let mut c = std::process::Command::new("xdg-open");
+                c.arg(path);
+                c
+            }
+        };
+        cmd.spawn()
+            .map_err(|e| AppError::Other(format!("open editor: {e}")))?;
+        Ok(())
     }
-    Ok(())
 }

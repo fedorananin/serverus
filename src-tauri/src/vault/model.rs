@@ -279,8 +279,16 @@ pub struct TerminalSettings {
 
 impl Default for TerminalSettings {
     fn default() -> Self {
+        // xterm.js takes a CSS font-family list, so fallbacks are free.
+        let font_family = if cfg!(target_os = "macos") {
+            "SF Mono"
+        } else if cfg!(target_os = "windows") {
+            "Cascadia Mono, Consolas, monospace"
+        } else {
+            "DejaVu Sans Mono, monospace"
+        };
         TerminalSettings {
-            font_family: "SF Mono".into(),
+            font_family: font_family.into(),
             font_size: 13,
             scrollback: 10_000,
             copy_on_select: false,

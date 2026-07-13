@@ -31,7 +31,9 @@ impl AppState {
     pub fn new() -> Self {
         #[cfg(target_os = "macos")]
         let quick: Arc<dyn QuickUnlock> = Arc::new(crate::vault::quick_unlock::MacQuickUnlock);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
+        let quick: Arc<dyn QuickUnlock> = Arc::new(crate::vault::quick_unlock::WindowsQuickUnlock);
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         let quick: Arc<dyn QuickUnlock> = Arc::new(crate::vault::quick_unlock::NoQuickUnlock);
 
         AppState {

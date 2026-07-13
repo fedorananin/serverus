@@ -37,6 +37,9 @@ pub struct VaultInfo {
     /// A DEK for this vault is stored behind biometrics — Touch ID unlock
     /// can be offered right away.
     pub quick_unlock_ready: bool,
+    /// UI label for the platform's quick-unlock mechanism
+    /// ("Touch ID" / "Windows Hello").
+    pub quick_unlock_method: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -44,7 +47,8 @@ pub struct VaultInfo {
 // ---------------------------------------------------------------------------
 
 /// Open an http(s) URL in the user's default browser (used by the About
-/// section). Mirrors the `open` invocation already used for remote edit.
+/// section). Each OS opener delegates and returns immediately; the URL is
+/// passed as a single argument, never through a shell.
 #[tauri::command]
 #[specta::specta]
 pub async fn open_external(url: String) -> ApiResult<()> {
@@ -53,7 +57,12 @@ pub async fn open_external(url: String) -> ApiResult<()> {
             return Err(AppError::Other("only http(s) URLs may be opened".into()));
         }
         #[cfg(target_os = "macos")]
-        std::process::Command::new("open")
+        let program = "open";
+        #[cfg(target_os = "windows")]
+        let program = "explorer";
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let program = "xdg-open";
+        std::process::Command::new(program)
             .arg(&url)
             .spawn()
             .map_err(|e| AppError::Other(format!("failed to open URL: {e}")))?;
@@ -76,6 +85,7 @@ pub async fn vault_get_info(state: State<'_, AppState>) -> ApiResult<VaultInfo> 
             unlocked: mgr.is_unlocked(),
             biometry_available: biometry,
             quick_unlock_ready: biometry && quick.has_dek(&mgr.vault_id()),
+            quick_unlock_method: quick.method_name().to_string(),
         })
     })
     .await

@@ -11,6 +11,7 @@
   import { startDrag } from "@crabnebula/tauri-plugin-drag";
   import { commands, errorMessage, unwrap } from "$lib/api";
   import { dnd } from "$lib/stores/dnd.svelte";
+  import { isMod } from "$lib/platform";
 
   interface Props {
     pane: PaneController;
@@ -152,7 +153,9 @@
       items.push({ separator: true, label: "" });
       if (single) {
         items.push({ label: "Rename…", action: () => (dialog = { kind: "rename", entry: single }) });
-        if (!pane.s3) {
+        // No chmod for S3 (ACLs instead) or for local files on Windows
+        // (no Unix mode bits — permissions is null there).
+        if (!pane.s3 && !(pane.side === "local" && single.permissions == null)) {
           items.push({ label: "Permissions…", action: () => (dialog = { kind: "chmod", entry: single }) });
         }
       }
@@ -194,13 +197,13 @@
         e.preventDefault();
         dialog = { kind: "rename", entry: sel[0] };
       }
-    } else if (e.key === "Backspace" && !e.metaKey) {
+    } else if (e.key === "Backspace" && !isMod(e)) {
       e.preventDefault();
       void pane.up();
-    } else if (e.key === "a" && e.metaKey) {
+    } else if (e.key === "a" && isMod(e)) {
       e.preventDefault();
       pane.selectAll();
-    } else if (e.key === "Delete" || (e.key === "Backspace" && e.metaKey)) {
+    } else if (e.key === "Delete" || (e.key === "Backspace" && isMod(e))) {
       const sel = pane.selectedEntries;
       if (sel.length > 0) {
         e.preventDefault();
@@ -218,8 +221,8 @@
   function rowPointerDown(e: PointerEvent, entry: RemoteEntry) {
     if (e.button !== 0) return;
     // Modifier clicks are selection gestures — leave them to the click
-    // handler (Cmd = toggle, Shift = range) and never start a drag.
-    if (e.metaKey || e.shiftKey) return;
+    // handler (Cmd/Ctrl = toggle, Shift = range) and never start a drag.
+    if (isMod(e) || e.shiftKey) return;
     // A press right of the filename text bubbles up to the rows container
     // and starts a marquee selection instead of a file drag.
     if (isRowWhitespace(e)) return;
@@ -305,7 +308,7 @@
     if (e.clientX - rect.left > scroller.clientWidth) return;
     if (!isRowWhitespace(e)) return; // the row itself starts a file drag
     marqueeFrom = { x: e.clientX - rect.left, y: e.clientY - rect.top + scroller.scrollTop };
-    marqueeBase = e.metaKey || e.shiftKey ? new Set(pane.selected) : null;
+    marqueeBase = isMod(e) || e.shiftKey ? new Set(pane.selected) : null;
     marqueePointer = { x: e.clientX, y: e.clientY };
     scroller.setPointerCapture(e.pointerId);
     window.addEventListener("pointermove", onMarqueeMove);

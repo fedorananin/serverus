@@ -4,6 +4,7 @@
 import { commands, errorMessage, unwrap } from "$lib/api";
 import type { RemoteEntry, S3AclStatus } from "$lib/api";
 import { joinPath, parentPath } from "$lib/format";
+import { isMod } from "$lib/platform";
 
 export type PaneSide = "local" | "remote";
 export type SortKey = "name" | "size" | "mtime" | "permissions";
@@ -146,7 +147,7 @@ export class PaneController {
   // -- selection --
 
   click(entry: RemoteEntry, e: MouseEvent) {
-    if (e.metaKey) {
+    if (isMod(e)) {
       const next = new Set(this.selected);
       if (next.has(entry.name)) next.delete(entry.name);
       else next.add(entry.name);

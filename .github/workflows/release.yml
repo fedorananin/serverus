@@ -1,0 +1,62 @@
+# Multi-platform release builds, entirely on GitHub's runners — nothing is
+# built locally. Push a tag like `v1.1.0` (or run the workflow manually) and
+# a DRAFT GitHub Release appears with:
+#   macOS (Apple Silicon)  .dmg
+#   Windows x64            .msi + NSIS setup .exe
+#   Linux x64              .AppImage + .deb + .rpm
+# Review the draft, then publish it. Artifacts are unsigned (same as local
+# builds) — macOS Gatekeeper and Windows SmartScreen will warn on first run.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest # Apple Silicon (aarch64)
+          # Ubuntu 22.04: AppImages link against the runner's glibc, so the
+          # oldest supported LTS gives the widest compatibility.
+          - os: ubuntu-22.04
+          - os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Serverus ${{ github.ref_name }}"
+          releaseBody: "See the commit history for changes."
+          releaseDraft: true

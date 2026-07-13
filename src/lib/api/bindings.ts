@@ -145,7 +145,8 @@ export const commands = {
 	sshKeyReadFile: (path: string) => typedError<string, ApiError>(__TAURI_INVOKE("ssh_key_read_file", { path })),
 	/**
 	 *  Open an http(s) URL in the user's default browser (used by the About
-	 *  section). Mirrors the `open` invocation already used for remote edit.
+	 *  section). Each OS opener delegates and returns immediately; the URL is
+	 *  passed as a single argument, never through a shell.
 	 */
 	openExternal: (url: string) => typedError<null, ApiError>(__TAURI_INVOKE("open_external", { url })),
 };
@@ -513,6 +514,11 @@ export type VaultInfo = {
 	 *  can be offered right away.
 	 */
 	quick_unlock_ready: boolean,
+	/**
+	 *  UI label for the platform's quick-unlock mechanism
+	 *  ("Touch ID" / "Windows Hello").
+	 */
+	quick_unlock_method: string,
 };
 
 /**  The vault was locked (auto-lock, sleep, or explicit). */

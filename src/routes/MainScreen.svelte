@@ -12,6 +12,7 @@
   import DragGhost from "$lib/components/DragGhost.svelte";
   import { transfers } from "$lib/stores/transfers.svelte";
   import { commands, events, unwrap } from "$lib/api";
+  import { isMod } from "$lib/platform";
 
   let showSettings = $state(false);
 
@@ -67,7 +68,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (!e.metaKey) return;
+    if (!isMod(e)) return;
     if (e.key === "w" && tabs.activeId) {
       e.preventDefault();
       tabs.close(tabs.activeId);

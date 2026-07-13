@@ -4,6 +4,7 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { getVersion } from "@tauri-apps/api/app";
   import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
+  import { isMac } from "$lib/platform";
   import Modal from "./Modal.svelte";
 
   const REPO_URL = "https://github.com/fedorananin/serverus";
@@ -153,7 +154,12 @@
           bind:checked={settings.security.touch_id}
           disabled={!vault.info?.biometry_available}
         />
-        <span>Unlock with Touch ID{vault.info?.biometry_available ? "" : " (not available)"}</span>
+        <span>
+          Unlock with {vault.info?.quick_unlock_method ?? "biometrics"}{vault.info
+            ?.biometry_available
+            ? ""
+            : " (not available)"}
+        </span>
       </label>
     </fieldset>
 
@@ -216,7 +222,7 @@
       </div>
       <label class="checkbox">
         <input type="checkbox" bind:checked={settings.terminal.copy_on_select} />
-        <span>Copy selection to clipboard automatically (otherwise use ⌘C)</span>
+        <span>Copy selection to clipboard automatically (otherwise use {isMac ? "⌘C" : "Ctrl+Shift+C"})</span>
       </label>
     </fieldset>
 

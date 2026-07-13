@@ -10,7 +10,7 @@ manager and tunnels, behind a single encrypted vault unlocked with Touch ID.**
 A native macOS connection manager. Built with Tauri 2, a Rust backend and a Svelte 5 front end.
 
 [![Written by AI — Claude Fable 5](https://img.shields.io/badge/written%20by-AI%20%C2%B7%20Claude%20Fable%205-8A2BE2)](#written-entirely-by-ai)
-![Platform](https://img.shields.io/badge/platform-macOS%2012%2B%20(Apple%20Silicon)-black)
+![Platform](https://img.shields.io/badge/platform-macOS%2012%2B%20%C2%B7%20Windows%20%26%20Linux%20(experimental)-black)
 ![Built with Rust](https://img.shields.io/badge/backend-Rust-orange)
 ![Built with Tauri](https://img.shields.io/badge/shell-Tauri%202-24C8DB)
 ![Frontend Svelte](https://img.shields.io/badge/frontend-Svelte%205-FF3E00)
@@ -106,15 +106,20 @@ suite runs against **real** SSH/FTP/S3 servers, not mocks.
 - The vault file location is picked **visually** (native save panel) or typed
   as a path.
 
-### 👆 Touch ID unlock
-- After the first master‑password unlock, the data key is stored in the
-  macOS Keychain behind biometrics (`WhenUnlockedThisDeviceOnly` +
-  `biometryCurrentSet`).
-- Everyday launch: Touch ID → vault open. The master password is always a
-  working fallback and is **never persisted** — not in the Keychain, not on
-  disk, not in memory longer than needed to derive the key.
-- Changing the set of enrolled fingerprints invalidates the entry — Serverus
-  just asks for the master password again.
+### 👆 Touch ID / Windows Hello unlock
+- After the first master‑password unlock, the data key is stored behind
+  device biometrics: on macOS in the Keychain (`WhenUnlockedThisDeviceOnly` +
+  `biometryCurrentSet`), on Windows wrapped by a **Windows Hello**‑protected
+  signing key (`KeyCredentialManager`; the KeePassXC scheme — a stored
+  challenge is signed on unlock, the deterministic signature is HKDF'd into
+  the wrapping key).
+- Everyday launch: Touch ID / Hello → vault open. The master password is
+  always a working fallback and is **never persisted** — not in the Keychain,
+  not on disk, not in memory longer than needed to derive the key.
+- Changing the enrolled fingerprint set (macOS) or resetting Windows Hello
+  invalidates the entry — Serverus just asks for the master password again.
+- Linux: master password only for now (a Secret Service backend is on the
+  roadmap).
 
 ### 🖥️ SSH sessions do triple duty
 One SSH connection is multiplexed into three roles over a single TCP session:
@@ -214,15 +219,24 @@ _Coming soon._
 
 ## Install
 
-Serverus targets **macOS 12+ on Apple Silicon**.
+The primary platform is **macOS 12+ on Apple Silicon**. **Windows 10+ and
+Linux builds are experimental** — the code is cross‑platform and CI builds
+all three, but only macOS gets day‑to‑day use.
 
 ### Download
-Grab `Serverus_1.1.0_aarch64.dmg` from the releases, open it and drag
-**Serverus** to Applications.
+Releases are built by GitHub Actions for every `v*` tag — nothing is compiled
+on a developer machine. Grab the artifact for your OS from the releases page:
 
-> The app is **not code‑signed or notarized** (out of scope for v1). On first
-> launch macOS Gatekeeper may complain — right‑click the app → **Open**, or
-> run `xattr -dr com.apple.quarantine /Applications/Serverus.app`.
+| OS | Artifact |
+|---|---|
+| macOS (Apple Silicon) | `Serverus_x.y.z_aarch64.dmg` |
+| Windows x64 | `.msi` or NSIS `-setup.exe` |
+| Linux x64 | `.AppImage`, `.deb` or `.rpm` |
+
+> The binaries are **not code‑signed or notarized**. On first launch macOS
+> Gatekeeper may complain — right‑click the app → **Open**, or run
+> `xattr -dr com.apple.quarantine /Applications/Serverus.app`. Windows
+> SmartScreen will show "unrecognized app" — **More info → Run anyway**.
 
 ### Build from source
 Requirements: a recent **Rust** (stable) toolchain, **Node.js 22+**, and Xcode
@@ -383,9 +397,22 @@ cargo test --manifest-path src-tauri/Cargo.toml
 > The macOS seatbelt sandbox blocks those syscalls, so **run the tests with the
 > sandbox disabled** (symptom otherwise: "Permission denied" on chmod/rename).
 
-**CI** (GitHub Actions, `macos-latest`) runs `npm run check`, `rustfmt`,
-`clippy -D warnings`, the full test suite, and a bundle‑less release build on
-every push and PR.
+**CI** (GitHub Actions) runs `npm run check`, `rustfmt`, `clippy -D warnings`,
+the test suite and a bundle‑less release build on **macOS, Linux and Windows**
+on every push and PR (Windows runs unit tests only — the integration fixtures
+need a Unix sshd).
+
+### Releases
+
+Releases are fully automated: push a tag and GitHub Actions builds and
+uploads installers for all three OSes to a **draft** GitHub Release
+(`.github/workflows/release.yml`):
+
+```bash
+git tag v1.1.0 && git push origin v1.1.0
+```
+
+Review the draft on the Releases page, then publish. No local builds needed.
 
 ---
 
@@ -398,7 +425,9 @@ Deliberately out of scope for v1, to keep it from sprawling:
 - Remote / dynamic (SOCKS) forwarding
 - Import from `~/.ssh/config`, electerm, Cyberduck
 - WebDAV, UI localization, custom image icons for entries
-- Code signing / notarization, auto‑updates, Windows / Linux builds
+- Code signing / notarization, auto‑updates
+- Linux biometric/keyring quick unlock (Secret Service); Windows and Linux
+  builds themselves ship since v1.1 (experimental)
 
 ---
 

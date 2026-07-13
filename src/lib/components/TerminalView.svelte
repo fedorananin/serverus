@@ -7,6 +7,7 @@
   import "@xterm/xterm/css/xterm.css";
   import { commands, unwrap } from "$lib/api";
   import { registerTerminal, unregisterTerminal } from "$lib/terminals";
+  import { isMac } from "$lib/platform";
   import { vault } from "$lib/stores/vault.svelte";
 
   interface Props {
@@ -72,12 +73,18 @@
     }
     term.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown") return true;
-      if (e.metaKey && e.key === "c" && term.hasSelection()) {
+      // ⌘C/⌘F on macOS; Ctrl+Shift+C/F elsewhere — plain Ctrl+C must keep
+      // reaching the shell as SIGINT.
+      const combo = (key: string) =>
+        isMac
+          ? e.metaKey && e.key === key
+          : e.ctrlKey && e.shiftKey && e.key.toLowerCase() === key;
+      if (combo("c") && term.hasSelection()) {
         void navigator.clipboard.writeText(term.getSelection());
         term.clearSelection();
         return false;
       }
-      if (e.metaKey && e.key === "f") {
+      if (combo("f")) {
         searchOpen = true;
         queueMicrotask(() => searchInput?.focus());
         return false;

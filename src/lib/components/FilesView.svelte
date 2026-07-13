@@ -5,6 +5,7 @@
   import { commands, errorMessage, unwrap } from "$lib/api";
   import { s3PublicUrl } from "$lib/format";
   import { PaneController } from "$lib/stores/pane.svelte";
+  import { isMod } from "$lib/platform";
   import { vault } from "$lib/stores/vault.svelte";
   import FilePane from "./FilePane.svelte";
   import UploadAclDialog from "./UploadAclDialog.svelte";
@@ -167,11 +168,11 @@
     // Hidden tabs stay mounted and hear window keydowns too — only the
     // visible FilesView may act on the transfer shortcuts.
     if (!root || root.offsetParent === null) return;
-    // Cmd+→ uploads the local selection, Cmd+← downloads the remote one.
-    if (e.metaKey && e.key === "ArrowRight" && local.selected.size > 0) {
+    // Cmd/Ctrl+→ uploads the local selection, Cmd/Ctrl+← downloads the remote one.
+    if (isMod(e) && e.key === "ArrowRight" && local.selected.size > 0) {
       e.preventDefault();
       uploadSelection(local.selectedEntries);
-    } else if (e.metaKey && e.key === "ArrowLeft" && remote.selected.size > 0) {
+    } else if (isMod(e) && e.key === "ArrowLeft" && remote.selected.size > 0) {
       e.preventDefault();
       downloadSelection(remote.selectedEntries);
     }

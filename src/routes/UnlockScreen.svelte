@@ -82,7 +82,7 @@
           onclick={() => vault.unlockQuick()}
           disabled={vault.busy}
         >
-          Use Touch ID
+          Use {vault.info?.quick_unlock_method ?? "biometrics"}
         </button>
       {/if}
     </form>

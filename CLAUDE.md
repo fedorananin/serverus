@@ -1,8 +1,9 @@
 # Serverus
 
-SSH/SFTP/FTP/S3 connection manager for macOS. Replaces electerm + Cyberduck:
-terminal, dual-pane file manager, and SSH tunnels in one window, with a single
-encrypted vault file unlocked via master password / Touch ID.
+SSH/SFTP/FTP/S3 connection manager (macOS primary; Windows/Linux builds are
+experimental). Replaces electerm + Cyberduck: terminal, dual-pane file
+manager, and SSH tunnels in one window, with a single encrypted vault file
+unlocked via master password / Touch ID / Windows Hello.
 
 The original Russian spec (`docs/SPEC.md`) served its purpose and was removed
 in v1.1.0 — it lives in git history. Comments citing "SPEC §n" refer to it;
@@ -45,8 +46,12 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
 - **Recursive FTP directory transfers must always work** — this is the founding
   pain point of the project (electerm bug). Any change touching transfers must
   keep the recursive-FTP integration test green.
-- macOS-specific code (Keychain, Touch ID, FSEvents) stays isolated behind
-  traits — future Linux/Windows ports must not require rewrites.
+- OS-specific code stays isolated: quick unlock is a trait (`QuickUnlock`)
+  with macOS (Keychain + Touch ID) and Windows (KeyCredentialManager /
+  Windows Hello) impls and a no-op fallback on Linux; everything else is
+  `cfg`-gated in place (`local_fs` permissions, URL/editor opening, default
+  terminal font). The frontend maps ⌘→Ctrl via `src/lib/platform.ts` —
+  never test `e.metaKey` directly in components.
 
 ## Code style
 
@@ -108,11 +113,22 @@ upload-ACL mode switch (private/public/ask), and "Copy public URL".
 v1.1.0: config import (`vault/import.rs`, format documented in
 `docs/CONFIG_FORMAT.md`), SSH key-file → vault-text import, native pickers for
 the vault path and config import, folder badges applied at creation, and the
-folder item count shown only while collapsed.
+folder item count shown only while collapsed. Also v1.1.0: cross-platform
+support — Windows Hello quick unlock (`quick_unlock.rs::windows_hello`,
+KeePassXC scheme: Hello-gated deterministic RSA signature → HKDF → AES-GCM
+wrapped DEK blob in the config dir), cfg-gated unix permissions / openers /
+fonts, ⌘→Ctrl shortcut mapping. **Windows/Linux are experimental: the code
+compiles (Windows WinRT module cross-typechecked) and CI builds all three
+OSes, but nothing has been exercised on real Windows/Linux hardware yet.**
+Known gaps: no Linux quick unlock; lock-on-sleep detection (monotonic vs wall
+clock divergence) may not fire on Windows; local chmod is hidden on Windows.
 Integration tests (32) run against a local unprivileged `sshd`, an in-process
-libunftp FTP server and an in-process `s3s` S3 server — no docker
-needed. Personal use for now; the repo is written to open-source quality
-(MIT, CI in `.github/workflows/ci.yml`).
+libunftp FTP server and an in-process `s3s` S3 server — no docker needed
+(macOS + Linux; Windows CI runs unit tests only). Releases are built by
+`.github/workflows/release.yml` on `v*` tags: dmg / msi+nsis /
+AppImage+deb+rpm attached to a draft GitHub Release. Personal use for now;
+the repo is written to open-source quality (MIT, CI in
+`.github/workflows/ci.yml`).
 
 ## Notes
 

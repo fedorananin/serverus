@@ -9,8 +9,16 @@ use crate::error::{AppError, AppResult};
 use crate::session::remote_fs::RemoteEntry;
 
 fn entry_for(path: &Path, meta: &fs::Metadata, resolved: Option<&fs::Metadata>) -> RemoteEntry {
-    use std::os::unix::fs::PermissionsExt;
     let target = resolved.unwrap_or(meta);
+    // Unix mode bits don't exist on Windows — the UI hides the permissions
+    // column/dialog for entries without them.
+    #[cfg(unix)]
+    let permissions = {
+        use std::os::unix::fs::PermissionsExt;
+        Some(target.permissions().mode() & 0o7777)
+    };
+    #[cfg(not(unix))]
+    let permissions = None;
     RemoteEntry {
         name: path
             .file_name()
@@ -25,7 +33,7 @@ fn entry_for(path: &Path, meta: &fs::Metadata, resolved: Option<&fs::Metadata>) 
             .ok()
             .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
             .map(|d| d.as_secs() as i64),
-        permissions: Some(target.permissions().mode() & 0o7777),
+        permissions,
     }
 }
 
@@ -115,7 +123,15 @@ pub fn delete(path: &str) -> AppResult<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 pub fn chmod(path: &str, mode: u32) -> AppResult<()> {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(expand(path), fs::Permissions::from_mode(mode)).map_err(Into::into)
+}
+
+#[cfg(not(unix))]
+pub fn chmod(_path: &str, _mode: u32) -> AppResult<()> {
+    Err(AppError::Other(
+        "changing permissions is not supported on this OS".into(),
+    ))
 }
