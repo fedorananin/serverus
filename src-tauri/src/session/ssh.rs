@@ -207,10 +207,41 @@ async fn authenticate(handle: &mut Handle<ClientHandler>, auth: &HopAuth) -> App
     Err(AppError::Auth(attempts.join("; ")))
 }
 
+/// Try the local ssh-agent. Only where the agent lives is OS-specific:
+/// `$SSH_AUTH_SOCK` (unix socket) vs the OpenSSH-for-Windows named pipe,
+/// with PuTTY's Pageant as the Windows fallback.
 async fn try_agent(handle: &mut Handle<ClientHandler>, username: &str) -> AppResult<bool> {
-    let mut agent = russh::keys::agent::client::AgentClient::connect_env()
-        .await
-        .map_err(|e| AppError::Auth(format!("SSH_AUTH_SOCK: {e}")))?;
+    #[cfg(unix)]
+    {
+        let mut agent = russh::keys::agent::client::AgentClient::connect_env()
+            .await
+            .map_err(|e| AppError::Auth(format!("SSH_AUTH_SOCK: {e}")))?;
+        agent_auth(handle, username, &mut agent).await
+    }
+    #[cfg(windows)]
+    {
+        const OPENSSH_PIPE: &str = r"\\.\pipe\openssh-ssh-agent";
+        match russh::keys::agent::client::AgentClient::connect_named_pipe(OPENSSH_PIPE).await {
+            Ok(mut agent) => agent_auth(handle, username, &mut agent).await,
+            Err(pipe_err) => {
+                match russh::keys::agent::client::AgentClient::connect_pageant().await {
+                    Ok(mut agent) => agent_auth(handle, username, &mut agent).await,
+                    Err(_) => Err(AppError::Auth(format!("ssh-agent: {pipe_err}"))),
+                }
+            }
+        }
+    }
+}
+
+/// Offer every identity the agent holds until one is accepted.
+async fn agent_auth<S>(
+    handle: &mut Handle<ClientHandler>,
+    username: &str,
+    agent: &mut russh::keys::agent::client::AgentClient<S>,
+) -> AppResult<bool>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
+{
     let identities = agent
         .request_identities()
         .await
@@ -223,7 +254,7 @@ async fn try_agent(handle: &mut Handle<ClientHandler>, username: &str) -> AppRes
     for identity in identities {
         let key = identity.public_key().into_owned();
         let result = handle
-            .authenticate_publickey_with(username, key, rsa_hash, &mut agent)
+            .authenticate_publickey_with(username, key, rsa_hash, agent)
             .await
             .map_err(|e| AppError::Auth(e.to_string()))?;
         if matches!(result, AuthResult::Success) {

@@ -19,7 +19,9 @@ use crate::vault::model::EditorSettings;
 
 struct WatchedFile {
     session_id: String,
-    _watcher: notify::FsEventWatcher,
+    /// Platform alias: FSEvents on macOS, ReadDirectoryChanges on Windows,
+    /// inotify on Linux — matches what `notify::recommended_watcher` returns.
+    _watcher: notify::RecommendedWatcher,
 }
 
 #[derive(Default)]
