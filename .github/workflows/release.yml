@@ -17,7 +17,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  release:
     strategy:
       fail-fast: false
       matrix:
@@ -38,9 +38,10 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
+      # NO rust build cache here on purpose: the CI workflow's cache is keyed
+      # per job name + "Linux" only, and restoring artifacts built on a
+      # different Ubuntu version poisons the build (E0463 "can't find crate").
+      # Releases are rare — a clean build is worth the extra minutes.
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
