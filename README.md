@@ -50,6 +50,12 @@ So I did the obvious 2026 thing: I had an AI build the app I actually wanted —
 a **proper, minimal, convenient, free and open‑source** connection manager —
 so that nobody else has to suffer the way I did.
 
+And then I thought: the whole thing is already written on a cross‑platform
+stack, so why *not* make Linux and Windows versions too? Maybe I'll need them
+one day, maybe you will — and either way, why not? So I asked the AI to add
+support for every operating system, and that's how this turned into a full
+multi‑platform app. Because — well, why not?
+
 Serverus folds all of it into one window:
 
 - a **terminal**, a **dual‑pane file manager** and **SSH tunnels** share the
