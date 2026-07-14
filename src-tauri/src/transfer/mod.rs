@@ -17,7 +17,7 @@ pub mod tar_stream;
 
 use crate::error::{AppError, AppResult};
 use crate::events::TransferProgressEvent;
-use crate::session::remote_fs::{join_remote, RemoteFs};
+use crate::session::remote_fs::{join_remote, RemoteEntry, RemoteFs};
 use crate::vault::model::{ConflictPolicy, TransferSettings};
 
 /// Where progress events go. The real app emits Tauri events; tests use a
@@ -39,47 +39,88 @@ const SNAPSHOT_LIMIT: usize = 200;
 /// before the item stays in Error for the user to retry manually.
 const AUTO_RETRIES: u32 = 2;
 
-/// Remote listing names are untrusted input, but a local destination name
-/// must be exactly one portable path component. Checking both separator
-/// styles keeps a name safe if the vault is later used on another OS.
-pub(crate) fn validate_local_component(name: &str) -> AppResult<()> {
-    let is_single_normal_component = {
-        let mut components = std::path::Path::new(name).components();
-        matches!(
-            (components.next(), components.next()),
-            (Some(std::path::Component::Normal(_)), None)
-        )
-    };
-    let windows_stem = name
+/// Names that could act as anything but a plain file name are refused on
+/// every OS: traversal dots, separators and control bytes have no legitimate
+/// reading in a remote listing entry.
+fn reject_attack_component(name: &str) -> AppResult<()> {
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains('/')
+        || name.bytes().any(|byte| byte < 32)
+    {
+        return Err(AppError::Transfer(format!(
+            "{name:?}: unsafe remote file name"
+        )));
+    }
+    Ok(())
+}
+
+fn is_windows_device_stem(name: &str) -> bool {
+    let stem = name
         .split('.')
         .next()
         .unwrap_or(name)
         .trim_end_matches([' ', '.'])
         .to_ascii_uppercase();
-    let is_windows_device = matches!(
-        windows_stem.as_str(),
+    matches!(
+        stem.as_str(),
         "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
-    ) || windows_stem
+    ) || stem
         .strip_prefix("COM")
-        .or_else(|| windows_stem.strip_prefix("LPT"))
-        .is_some_and(|suffix| suffix.len() == 1 && matches!(suffix.as_bytes()[0], b'1'..=b'9'));
+        .or_else(|| stem.strip_prefix("LPT"))
+        .is_some_and(|suffix| suffix.len() == 1 && matches!(suffix.as_bytes()[0], b'1'..=b'9'))
+}
 
-    if name.is_empty()
-        || name == "."
-        || name == ".."
-        || name.contains(['/', '\\'])
-        || name.contains([':', '<', '>', '"', '|', '?', '*'])
-        || name.contains('\0')
-        || name.bytes().any(|byte| byte < 32)
-        || name.ends_with([' ', '.'])
-        || is_windows_device
-        || !is_single_normal_component
-    {
-        return Err(AppError::Transfer(
-            "remote entry has an unsafe local filename".into(),
-        ));
+/// Windows cannot store some names that are perfectly legal on the server
+/// (`:` in log timestamps, `?`/`*`, device stems like `aux.txt`, trailing
+/// dots). Repair them the way browser downloads do — reserved characters
+/// become `_`, device stems and trailing dots/spaces gain a `_` — instead
+/// of refusing the file: the user may have no way to rename it remotely.
+/// Compiled on every OS so the Windows rules stay unit-tested from any host.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn sanitize_windows_component(name: &str) -> String {
+    let mut sanitized: String = name
+        .chars()
+        .map(|c| match c {
+            '\\' | ':' | '<' | '>' | '"' | '|' | '?' | '*' => '_',
+            c => c,
+        })
+        .collect();
+    // Win32 silently drops trailing dots and spaces; substitute them instead
+    // so two distinct remote names stay distinct locally.
+    let trimmed = sanitized.trim_end_matches([' ', '.']).len();
+    let dropped = sanitized.len() - trimmed;
+    if dropped > 0 {
+        sanitized.truncate(trimmed);
+        sanitized.push_str(&"_".repeat(dropped));
     }
-    Ok(())
+    if is_windows_device_stem(&sanitized) {
+        sanitized.insert(0, '_');
+    }
+    sanitized
+}
+
+/// Decide the local file name for an untrusted remote listing entry.
+/// Attack-shaped names are refused; names this OS cannot store are sanitized
+/// (Windows) or kept verbatim (mac/linux disks store `12:00.log` just fine).
+/// The result is guaranteed to be exactly one normal path component.
+pub(crate) fn safe_local_component(name: &str) -> AppResult<String> {
+    reject_attack_component(name)?;
+    #[cfg(windows)]
+    let local = sanitize_windows_component(name);
+    #[cfg(not(windows))]
+    let local = name.to_string();
+    let mut components = std::path::Path::new(&local).components();
+    if !matches!(
+        (components.next(), components.next()),
+        (Some(std::path::Component::Normal(_)), None)
+    ) {
+        return Err(AppError::Transfer(format!(
+            "{name:?}: unsafe remote file name"
+        )));
+    }
+    Ok(local)
 }
 
 fn open_download_root(path: &std::path::Path) -> AppResult<Arc<cap_std::fs::Dir>> {
@@ -558,6 +599,36 @@ impl TransferManager {
         item
     }
 
+    /// Record a child entry that cannot be downloaded as a visible Error
+    /// item: the user sees which file was skipped and why, while the rest
+    /// of the tree keeps transferring. No worker is spawned for it.
+    #[allow(clippy::too_many_arguments)]
+    fn add_failed_download(
+        self: &Arc<Self>,
+        app: &Arc<dyn ProgressSink>,
+        session_id: &str,
+        child: &RemoteEntry,
+        local_dir: PathBuf,
+        fs: &Arc<dyn RemoteFs>,
+        settings: &TransferSettings,
+        reason: &str,
+    ) {
+        let item = self.add_item(
+            session_id,
+            TransferKind::Download,
+            // Display-only: the item has no local capability and never writes.
+            local_dir,
+            child.path.clone(),
+            child.size,
+            fs.clone(),
+            settings.clone(),
+            None,
+            None,
+        );
+        item.set_state(TransferState::Error, Some(reason.to_string()));
+        self.ensure_emitter(app.clone());
+    }
+
     fn spawn_worker(self: &Arc<Self>, app: &Arc<dyn ProgressSink>, item: Arc<TransferItem>) {
         let queue = self.queue_for(
             &item.session_id,
@@ -857,9 +928,9 @@ impl TransferManager {
     ) -> AppResult<()> {
         let entry = fs.stat(remote_path).await?;
         let local_base = crate::local_fs::expand(local_dir);
-        validate_local_component(&entry.name)?;
+        let local_name = safe_local_component(&entry.name)?;
         let destination_root = open_download_root(&local_base)?;
-        let top_relative = PathBuf::from(&entry.name);
+        let top_relative = PathBuf::from(&local_name);
 
         if !entry.is_dir {
             let local_target = LocalDownloadTarget {
@@ -888,7 +959,7 @@ impl TransferManager {
                 let item = self.add_item(
                     session_id,
                     TransferKind::Download,
-                    local_base.join(&entry.name),
+                    local_base.join(&local_name),
                     remote_path.to_string(),
                     total,
                     fs,
@@ -906,9 +977,40 @@ impl TransferManager {
         ensure_download_directory(&destination_root, &top_relative)?;
         let mut pending = vec![(remote_path.to_string(), top_relative)];
         while let Some((remote_dir, local_relative)) = pending.pop() {
+            // Names already claimed in this directory: sanitization may map
+            // two distinct remote names onto one local file.
+            let mut used_names = std::collections::HashSet::new();
             for child in fs.list(&remote_dir).await? {
-                validate_local_component(&child.name)?;
-                let local_child = local_relative.join(&child.name);
+                let local_name = match safe_local_component(&child.name) {
+                    Ok(name) => name,
+                    Err(error) => {
+                        // One bad name must not abort the rest of the tree
+                        // (SPEC §4.3) — surface it as a failed queue item.
+                        self.add_failed_download(
+                            app,
+                            session_id,
+                            &child,
+                            local_base.join(&local_relative),
+                            &fs,
+                            &settings,
+                            &error.to_string(),
+                        );
+                        continue;
+                    }
+                };
+                if !used_names.insert(local_name.clone()) {
+                    self.add_failed_download(
+                        app,
+                        session_id,
+                        &child,
+                        local_base.join(&local_relative),
+                        &fs,
+                        &settings,
+                        &format!("{local_name}: another entry already maps to this local name"),
+                    );
+                    continue;
+                }
+                let local_child = local_relative.join(&local_name);
                 if child.is_dir && !child.is_symlink {
                     ensure_download_directory(&destination_root, &local_child)?;
                     pending.push((child.path, local_child));
@@ -952,6 +1054,13 @@ async fn run_single(
     let fs = item.fs.as_ref();
     let settings = &item.settings;
     let mut local_target = item.local_target.clone();
+    // Placeholder for a skipped entry (unsafe/colliding remote name): it has
+    // no local capability on purpose, so a retry can only re-explain itself.
+    if item.kind == TransferKind::Download && local_target.is_none() && item.tar.is_none() {
+        return Err(AppError::Transfer(
+            "this entry's remote name cannot be stored locally".into(),
+        ));
+    }
     let resuming = item
         .resume
         .swap(false, std::sync::atomic::Ordering::Relaxed);
@@ -1191,4 +1300,88 @@ async fn remote_tree_size(fs: &dyn RemoteFs, root: &str) -> AppResult<u64> {
         }
     }
     Ok(total)
+}
+
+#[cfg(test)]
+mod name_tests {
+    use super::{safe_local_component, sanitize_windows_component};
+
+    #[test]
+    fn attack_shaped_names_are_refused_on_every_os() {
+        for name in [
+            "",
+            ".",
+            "..",
+            "a/b",
+            "../escape",
+            "/absolute",
+            "nul\0byte",
+            "line\nbreak",
+            "bell\x07",
+        ] {
+            assert!(
+                safe_local_component(name).is_err(),
+                "attack name was accepted: {name:?}"
+            );
+        }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_keeps_locally_legal_names_verbatim() {
+        for name in [
+            "2024-01-01T12:00:00.log",
+            "wild*card",
+            "what?.txt",
+            "aux.txt",
+            "CON",
+            "trailing.",
+            "trailing ",
+            r"back\slash.txt",
+            "C:drive-relative.txt",
+            "..double-dot-prefix",
+            "файл — 🚀.txt",
+        ] {
+            assert_eq!(
+                safe_local_component(name).unwrap(),
+                name,
+                "legal unix name was altered"
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_sanitizes_instead_of_refusing() {
+        assert_eq!(
+            safe_local_component("2024-01-01T12:00:00.log").unwrap(),
+            "2024-01-01T12_00_00.log"
+        );
+        assert_eq!(safe_local_component("aux.txt").unwrap(), "_aux.txt");
+        assert_eq!(safe_local_component("trailing.").unwrap(), "trailing_");
+    }
+
+    #[test]
+    fn the_windows_sanitizer_repairs_every_reserved_form() {
+        for (name, expected) in [
+            ("2024-01-01T12:00:00.log", "2024-01-01T12_00_00.log"),
+            ("wild*card?", "wild_card_"),
+            (r"back\slash.txt", "back_slash.txt"),
+            ("pipe|quote\"<>", "pipe_quote___"),
+            ("aux.txt", "_aux.txt"),
+            ("CON", "_CON"),
+            ("com1.log", "_com1.log"),
+            ("trailing.", "trailing_"),
+            ("trailing ", "trailing_"),
+            ("trail.. ", "trail___"),
+            ("normal.txt", "normal.txt"),
+            (".env", ".env"),
+        ] {
+            assert_eq!(
+                sanitize_windows_component(name),
+                expected,
+                "sanitizing {name:?}"
+            );
+        }
+    }
 }
