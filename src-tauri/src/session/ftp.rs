@@ -378,7 +378,7 @@ impl RemoteFs for FtpPool {
             .await
             .map_err(|e| ftp_err(path, e))?;
         Ok(Box::new(FtpReader {
-            inner: Some((pooled, stream)),
+            state: ReaderState::Reading(Box::new((pooled, stream))),
         }))
     }
 
@@ -410,11 +410,18 @@ impl RemoteFs for FtpPool {
 
 type DataStream = suppaftp::tokio::AsyncDataStream<suppaftp::tokio::AsyncRustlsStream>;
 
-/// Read stream owning its pooled connection. On EOF or drop the transfer is
-/// finalized in a background task; a mid-stream drop closes the connection
-/// (server aborts the transfer, the pool slot frees via the permit).
+enum ReaderState {
+    Reading(Box<(PooledConn, DataStream)>),
+    Finalizing(BoxFuture<'static, std::io::Result<()>>),
+    Done,
+}
+
+/// Read stream owning its pooled connection. EOF is returned only after the
+/// server's final transfer reply has been read. A mid-stream drop simply
+/// closes the data and control connections (the pool slot frees via the
+/// permit).
 struct FtpReader {
-    inner: Option<(PooledConn, DataStream)>,
+    state: ReaderState,
 }
 
 impl AsyncRead for FtpReader {
@@ -423,24 +430,43 @@ impl AsyncRead for FtpReader {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
-        let Some((_, stream)) = self.inner.as_mut() else {
-            return Poll::Ready(Ok(()));
-        };
-        let before = buf.filled().len();
-        match Pin::new(stream).poll_read(cx, buf) {
-            Poll::Ready(Ok(())) if buf.filled().len() == before => {
-                // EOF: acknowledge the 226 reply off-path.
-                if let Some((mut pooled, stream)) = self.inner.take() {
-                    tokio::spawn(async move {
-                        if let Some(conn) = pooled.conn.as_mut() {
-                            let _ = conn.finalize_retr_stream(stream).await;
+        loop {
+            match &mut self.state {
+                ReaderState::Reading(inner) => {
+                    let before = buf.filled().len();
+                    match Pin::new(&mut inner.1).poll_read(cx, buf) {
+                        Poll::Ready(Ok(())) if buf.filled().len() == before => {
+                            let ReaderState::Reading(inner) =
+                                std::mem::replace(&mut self.state, ReaderState::Done)
+                            else {
+                                unreachable!()
+                            };
+                            let (mut pooled, stream) = *inner;
+                            self.state = ReaderState::Finalizing(
+                                async move {
+                                    let conn = pooled
+                                        .conn
+                                        .as_mut()
+                                        .ok_or_else(|| std::io::Error::other("connection gone"))?;
+                                    conn.finalize_retr_stream(stream)
+                                        .await
+                                        .map_err(std::io::Error::other)?;
+                                    drop(pooled);
+                                    Ok(())
+                                }
+                                .boxed(),
+                            );
                         }
-                        drop(pooled); // connection not reused after a transfer
-                    });
+                        other => return other,
+                    }
                 }
-                Poll::Ready(Ok(()))
+                ReaderState::Finalizing(future) => {
+                    let result = futures::ready!(future.as_mut().poll(cx));
+                    self.state = ReaderState::Done;
+                    return Poll::Ready(result);
+                }
+                ReaderState::Done => return Poll::Ready(Ok(())),
             }
-            other => other,
         }
     }
 }
@@ -509,5 +535,98 @@ impl AsyncWrite for FtpWriter {
                 WriterState::Done => return Poll::Ready(Ok(())),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FtpConfig, FtpPool};
+    use crate::session::remote_fs::RemoteFs;
+    use crate::vault::model::FtpTlsMode;
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+    use zeroize::Zeroizing;
+
+    async fn spawn_server_with_failed_retr_completion() -> u16 {
+        let control = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = control.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (socket, _) = control.accept().await.unwrap();
+            let (reader, mut writer) = socket.into_split();
+            let mut reader = BufReader::new(reader);
+            writer.write_all(b"220 test FTP ready\r\n").await.unwrap();
+
+            let mut passive = None;
+            let mut command = String::new();
+            loop {
+                command.clear();
+                if reader.read_line(&mut command).await.unwrap() == 0 {
+                    break;
+                }
+                let verb = command.split_whitespace().next().unwrap_or("");
+                match verb {
+                    "USER" => writer
+                        .write_all(b"331 password required\r\n")
+                        .await
+                        .unwrap(),
+                    "PASS" => writer.write_all(b"230 logged in\r\n").await.unwrap(),
+                    "TYPE" => writer.write_all(b"200 binary mode\r\n").await.unwrap(),
+                    "PASV" => {
+                        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                        let data_port = listener.local_addr().unwrap().port();
+                        writer
+                            .write_all(
+                                format!(
+                                    "227 Entering Passive Mode (127,0,0,1,{},{})\r\n",
+                                    data_port / 256,
+                                    data_port % 256
+                                )
+                                .as_bytes(),
+                            )
+                            .await
+                            .unwrap();
+                        passive = Some(listener);
+                    }
+                    "RETR" => {
+                        writer
+                            .write_all(b"150 opening data connection\r\n")
+                            .await
+                            .unwrap();
+                        let (mut data, _) = passive.take().unwrap().accept().await.unwrap();
+                        data.write_all(b"payload").await.unwrap();
+                        data.shutdown().await.unwrap();
+                        drop(data);
+                        writer
+                            .write_all(b"451 transfer completion failed\r\n")
+                            .await
+                            .unwrap();
+                    }
+                    _ => panic!("unexpected FTP command: {command:?}"),
+                }
+            }
+        });
+        port
+    }
+
+    #[tokio::test]
+    async fn reader_reports_the_final_transfer_reply_before_eof() {
+        let port = spawn_server_with_failed_retr_completion().await;
+        let pool = FtpPool::new(
+            FtpConfig {
+                host: "127.0.0.1".into(),
+                port,
+                username: "anonymous".into(),
+                password: Zeroizing::new(String::new()),
+                tls: FtpTlsMode::None,
+                passive: true,
+            },
+            2,
+        );
+
+        let mut reader = pool.open_read("/file", 0).await.unwrap();
+        let mut bytes = Vec::new();
+        let error = reader.read_to_end(&mut bytes).await.unwrap_err();
+
+        assert_eq!(bytes, b"payload");
+        assert!(error.to_string().contains("451"), "{error}");
     }
 }
