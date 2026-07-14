@@ -78,6 +78,23 @@ impl VaultManager {
         Ok(())
     }
 
+    /// Move the file, then commit an external pointer to the resulting path.
+    /// If that pointer cannot be persisted, keep using the original path in
+    /// memory; the newly written file remains only as a recoverable backup.
+    pub fn set_path_transactional(
+        &mut self,
+        path: PathBuf,
+        persist: impl FnOnce(&Path) -> AppResult<()>,
+    ) -> AppResult<()> {
+        let previous = self.path.clone();
+        self.set_path(path)?;
+        if let Err(error) = persist(&self.path) {
+            self.path = previous;
+            return Err(error);
+        }
+        Ok(())
+    }
+
     /// Stable identifier for keychain storage — the canonical vault path.
     pub fn vault_id(&self) -> String {
         self.path.to_string_lossy().to_string()
@@ -419,5 +436,21 @@ mod tests {
         let slashed = format!("{}/", dir.path().join("slashdir").display());
         mgr.set_path(PathBuf::from(slashed)).unwrap();
         assert!(dir.path().join("slashdir").join("moved.serverus").is_file());
+    }
+
+    #[test]
+    fn set_path_rolls_runtime_pointer_back_when_config_persist_fails() {
+        let (dir, mut mgr) = temp_vault();
+        mgr.create("pw", test_kdf()).unwrap();
+        let original = mgr.path().to_path_buf();
+        let target = dir.path().join("new.serverus");
+
+        let result = mgr.set_path_transactional(target.clone(), |_| {
+            Err(AppError::Other("config write failed".into()))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(mgr.path(), original);
+        assert!(target.is_file(), "the staged copy remains recoverable");
     }
 }

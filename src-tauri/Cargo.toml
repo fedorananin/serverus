@@ -85,6 +85,7 @@ windows = { version = "0.62", features = [
     "Security_Credentials",
     "Security_Cryptography",
     "Storage_Streams",
+    "Win32_Storage_FileSystem",
 ] }
 hkdf = "0.12"
 sha2 = "0.10"
