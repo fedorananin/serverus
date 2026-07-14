@@ -1375,18 +1375,330 @@ pub async fn local_copy_into(paths: Vec<String>, dest_dir: String) -> ApiResult<
 }
 
 fn copy_recursive(src: &std::path::Path, dest: &std::path::Path) -> AppResult<()> {
+    let mut pending_permissions = Vec::new();
+    copy_recursive_inner(src, dest, &mut pending_permissions)?;
+
+    for (path, permissions, _) in &pending_permissions {
+        if let Err(error) = std::fs::set_permissions(path, permissions.clone()) {
+            make_partial_copy_removable(&pending_permissions);
+            if let Err(cleanup_error) = remove_partial_copy(dest) {
+                return Err(AppError::Other(format!(
+                    "failed to apply copied permissions: {error}; failed to remove partial copy: {cleanup_error}"
+                )));
+            }
+            return Err(error.into());
+        }
+    }
+
+    Ok(())
+}
+
+type PendingPermission = (std::path::PathBuf, std::fs::Permissions, bool);
+
+fn make_partial_copy_removable(pending_permissions: &[PendingPermission]) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        for (path, _, is_directory) in pending_permissions.iter().rev() {
+            let mode = if *is_directory { 0o700 } else { 0o600 };
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode));
+        }
+    }
+    #[cfg(windows)]
+    for (path, permissions, _) in pending_permissions.iter().rev() {
+        let mut writable_permissions = permissions.clone();
+        clear_windows_readonly(&mut writable_permissions);
+        let _ = std::fs::set_permissions(path, writable_permissions);
+    }
+}
+
+#[cfg(windows)]
+#[allow(clippy::permissions_set_readonly_false)]
+fn clear_windows_readonly(permissions: &mut std::fs::Permissions) {
+    // Windows exposes a read-only file attribute rather than Unix mode bits,
+    // so clearing it does not make the partial copy world-writable.
+    permissions.set_readonly(false);
+}
+
+fn remove_partial_copy(path: &std::path::Path) -> std::io::Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() => std::fs::remove_dir_all(path),
+        Ok(_) => std::fs::remove_file(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+fn copy_recursive_inner(
+    src: &std::path::Path,
+    dest: &std::path::Path,
+    pending_permissions: &mut Vec<PendingPermission>,
+) -> AppResult<()> {
     let meta = std::fs::symlink_metadata(src)?;
+    let source = std::fs::canonicalize(src)?;
+    let dest_parent = dest
+        .parent()
+        .ok_or_else(|| AppError::Other("copy destination has no parent".into()))?;
+    let destination = std::fs::canonicalize(dest_parent)?.join(
+        dest.file_name()
+            .ok_or_else(|| AppError::Other("copy destination has no file name".into()))?,
+    );
+
+    if meta.is_dir() && destination.starts_with(&source) {
+        return Err(AppError::Other(
+            "cannot copy a directory inside the source directory".into(),
+        ));
+    }
+
+    match std::fs::symlink_metadata(dest) {
+        Ok(_) => {
+            return Err(AppError::Other(format!(
+                "{}: already exists",
+                dest.display()
+            )));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+
     if meta.is_dir() {
-        std::fs::create_dir_all(dest)?;
-        for entry in std::fs::read_dir(src)? {
-            let entry = entry?;
-            copy_recursive(&entry.path(), &dest.join(entry.file_name()))?;
+        #[cfg(unix)]
+        let builder = {
+            use std::os::unix::fs::DirBuilderExt;
+
+            let mut builder = std::fs::DirBuilder::new();
+            builder.mode(0o700);
+            builder
+        };
+        #[cfg(not(unix))]
+        let builder = std::fs::DirBuilder::new();
+        builder.create(dest).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                AppError::Other(format!("{}: already exists", dest.display()))
+            } else {
+                error.into()
+            }
+        })?;
+
+        let copy_result = (|| -> AppResult<()> {
+            for entry in std::fs::read_dir(src)? {
+                let entry = entry?;
+                copy_recursive_inner(
+                    &entry.path(),
+                    &dest.join(entry.file_name()),
+                    pending_permissions,
+                )?;
+            }
+            #[cfg(unix)]
+            pending_permissions.push((dest.to_path_buf(), meta.permissions(), true));
+            Ok(())
+        })();
+        if let Err(error) = copy_result {
+            if let Err(cleanup_error) = std::fs::remove_dir_all(dest) {
+                return Err(AppError::Other(format!(
+                    "copy failed: {error}; failed to remove partial copy: {cleanup_error}"
+                )));
+            }
+            return Err(error);
         }
     } else {
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent)?;
+        let mut source_file = std::fs::File::open(src)?;
+        // `src` may be a symlink. Apply the permissions of the file we
+        // actually opened, never the typically world-accessible link mode.
+        let source_permissions = source_file.metadata()?.permissions();
+        let mut destination_options = std::fs::OpenOptions::new();
+        destination_options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            // Private files such as SSH keys must never spend the copy window
+            // with broader umask-derived permissions than their source.
+            destination_options.mode(0o600);
         }
-        std::fs::copy(src, dest)?;
+        let mut destination_file = destination_options.open(dest).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                AppError::Other(format!("{}: already exists", dest.display()))
+            } else {
+                error.into()
+            }
+        })?;
+        let copy_result = (|| -> std::io::Result<()> {
+            std::io::copy(&mut source_file, &mut destination_file)?;
+            destination_file.sync_all()
+        })();
+        drop(destination_file);
+        if let Err(error) = copy_result {
+            if let Err(cleanup_error) = std::fs::remove_file(dest) {
+                return Err(AppError::Other(format!(
+                    "copy failed: {error}; failed to remove partial copy: {cleanup_error}"
+                )));
+            }
+            return Err(error.into());
+        }
+        pending_permissions.push((dest.to_path_buf(), source_permissions, false));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::copy_recursive;
+
+    #[test]
+    fn local_copy_refuses_to_overwrite_an_existing_file() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source.txt");
+        let destination = root.path().join("destination.txt");
+        std::fs::write(&source, "new contents").unwrap();
+        std::fs::write(&destination, "keep me").unwrap();
+
+        let error = copy_recursive(&source, &destination).unwrap_err();
+
+        assert!(error.to_string().contains("already exists"));
+        assert_eq!(std::fs::read_to_string(destination).unwrap(), "keep me");
+    }
+
+    #[test]
+    fn local_copy_refuses_to_overwrite_an_existing_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let destination = root.path().join("destination");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::create_dir(&destination).unwrap();
+        std::fs::write(destination.join("keep.txt"), "keep me").unwrap();
+
+        let error = copy_recursive(&source, &destination).unwrap_err();
+
+        assert!(error.to_string().contains("already exists"));
+        assert_eq!(
+            std::fs::read_to_string(destination.join("keep.txt")).unwrap(),
+            "keep me"
+        );
+    }
+
+    #[test]
+    fn local_copy_refuses_to_copy_a_directory_into_its_descendant() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(source.join("file.txt"), "contents").unwrap();
+        let destination = source.join("nested");
+
+        let error = copy_recursive(&source, &destination).unwrap_err();
+
+        assert!(error.to_string().contains("inside the source directory"));
+        assert!(!destination.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_copy_detects_a_descendant_through_a_symlinked_parent() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let alias = root.path().join("source-alias");
+        std::fs::create_dir(&source).unwrap();
+        symlink(&source, &alias).unwrap();
+        let destination = alias.join("nested");
+
+        let error = copy_recursive(&source, &destination).unwrap_err();
+
+        assert!(error.to_string().contains("inside the source directory"));
+        assert!(!source.join("nested").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_copy_refuses_to_replace_a_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source.txt");
+        let target = root.path().join("target.txt");
+        let destination = root.path().join("destination.txt");
+        std::fs::write(&source, "new contents").unwrap();
+        std::fs::write(&target, "keep me").unwrap();
+        symlink(&target, &destination).unwrap();
+
+        let error = copy_recursive(&source, &destination).unwrap_err();
+
+        assert!(error.to_string().contains("already exists"));
+        assert_eq!(std::fs::read_to_string(target).unwrap(), "keep me");
+    }
+
+    #[test]
+    fn local_copy_copies_a_directory_tree() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let destination = root.path().join("destination");
+        std::fs::create_dir_all(source.join("nested")).unwrap();
+        std::fs::write(source.join("nested/file.txt"), "contents").unwrap();
+
+        copy_recursive(&source, &destination).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(destination.join("nested/file.txt")).unwrap(),
+            "contents"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_copy_uses_followed_file_permissions_for_a_symlink_source() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("private-key");
+        let source = root.path().join("private-key-link");
+        let destination = root.path().join("copy");
+        std::fs::write(&target, "secret").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600)).unwrap();
+        symlink(&target, &source).unwrap();
+
+        copy_recursive(&source, &destination).unwrap();
+
+        assert_eq!(
+            std::fs::metadata(destination).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_directory_copy_removes_the_partial_destination() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let destination = root.path().join("destination");
+        std::fs::create_dir(&source).unwrap();
+        symlink(source.join("missing"), source.join("dangling")).unwrap();
+
+        assert!(copy_recursive(&source, &destination).is_err());
+
+        assert!(!destination.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_directory_copy_removes_restricted_subdirectories() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let destination = root.path().join("destination");
+        let restricted = source.join("a-restricted");
+        std::fs::create_dir_all(&restricted).unwrap();
+        std::fs::write(restricted.join("copied.txt"), "contents").unwrap();
+        std::fs::set_permissions(&restricted, std::fs::Permissions::from_mode(0o500)).unwrap();
+        symlink(source.join("missing"), source.join("z-dangling")).unwrap();
+
+        let result = copy_recursive(&source, &destination);
+        std::fs::set_permissions(&restricted, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        assert!(result.is_err());
+        assert!(!destination.exists());
+    }
 }
