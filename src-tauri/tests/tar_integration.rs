@@ -28,9 +28,7 @@ async fn connect(sshd: &TestSshd) -> Arc<SshSession> {
         .await
         .unwrap()
     {
-        ConnectOutcome::Connected(handle) => Arc::new(SshSession {
-            handle: tokio::sync::Mutex::new(handle),
-        }),
+        ConnectOutcome::Connected(transport) => Arc::new(SshSession::new(transport)),
         _ => panic!(),
     }
 }

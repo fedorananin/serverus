@@ -31,6 +31,7 @@ use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
 use crate::session::remote_fs::{join_remote, BoxRead, BoxWrite, RemoteEntry, RemoteFs};
+use crate::session::LifecycleCleanup;
 use crate::vault::model::{Connection, S3UploadAcl};
 
 /// Multipart part size. Must be ≥ 5 MiB (S3 minimum for non-final parts).
@@ -98,6 +99,7 @@ pub struct S3Fs {
     /// ACL for uploads; runtime-switchable via the pane toggle. `Ask` acts
     /// like `Private` — the UI resolves the answer before enqueueing.
     upload_acl: RwLock<S3UploadAcl>,
+    cleanup: Option<LifecycleCleanup>,
 }
 
 fn sdk_err<E>(op: &str, e: SdkError<E, aws_sdk_s3::config::http::HttpResponse>) -> AppError
@@ -184,6 +186,14 @@ pub struct S3AclTarget {
 
 impl S3Fs {
     pub fn new(config: S3Config) -> Arc<S3Fs> {
+        Self::new_inner(config, None)
+    }
+
+    pub(crate) fn new_in_lifecycle(config: S3Config, cleanup: LifecycleCleanup) -> Arc<S3Fs> {
+        Self::new_inner(config, Some(cleanup))
+    }
+
+    fn new_inner(config: S3Config, cleanup: Option<LifecycleCleanup>) -> Arc<S3Fs> {
         let credentials = Credentials::new(
             config.access_key.clone(),
             config.secret_key.to_string(),
@@ -209,6 +219,7 @@ impl S3Fs {
             bucket: config.bucket,
             region: config.region,
             upload_acl: RwLock::new(config.upload_acl),
+            cleanup,
         })
     }
 
@@ -768,6 +779,7 @@ impl RemoteFs for S3Fs {
             bucket,
             key,
             self.upload_canned_acl(),
+            self.cleanup.clone(),
         )))
     }
 
@@ -781,6 +793,7 @@ impl RemoteFs for S3Fs {
             bucket,
             key,
             None,
+            self.cleanup.clone(),
         )))
     }
 
@@ -923,10 +936,17 @@ struct AbortSlot {
 pub struct S3Writer {
     state: WriterState,
     abort: Arc<AbortSlot>,
+    cleanup: Option<LifecycleCleanup>,
 }
 
 impl S3Writer {
-    fn new(client: Client, bucket: String, key: String, acl: Option<ObjectCannedAcl>) -> S3Writer {
+    fn new(
+        client: Client,
+        bucket: String,
+        key: String,
+        acl: Option<ObjectCannedAcl>,
+        cleanup: Option<LifecycleCleanup>,
+    ) -> S3Writer {
         let abort = Arc::new(AbortSlot {
             client: client.clone(),
             bucket: bucket.clone(),
@@ -946,6 +966,7 @@ impl S3Writer {
                 buf: Vec::new(),
             })),
             abort,
+            cleanup,
         }
     }
 
@@ -1038,21 +1059,120 @@ impl AsyncWrite for S3Writer {
 
 impl Drop for S3Writer {
     fn drop(&mut self) {
+        // Cancel any in-flight part/completion request before starting the
+        // abort request for the same multipart upload.
+        drop(std::mem::replace(&mut self.state, WriterState::Done));
         // A multipart upload that never completed leaves billable orphaned
         // parts — abort it in the background.
         let upload_id = self.abort.upload_id.lock().unwrap().take();
         if let Some(upload_id) = upload_id {
             let slot = self.abort.clone();
-            tokio::spawn(async move {
-                let _ = slot
+            let abort = async move {
+                let request = slot
                     .client
                     .abort_multipart_upload()
                     .bucket(&slot.bucket)
                     .key(&slot.key)
                     .upload_id(upload_id)
-                    .send()
-                    .await;
-            });
+                    .send();
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(5), request).await;
+            };
+            let abort = if let Some(cleanup) = &self.cleanup {
+                match cleanup.try_spawn(abort) {
+                    Ok(()) => return,
+                    Err(abort) => abort,
+                }
+            } else {
+                abort
+            };
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                runtime.spawn(abort);
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    use super::{S3Config, S3Fs, S3Writer};
+    use crate::session::lifecycle::LifecycleGate;
+    use crate::vault::model::S3UploadAcl;
+
+    #[tokio::test]
+    async fn multipart_abort_stays_in_the_session_close_barrier() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (request_started, request_started_rx) = tokio::sync::oneshot::channel();
+        let (release_response, release_response_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0u8; 1024];
+            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                let read = socket.read(&mut buffer).await.unwrap();
+                assert_ne!(read, 0, "client closed before sending abort request");
+                request.extend_from_slice(&buffer[..read]);
+            }
+            let request = String::from_utf8_lossy(&request);
+            assert!(request.starts_with("DELETE "), "{request}");
+            assert!(request.contains("uploadId=upload-id"), "{request}");
+            let _ = request_started.send(());
+            let _ = release_response_rx.await;
+            socket
+                .write_all(
+                    b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .await
+                .unwrap();
+        });
+
+        let lifecycle = Arc::new(LifecycleGate::default());
+        let operation = lifecycle.try_begin_operation().unwrap();
+        let fs = S3Fs::new_in_lifecycle(
+            S3Config {
+                endpoint: format!("http://{address}"),
+                region: "us-east-1".into(),
+                access_key: "access".into(),
+                secret_key: zeroize::Zeroizing::new("secret".into()),
+                bucket: Some("bucket".into()),
+                path_style: true,
+                upload_acl: S3UploadAcl::Private,
+            },
+            lifecycle.cleanup(),
+        );
+        let writer = S3Writer::new(
+            fs.client.clone(),
+            "bucket".into(),
+            "key".into(),
+            None,
+            fs.cleanup.clone(),
+        );
+        *writer.abort.upload_id.lock().unwrap() = Some("upload-id".into());
+
+        let close = tokio::spawn({
+            let lifecycle = lifecycle.clone();
+            async move { lifecycle.begin_close().await }
+        });
+        operation.cancelled().await;
+        drop(writer);
+        drop(operation);
+        tokio::time::timeout(Duration::from_secs(1), request_started_rx)
+            .await
+            .expect("multipart abort request did not start")
+            .unwrap();
+        assert!(!close.is_finished());
+
+        release_response.send(()).unwrap();
+        let guard = tokio::time::timeout(Duration::from_secs(1), close)
+            .await
+            .expect("session close did not wait for multipart abort")
+            .unwrap();
+        guard.finish().await;
+        server.await.unwrap();
     }
 }

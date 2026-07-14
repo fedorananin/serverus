@@ -30,8 +30,51 @@ pub struct HostKeyIssue {
 }
 
 pub enum ConnectOutcome {
-    Connected(Handle<ClientHandler>),
+    Connected(SshTransportChain),
     HostKeyPrompt(Box<HostKeyIssue>),
+}
+
+/// Every SSH transport in a jump-host chain, ordered root to target.
+pub struct SshTransportChain {
+    handles: Vec<Handle<ClientHandler>>,
+}
+
+impl SshTransportChain {
+    fn leaf(&self) -> AppResult<&Handle<ClientHandler>> {
+        self.handles
+            .last()
+            .ok_or_else(|| AppError::Connect("SSH transport is closed".into()))
+    }
+
+    pub async fn channel_open_session(
+        &self,
+    ) -> Result<russh::Channel<russh::client::Msg>, russh::Error> {
+        self.leaf()
+            .map_err(|_| russh::Error::SendError)?
+            .channel_open_session()
+            .await
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.handles.last().is_none_or(Handle::is_closed)
+    }
+
+    /// Stop and join every transport from the target back to the root jump
+    /// host. Awaiting the Handle futures is the protocol teardown barrier.
+    pub async fn disconnect_and_wait(mut self) -> AppResult<()> {
+        while let Some(mut handle) = self.handles.pop() {
+            // A send failure means the transport receiver is already closed;
+            // the Handle future below is still the authoritative join barrier.
+            let _ = handle
+                .disconnect(russh::Disconnect::ByApplication, "", "en")
+                .await;
+            // Any result means the owned transport task was joined and its
+            // stream was shut down. Teardown must continue through every root
+            // even when the peer had already closed or a protocol error won.
+            let _ = (&mut handle).await;
+        }
+        Ok(())
+    }
 }
 
 /// russh event handler: verifies the server key against the vault-stored
@@ -126,10 +169,10 @@ pub async fn connect_chain_with_progress(
     progress: &(dyn Fn(String) + Send + Sync),
 ) -> AppResult<ConnectOutcome> {
     assert!(!chain.is_empty());
-    let mut previous: Option<Handle<ClientHandler>> = None;
+    let mut handles: Vec<Handle<ClientHandler>> = Vec::with_capacity(chain.len());
 
     for hop in chain {
-        progress(if previous.is_none() {
+        progress(if handles.is_empty() {
             format!("Connecting to {}:{}…", hop.host, hop.port)
         } else {
             format!(
@@ -143,7 +186,7 @@ pub async fn connect_chain_with_progress(
             seen: seen.clone(),
         };
 
-        let connected = match &previous {
+        let connected = match handles.last() {
             None => {
                 russh::client::connect(client_config(), (hop.host.as_str(), hop.port), handler)
                     .await
@@ -151,8 +194,14 @@ pub async fn connect_chain_with_progress(
             Some(bastion) => {
                 let channel = bastion
                     .channel_open_direct_tcpip(hop.host.clone(), hop.port as u32, "127.0.0.1", 0)
-                    .await
-                    .map_err(|e| AppError::Connect(format!("jump channel: {e}")))?;
+                    .await;
+                let channel = match channel {
+                    Ok(channel) => channel,
+                    Err(error) => {
+                        let _ = SshTransportChain { handles }.disconnect_and_wait().await;
+                        return Err(AppError::Connect(format!("jump channel: {error}")));
+                    }
+                };
                 russh::client::connect_stream(client_config(), channel.into_stream(), handler).await
             }
         };
@@ -162,18 +211,22 @@ pub async fn connect_chain_with_progress(
             Err(e) => {
                 // An unknown/changed host key surfaces as UnknownKey; build
                 // the interactive prompt payload from the recorded key.
-                if let Some(seen_key) = seen.lock().unwrap().take() {
+                let seen_key = { seen.lock().unwrap().take() };
+                if let Some(seen_key) = seen_key {
                     if matches!(e, russh::Error::UnknownKey) {
-                        return Ok(ConnectOutcome::HostKeyPrompt(Box::new(HostKeyIssue {
+                        let issue = HostKeyIssue {
                             host: hop.host.clone(),
                             port: hop.port,
                             algorithm: seen_key.algorithm().to_string(),
                             fingerprint: seen_key.fingerprint(ssh_key::HashAlg::Sha256).to_string(),
                             key_line: key_line(&seen_key),
                             changed: hop.known_host_line.is_some(),
-                        })));
+                        };
+                        let _ = SshTransportChain { handles }.disconnect_and_wait().await;
+                        return Ok(ConnectOutcome::HostKeyPrompt(Box::new(issue)));
                     }
                 }
+                let _ = SshTransportChain { handles }.disconnect_and_wait().await;
                 return Err(AppError::Connect(format!("{}:{}: {e}", hop.host, hop.port)));
             }
         };
@@ -182,11 +235,15 @@ pub async fn connect_chain_with_progress(
             "Authenticating as {}@{}…",
             hop.auth.username, hop.host
         ));
-        authenticate(&mut handle, &hop.auth).await?;
-        previous = Some(handle);
+        if let Err(error) = authenticate(&mut handle, &hop.auth).await {
+            handles.push(handle);
+            let _ = SshTransportChain { handles }.disconnect_and_wait().await;
+            return Err(error);
+        }
+        handles.push(handle);
     }
 
-    Ok(ConnectOutcome::Connected(previous.unwrap()))
+    Ok(ConnectOutcome::Connected(SshTransportChain { handles }))
 }
 
 /// Try the configured methods in the fixed order agent → key → password
@@ -326,17 +383,69 @@ pub fn shellexpand_home(path: &str) -> String {
 
 /// A live SSH session shared by terminal channels, SFTP and tunnels.
 pub struct SshSession {
-    pub handle: AsyncMutex<Handle<ClientHandler>>,
+    transport: AsyncMutex<Option<SshTransportChain>>,
 }
 
 impl SshSession {
+    pub fn new(transport: SshTransportChain) -> Self {
+        Self {
+            transport: AsyncMutex::new(Some(transport)),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn disconnected_for_test() -> Self {
+        Self {
+            transport: AsyncMutex::new(None),
+        }
+    }
+
+    pub async fn is_closed(&self) -> bool {
+        self.transport
+            .lock()
+            .await
+            .as_ref()
+            .is_none_or(SshTransportChain::is_closed)
+    }
+
+    pub async fn channel_open_session(
+        &self,
+    ) -> Result<russh::Channel<russh::client::Msg>, russh::Error> {
+        let transport = self.transport.lock().await;
+        let transport = transport.as_ref().ok_or(russh::Error::SendError)?;
+        transport.channel_open_session().await
+    }
+
+    pub async fn channel_open_direct_tcpip(
+        &self,
+        host: String,
+        port: u32,
+        originator_host: String,
+        originator_port: u32,
+    ) -> Result<russh::Channel<russh::client::Msg>, russh::Error> {
+        let transport = self.transport.lock().await;
+        let leaf = transport
+            .as_ref()
+            .ok_or(russh::Error::SendError)?
+            .leaf()
+            .map_err(|_| russh::Error::SendError)?;
+        leaf.channel_open_direct_tcpip(host, port, originator_host, originator_port)
+            .await
+    }
+
+    pub async fn disconnect_and_wait(&self) -> AppResult<()> {
+        let transport = self.transport.lock().await.take();
+        match transport {
+            Some(transport) => transport.disconnect_and_wait().await,
+            None => Ok(()),
+        }
+    }
+
     /// Run a command and report whether it exited 0 (used e.g. for the
     /// `command -v tar` capability probe, SPEC §6.2).
     pub async fn exec_check(&self, cmd: &str) -> AppResult<bool> {
         let channel = {
-            let handle = self.handle.lock().await;
-            handle
-                .channel_open_session()
+            self.channel_open_session()
                 .await
                 .map_err(|e| AppError::Connect(format!("exec channel: {e}")))?
         };

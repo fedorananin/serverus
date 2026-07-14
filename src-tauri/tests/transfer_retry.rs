@@ -180,3 +180,22 @@ async fn persistent_failures_stop_after_the_retry_budget() {
     tokio::time::sleep(Duration::from_secs(5)).await;
     assert_eq!(fs.open_write_calls.load(Ordering::SeqCst), 6);
 }
+
+#[tokio::test]
+async fn clearing_a_session_cancels_its_pending_auto_retry() {
+    let remote = tempfile::tempdir().unwrap();
+    let local = tempfile::tempdir().unwrap();
+    std::fs::write(local.path().join("photo.jpg"), b"x").unwrap();
+
+    let fs = FlakyFs::new(remote.path().to_path_buf(), 1);
+    let manager = Arc::new(TransferManager::default());
+    upload_one(&manager, fs.clone(), &local.path().join("photo.jpg")).await;
+    wait_for_state(&manager, TransferState::Error).await;
+    assert_eq!(fs.open_write_calls.load(Ordering::SeqCst), 1);
+
+    manager.clear_session("session").await;
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+
+    assert_eq!(fs.open_write_calls.load(Ordering::SeqCst), 1);
+    assert!(manager.snapshot().0.is_empty());
+}
