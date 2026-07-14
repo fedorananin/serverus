@@ -446,11 +446,13 @@ pub async fn vault_set_path(state: State<'_, AppState>, path: String) -> ApiResu
             return Err(AppError::VaultLocked);
         }
         let old_id = mgr.vault_id();
-        mgr.set_path(local_fs::expand(&path))?;
-        // Persist the path the vault actually ended up at — set_path may
-        // have appended the file name when given a folder.
-        crate::app_config::save(&crate::app_config::AppConfig {
-            vault_path: Some(mgr.vault_id()),
+        mgr.set_path_transactional(local_fs::expand(&path), |resolved| {
+            // Persist the path the vault actually ended up at — set_path may
+            // have appended the file name when given a folder.
+            crate::app_config::save(&crate::app_config::AppConfig {
+                vault_path: Some(resolved.to_string_lossy().into_owned()),
+            })?;
+            Ok(())
         })?;
         // Quick-unlock entries are keyed by path — move them along.
         if mgr.payload()?.settings.security.touch_id && quick.is_available() {
@@ -467,27 +469,75 @@ pub async fn vault_set_path(state: State<'_, AppState>, path: String) -> ApiResu
 /// An existing file gets the unlock form, a fresh path gets the create
 /// form. The current vault is locked (secrets zeroized) before switching;
 /// nothing is moved or rewritten on disk.
+fn switch_vault_manager(
+    current: &mut crate::vault::VaultManager,
+    mut target: std::path::PathBuf,
+    persist: impl FnOnce(&crate::app_config::AppConfig) -> std::io::Result<()>,
+) -> AppResult<()> {
+    // A folder means "the vault file inside it", keeping the file name.
+    if target.is_dir() {
+        if let Some(name) = current.path().file_name() {
+            target = target.join(name);
+        }
+    }
+
+    let next = crate::vault::VaultManager::new(target);
+    // Keep the selected and unlocked runtime vault intact through the only
+    // fallible step. Replacing the manager is infallible after persistence.
+    persist(&crate::app_config::AppConfig {
+        vault_path: Some(next.vault_id()),
+    })?;
+    current.lock();
+    *current = next;
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn vault_switch_path(state: State<'_, AppState>, path: String) -> ApiResult<()> {
     let vault = state.vault.clone();
     blocking(move || {
-        let mut target = local_fs::expand(&path);
         let mut mgr = vault.lock().unwrap();
-        // A folder means "the vault file inside it", keeping the file name.
-        if target.is_dir() {
-            if let Some(name) = mgr.path().file_name() {
-                target = target.join(name);
-            }
-        }
-        mgr.lock();
-        *mgr = crate::vault::VaultManager::new(target);
-        crate::app_config::save(&crate::app_config::AppConfig {
-            vault_path: Some(mgr.vault_id()),
-        })?;
-        Ok(())
+        switch_vault_manager(&mut mgr, local_fs::expand(&path), crate::app_config::save)
     })
     .await
+}
+
+#[cfg(test)]
+mod vault_switch_path_tests {
+    use super::switch_vault_manager;
+    use crate::vault::format::KdfParams;
+    use crate::vault::VaultManager;
+
+    #[test]
+    fn config_failure_preserves_the_selected_unlocked_vault() {
+        let directory = tempfile::tempdir().unwrap();
+        let original = directory.path().join("original.serverus");
+        let target = directory.path().join("other.serverus");
+        let mut manager = VaultManager::new(original.clone());
+        manager
+            .create(
+                "password",
+                KdfParams {
+                    m_cost_kib: 8 * 1024,
+                    t_cost: 1,
+                    p_cost: 1,
+                },
+            )
+            .unwrap();
+
+        let result = switch_vault_manager(&mut manager, target, |_| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::StorageFull,
+                "simulated config failure",
+            ))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(manager.path(), original);
+        assert!(manager.is_unlocked());
+        assert!(manager.payload().is_ok());
+    }
 }
 
 // ---------------------------------------------------------------------------
