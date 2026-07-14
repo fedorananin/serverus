@@ -197,9 +197,14 @@ impl VaultManager {
         let header = self.header.as_ref().ok_or(AppError::VaultLocked)?;
         format::unwrap_dek(header, current)?;
         let dek = self.dek.as_ref().ok_or(AppError::VaultLocked)?;
+        let payload = self.payload.as_ref().ok_or(AppError::VaultLocked)?;
         let kdf = header.kdf;
-        self.header = Some(format::wrap_new(new, dek, kdf)?);
-        self.save()
+        let next_header = format::wrap_new(new, dek, kdf)?;
+        let bytes = seal_payload(&next_header, dek, payload)?;
+
+        write_password_change_atomic(&self.path, &bytes)?;
+        self.header = Some(next_header);
+        Ok(())
     }
 
     /// Serialize, encrypt and write the vault atomically: temp file + rename,
@@ -213,14 +218,22 @@ impl VaultManager {
     fn save_payload(&self, payload: &VaultPayload) -> AppResult<()> {
         let header = self.header.as_ref().ok_or(AppError::VaultLocked)?;
         let dek = self.dek.as_ref().ok_or(AppError::VaultLocked)?;
-        let json = Zeroizing::new(
-            serde_json::to_vec(payload)
-                .map_err(|e| AppError::Other(format!("payload serialization failed: {e}")))?,
-        );
-        let bytes = format::seal(header, dek, &json)?;
+        let bytes = seal_payload(header, dek, payload)?;
         write_atomic(&self.path, &bytes)?;
         Ok(())
     }
+}
+
+fn seal_payload(
+    header: &VaultHeader,
+    dek: &[u8; 32],
+    payload: &VaultPayload,
+) -> AppResult<Vec<u8>> {
+    let json = Zeroizing::new(
+        serde_json::to_vec(payload)
+            .map_err(|e| AppError::Other(format!("payload serialization failed: {e}")))?,
+    );
+    format::seal(header, dek, &json)
 }
 
 fn bak_path(path: &Path) -> PathBuf {
@@ -230,17 +243,30 @@ fn bak_path(path: &Path) -> PathBuf {
 }
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> AppResult<()> {
+    // One overwritable .bak of the previous version.
+    if path.exists() {
+        let previous = fs::read(path)?;
+        replace_atomic(&bak_path(path), &previous)?;
+    }
+
+    replace_atomic(path, bytes)
+}
+
+/// Rekey both recoverable copies without ever leaving a partially-written
+/// vault. If interrupted between the two renames, the primary still opens
+/// with the old password and the backup already opens with the new one.
+fn write_password_change_atomic(path: &Path, bytes: &[u8]) -> AppResult<()> {
+    replace_atomic(&bak_path(path), bytes)?;
+    replace_atomic(path, bytes)
+}
+
+fn replace_atomic(path: &Path, bytes: &[u8]) -> AppResult<()> {
     let dir = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
     fs::create_dir_all(&dir)?;
-
-    // One overwritable .bak of the previous version.
-    if path.exists() {
-        fs::copy(path, bak_path(path))?;
-    }
 
     let mut tmp_name = path.file_name().unwrap_or_default().to_os_string();
     tmp_name.push(".tmp");
@@ -353,6 +379,63 @@ mod tests {
         mgr.lock();
         assert!(mgr.unlock_with_password("old").is_err());
         mgr.unlock_with_password("new").unwrap();
+        assert!(mgr.payload().unwrap().connections.contains_key("c1"));
+    }
+
+    #[test]
+    fn change_password_rekeys_primary_and_backup() {
+        let (_dir, mut mgr) = temp_vault();
+        mgr.create("old", test_kdf()).unwrap();
+        mgr.with_payload(|payload| {
+            payload.connections.insert("c1".into(), sample_connection());
+            Ok(())
+        })
+        .unwrap();
+
+        mgr.change_password("old", "new").unwrap();
+
+        for path in [mgr.path().to_path_buf(), bak_path(mgr.path())] {
+            let mut copy = VaultManager::new(path);
+            assert!(matches!(
+                copy.unlock_with_password("old"),
+                Err(AppError::InvalidPassword)
+            ));
+            copy.unlock_with_password("new").unwrap();
+            assert!(copy.payload().unwrap().connections.contains_key("c1"));
+        }
+    }
+
+    #[test]
+    fn change_password_failure_keeps_the_old_header_and_primary_usable() {
+        let (dir, mut mgr) = temp_vault();
+        mgr.create("old", test_kdf()).unwrap();
+        mgr.with_payload(|payload| {
+            payload.connections.insert("c1".into(), sample_connection());
+            Ok(())
+        })
+        .unwrap();
+        let primary_path = mgr.path().to_path_buf();
+        let primary_before = fs::read(&primary_path).unwrap();
+
+        // The backup replacement can succeed, but the primary replacement
+        // cannot replace a directory. This exercises the partial-commit edge.
+        let blocked_path = dir.path().join("blocked.serverus");
+        fs::create_dir(&blocked_path).unwrap();
+        mgr.path = blocked_path.clone();
+
+        assert!(mgr.change_password("old", "new").is_err());
+        assert!(mgr.is_unlocked());
+        assert_eq!(fs::read(&primary_path).unwrap(), primary_before);
+        assert!(format::unwrap_dek(mgr.header.as_ref().unwrap(), "old").is_ok());
+        assert!(format::unwrap_dek(mgr.header.as_ref().unwrap(), "new").is_err());
+
+        let mut backup = VaultManager::new(bak_path(&blocked_path));
+        backup.unlock_with_password("new").unwrap();
+        assert!(backup.payload().unwrap().connections.contains_key("c1"));
+
+        mgr.path = primary_path;
+        mgr.lock();
+        mgr.unlock_with_password("old").unwrap();
         assert!(mgr.payload().unwrap().connections.contains_key("c1"));
     }
 
