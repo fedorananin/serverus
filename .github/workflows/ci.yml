@@ -50,6 +50,9 @@ jobs:
       - name: Frontend type check
         run: npm run check
 
+      - name: Frontend tests
+        run: npm run test
+
       - name: Rustfmt
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
