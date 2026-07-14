@@ -9,12 +9,11 @@ manager and tunnels, behind a single encrypted vault unlocked with Touch ID.**
 
 A native macOS connection manager. Built with Tauri 2, a Rust backend and a Svelte 5 front end.
 
-[![Written by AI — Claude Fable 5](https://img.shields.io/badge/written%20by-AI%20%C2%B7%20Claude%20Fable%205-8A2BE2)](#written-entirely-by-ai)
 ![Platform](https://img.shields.io/badge/platform-macOS%2012%2B%20%C2%B7%20Windows%20%26%20Linux%20(experimental)-black)
 ![Built with Rust](https://img.shields.io/badge/backend-Rust-orange)
 ![Built with Tauri](https://img.shields.io/badge/shell-Tauri%202-24C8DB)
 ![Frontend Svelte](https://img.shields.io/badge/frontend-Svelte%205-FF3E00)
-![Version](https://img.shields.io/badge/version-1.1.0-brightgreen)
+![Version](https://img.shields.io/badge/version-1.1.1-brightgreen)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
@@ -72,12 +71,18 @@ real servers).
 
 ## Written entirely by AI
 
-Full disclosure, and honestly part of the point: **every line of Serverus was
-written by [Claude Fable 5](https://claude.com/claude-code).** I have never
-written a single line of **Rust, Tauri or Svelte** in my life — I don't know
-these stacks. I brought the itch and the taste: I described what I wanted, made
-the product decisions, used the app, and reported the bugs; the AI did all the
-actual engineering.
+Full disclosure, and honestly part of the point: **not a single line of
+Serverus was typed by a human.** I have never written a single line of **Rust,
+Tauri or Svelte** in my life — I don't know these stacks. I brought the itch
+and the taste: I described what I wanted, made the product decisions, used the
+app, and reported the bugs; the AI did all the actual engineering.
+
+It started as a one‑model project — [Claude Fable 5](https://claude.com/claude-code)
+wrote the app from the empty directory up. Then a friend
+([@coldrain96](https://github.com/coldrain96)) joined in, brought his own model
+of choice (ChatGPT 5.6 Sol), and landed a large batch of changes. So by now the
+code is a two‑model collaboration, reviewed by two humans who still haven't
+touched the keyboard.
 
 This project is partly a real tool I use every day and partly a demonstration
 of how far that workflow goes. If it changes how much you want to trust the
@@ -417,7 +422,7 @@ uploads installers for all three OSes to a **draft** GitHub Release
 (`.github/workflows/release.yml`):
 
 ```bash
-git tag v1.1.0 && git push origin v1.1.0
+git tag v1.1.1 && git push origin v1.1.1
 ```
 
 Review the draft on the Releases page, then publish. No local builds needed.
