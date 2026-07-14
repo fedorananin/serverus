@@ -29,12 +29,18 @@ impl ListingFs {
         })
     }
 
-    fn directory_with_child(name: &str) -> Arc<Self> {
+    fn directory_with_children(names: &[&str]) -> Arc<Self> {
         Arc::new(Self {
             root: entry("tree", "/tree", true, false),
             listings: HashMap::from([(
                 "/tree".into(),
-                vec![entry(name, &format!("/tree/{name}"), false, false)],
+                names
+                    .iter()
+                    .enumerate()
+                    // Unique remote paths even for duplicate names, so the
+                    // mock's stat() lookup stays unambiguous.
+                    .map(|(i, name)| entry(name, &format!("/tree/{i}-{name}"), false, false))
+                    .collect(),
             )]),
         })
     }
@@ -186,39 +192,111 @@ async fn wait_for_transfer(manager: &TransferManager) {
 }
 
 #[tokio::test]
-async fn recursive_download_rejects_unsafe_child_names() {
-    let destination = tempfile::tempdir().unwrap();
-
+async fn one_attack_shaped_child_name_fails_alone_not_the_tree() {
     for name in [
         ".",
         "..",
         "../../escape.txt",
         "/absolute.txt",
         "nested/file.txt",
-        r"nested\file.txt",
-        "C:drive-relative.txt",
+    ] {
+        let destination = tempfile::tempdir().unwrap();
+        let manager = enqueue(
+            ListingFs::directory_with_children(&[name, "good.txt"]),
+            destination.path(),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{name:?} aborted the whole tree: {e}"));
+        wait_for_transfer(&manager).await;
+
+        let (items, _) = manager.snapshot();
+        assert_eq!(items.len(), 2, "{name:?}");
+        let failed = items
+            .iter()
+            .find(|item| item.state == TransferState::Error)
+            .unwrap_or_else(|| panic!("no failed item for {name:?}"));
+        assert!(failed.error.as_deref().unwrap().contains("unsafe"));
+        assert!(items.iter().any(|item| item.state == TransferState::Done));
+        // The good sibling downloaded; nothing escaped or used the bad name.
+        assert_eq!(
+            std::fs::read(destination.path().join("tree/good.txt")).unwrap(),
+            b"attack"
+        );
+        assert_eq!(
+            std::fs::read_dir(destination.path().join("tree"))
+                .unwrap()
+                .count(),
+            1,
+            "{name:?} left an artifact"
+        );
+    }
+}
+
+#[tokio::test]
+async fn duplicate_local_names_fail_only_the_duplicate() {
+    let destination = tempfile::tempdir().unwrap();
+    let manager = enqueue(
+        ListingFs::directory_with_children(&["dup.txt", "dup.txt"]),
+        destination.path(),
+    )
+    .await
+    .unwrap();
+    wait_for_transfer(&manager).await;
+
+    let (items, _) = manager.snapshot();
+    assert_eq!(items.len(), 2);
+    assert!(items.iter().any(|item| item.state == TransferState::Done));
+    let failed = items
+        .iter()
+        .find(|item| item.state == TransferState::Error)
+        .expect("the colliding entry should fail");
+    assert!(failed
+        .error
+        .as_deref()
+        .unwrap()
+        .contains("already maps to this local name"));
+    assert_eq!(
+        std::fs::read(destination.path().join("tree/dup.txt")).unwrap(),
+        b"attack"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn unix_legal_names_download_verbatim() {
+    // Every one of these is a legal file name on mac/linux; refusing them
+    // (or renaming them) broke the founding recursive-download use case.
+    let names = [
+        "2024-01-01T12:00:00.log",
         "file:stream",
         "CON",
         "aux.txt",
         "trailing.",
         "trailing ",
         "wild*card",
-    ] {
-        let manager = Arc::new(TransferManager::default());
-        let sink: Arc<dyn ProgressSink> = Arc::new(NullSink);
-        let result = manager
-            .enqueue_download(
-                &sink,
-                ListingFs::directory_with_child(name),
-                "session",
-                "/tree",
-                destination.path().to_str().unwrap(),
-                settings(),
-            )
-            .await;
+        r"nested\file.txt",
+        "C:drive-relative.txt",
+    ];
+    let destination = tempfile::tempdir().unwrap();
+    let manager = enqueue(
+        ListingFs::directory_with_children(&names),
+        destination.path(),
+    )
+    .await
+    .unwrap();
+    wait_for_transfer(&manager).await;
 
-        assert!(result.is_err(), "unsafe remote name was accepted: {name:?}");
-        assert!(manager.snapshot().0.is_empty());
+    let (items, _) = manager.snapshot();
+    assert!(
+        items.iter().all(|item| item.state == TransferState::Done),
+        "some legal name failed: {items:?}"
+    );
+    for name in names {
+        assert_eq!(
+            std::fs::read(destination.path().join("tree").join(name)).unwrap(),
+            b"attack",
+            "{name:?} was renamed or skipped"
+        );
     }
 }
 
@@ -226,7 +304,7 @@ async fn recursive_download_rejects_unsafe_child_names() {
 async fn download_rejects_unsafe_top_level_names() {
     let destination = tempfile::tempdir().unwrap();
 
-    for name in ["..", "/absolute.txt", r"C:\absolute.txt"] {
+    for name in ["..", ".", "/absolute.txt", "nested/file.txt"] {
         let result = enqueue(ListingFs::file(name), destination.path()).await;
         assert!(
             result.is_err(),

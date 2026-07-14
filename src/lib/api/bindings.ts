@@ -45,13 +45,6 @@ export const commands = {
 	 *  the old file stays as a manual backup.
 	 */
 	vaultSetPath: (path: string) => typedError<null, ApiError>(__TAURI_INVOKE("vault_set_path", { path })),
-	/**
-	 *  Point the app at a different vault file WITHOUT unlocking anything —
-	 *  available from the lock screen (forgot password, multiple vaults).
-	 *  An existing file gets the unlock form, a fresh path gets the create
-	 *  form. The current vault is locked (secrets zeroized) before switching;
-	 *  nothing is moved or rewritten on disk.
-	 */
 	vaultSwitchPath: (path: string) => typedError<null, ApiError>(__TAURI_INVOKE("vault_switch_path", { path })),
 	/**
 	 *  Open an SSH session. On an unknown or changed host key this fails with
@@ -101,11 +94,6 @@ export const commands = {
 	 *  object under the prefix. Returns the number of objects changed.
 	 */
 	s3SetAcl: (sessionId: string, targets: S3AclTarget[], makePublic: boolean) => typedError<number, ApiError>(__TAURI_INVOKE("s3_set_acl", { sessionId, targets, makePublic })),
-	/**
-	 *  Switch the ACL applied to subsequent uploads: the pane toggle and the
-	 *  "ask" dialog resolve here. Persists the choice in the connection config
-	 *  and applies it to every live session of that connection.
-	 */
 	s3SetUploadAcl: (sessionId: string, mode: S3UploadAcl, persist: boolean) => typedError<{
 	tree: TreeNode[],
 	connections: { [key in string]: PublicConnection },
