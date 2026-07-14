@@ -22,7 +22,7 @@ use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
 use crate::session::remote_fs::{
-    join_remote, parent_remote, BoxRead, BoxWrite, RemoteEntry, RemoteFs,
+    join_remote, parent_remote, replace_file_via_backup, BoxRead, BoxWrite, RemoteEntry, RemoteFs,
 };
 use crate::vault::model::{Connection, FtpTlsMode};
 
@@ -294,6 +294,18 @@ impl RemoteFs for FtpPool {
             self.give_back(conn).await;
         }
         result
+    }
+
+    async fn replace_file(&self, staged: &str, target: &str) -> AppResult<()> {
+        // UNIX-like FTP servers often expose modes through LIST and support
+        // SITE CHMOD. Preserve it when available, but do not make remote edit
+        // depend on this optional FTP extension.
+        if let Ok(entry) = self.stat(target).await {
+            if let Some(mode) = entry.permissions {
+                let _ = self.chmod(staged, mode).await;
+            }
+        }
+        replace_file_via_backup(self, staged, target).await
     }
 
     async fn delete_file(&self, path: &str) -> AppResult<()> {

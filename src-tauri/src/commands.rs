@@ -592,7 +592,7 @@ pub async fn host_key_accept(
 #[tauri::command]
 #[specta::specta]
 pub async fn session_disconnect(state: State<'_, AppState>, session_id: String) -> ApiResult<()> {
-    state.edits.close_session(&session_id);
+    state.edits.close_session(&session_id).await;
     // Queue + history are per-connection: drop them when the tab closes.
     state.transfers.clear_session(&session_id);
     state.sessions.disconnect(&session_id).await;

@@ -9,7 +9,9 @@ use russh_sftp::protocol::{FileAttributes, OpenFlags};
 use tokio::io::AsyncSeekExt;
 
 use crate::error::{AppError, AppResult};
-use crate::session::remote_fs::{join_remote, BoxRead, BoxWrite, RemoteEntry, RemoteFs};
+use crate::session::remote_fs::{
+    join_remote, replace_file_via_backup, BoxRead, BoxWrite, RemoteEntry, RemoteFs,
+};
 use crate::session::ssh::SshSession;
 
 pub struct SftpFs {
@@ -134,6 +136,16 @@ impl RemoteFs for SftpFs {
             .map_err(|e| map_err(from, e))
     }
 
+    async fn replace_file(&self, staged: &str, target: &str) -> AppResult<()> {
+        // Staged uploads get the server's default mode. Preserve the existing
+        // mode before promotion; ownership remains the connected user because
+        // SFTP v3 has no safe non-privileged ownership-copy operation.
+        if let Some(mode) = self.stat(target).await?.permissions {
+            self.chmod(staged, mode).await?;
+        }
+        replace_file_via_backup(self, staged, target).await
+    }
+
     async fn delete_file(&self, path: &str) -> AppResult<()> {
         self.sftp
             .remove_file(path)
@@ -203,6 +215,24 @@ impl RemoteFs for SftpFs {
                 .await
                 .map_err(|e| AppError::RemoteFs(format!("{path}: seek: {e}")))?;
         }
+        Ok(Box::new(file))
+    }
+
+    async fn open_write_replacement(&self, staged: &str, target: &str) -> AppResult<BoxWrite> {
+        let mode = self.stat(target).await?.permissions.unwrap_or(0o600);
+        let attrs = FileAttributes {
+            permissions: Some(mode),
+            ..FileAttributes::empty()
+        };
+        let file = self
+            .sftp
+            .open_with_flags_and_attributes(
+                staged,
+                OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::TRUNCATE,
+                attrs,
+            )
+            .await
+            .map_err(|error| map_err(staged, error))?;
         Ok(Box::new(file))
     }
 

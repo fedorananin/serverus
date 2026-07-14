@@ -143,11 +143,13 @@ impl S3 for AclFs {
         &self,
         req: S3Request<dto::CopyObjectInput>,
     ) -> S3Result<S3Response<dto::CopyObjectOutput>> {
-        // Like real S3: the copy does NOT inherit the source ACL.
+        // Like real S3: a copy does not inherit the source ACL, but an
+        // explicit canned ACL on the CopyObject request is applied.
         let bucket = req.input.bucket.clone();
         let key = req.input.key.clone();
+        let public = Self::is_public_acl(req.input.acl.as_ref());
         let resp = self.inner.copy_object(req).await?;
-        self.set_public(&bucket, &key, false);
+        self.set_public(&bucket, &key, public);
         Ok(resp)
     }
 
@@ -357,6 +359,45 @@ async fn s3_bucket_level_operations() {
         .unwrap();
     assert!(!fs.exists("/first-bucket/docs/a.txt").await.unwrap());
     assert!(fs.exists("/first-bucket/docs/b.txt").await.unwrap());
+
+    // Object replacement is copy-overwrite followed by staging cleanup; the
+    // destination is never deleted first and keeps its existing ACL rather
+    // than inheriting the upload policy of the staging object.
+    fs.set_acl(
+        vec![S3AclTarget {
+            path: "/first-bucket/docs/b.txt".into(),
+            is_dir: false,
+        }],
+        true,
+    )
+    .await
+    .unwrap();
+    let mut staged = fs
+        .open_write_replacement("/first-bucket/docs/edit-staged", "/first-bucket/docs/b.txt")
+        .await
+        .unwrap();
+    tokio::io::AsyncWriteExt::write_all(&mut staged, b"new contents")
+        .await
+        .unwrap();
+    tokio::io::AsyncWriteExt::shutdown(&mut staged)
+        .await
+        .unwrap();
+    drop(staged);
+    fs.replace_file("/first-bucket/docs/edit-staged", "/first-bucket/docs/b.txt")
+        .await
+        .unwrap();
+    assert!(!fs.exists("/first-bucket/docs/edit-staged").await.unwrap());
+    let mut reader = fs.open_read("/first-bucket/docs/b.txt", 0).await.unwrap();
+    let mut replaced = Vec::new();
+    tokio::io::AsyncReadExt::read_to_end(&mut reader, &mut replaced)
+        .await
+        .unwrap();
+    assert_eq!(replaced, b"new contents");
+    let status = statuses(
+        &fs.acl_status_batch(vec!["/first-bucket/docs/b.txt".into()])
+            .await,
+    );
+    assert_eq!(status["/first-bucket/docs/b.txt"], S3AclStatus::Public);
 
     // chmod is a clear error, mtime a silent no-op (SPEC §4.4).
     assert!(fs.chmod("/first-bucket/docs/b.txt", 0o644).await.is_err());
@@ -589,4 +630,34 @@ async fn s3_acl_public_private_flow() {
     fs.rename("/public.txt", "/renamed.txt").await.unwrap();
     let status = statuses(&fs.acl_status_batch(vec!["/renamed.txt".into()]).await);
     assert_eq!(status["/renamed.txt"], S3AclStatus::Public);
+}
+
+#[tokio::test]
+async fn s3_replacement_staging_is_private_under_public_upload_mode() {
+    let root = tempfile::tempdir().unwrap();
+    let port = spawn_s3(root.path()).await;
+    std::fs::create_dir(root.path().join("replacement-acl")).unwrap();
+    let fs = fs_for(port, Some("replacement-acl"));
+
+    fs.set_upload_acl(S3UploadAcl::PublicRead);
+    fs.create_file("/target.txt").await.unwrap();
+
+    let mut staged = fs
+        .open_write_replacement("/.serverus-edit-staged", "/target.txt")
+        .await
+        .unwrap();
+    tokio::io::AsyncWriteExt::write_all(&mut staged, b"private staging bytes")
+        .await
+        .unwrap();
+    tokio::io::AsyncWriteExt::shutdown(&mut staged)
+        .await
+        .unwrap();
+    drop(staged);
+
+    let status = statuses(
+        &fs.acl_status_batch(vec!["/target.txt".into(), "/.serverus-edit-staged".into()])
+            .await,
+    );
+    assert_eq!(status["/target.txt"], S3AclStatus::Public);
+    assert_eq!(status["/.serverus-edit-staged"], S3AclStatus::Private);
 }

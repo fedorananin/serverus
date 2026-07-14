@@ -93,6 +93,29 @@ async fn sftp_basic_operations() {
     let entry = fs_remote.stat(&file_b).await.unwrap();
     assert_eq!(entry.permissions.unwrap() & 0o777, 0o640);
 
+    // SFTP v3 plain RENAME refuses an existing destination. Remote-edit
+    // replacement must still succeed without deleting the original first,
+    // and retain the original mode where the protocol exposes it.
+    let staged = join_remote(&base, ".edit-staged");
+    let mut writer = fs_remote
+        .open_write_replacement(&staged, &file_b)
+        .await
+        .unwrap();
+    let staged_entry = fs_remote.stat(&staged).await.unwrap();
+    assert_eq!(staged_entry.permissions.unwrap() & 0o777, 0o640);
+    tokio::io::AsyncWriteExt::write_all(&mut writer, b"new contents")
+        .await
+        .unwrap();
+    tokio::io::AsyncWriteExt::shutdown(&mut writer)
+        .await
+        .unwrap();
+    drop(writer);
+    fs_remote.replace_file(&staged, &file_b).await.unwrap();
+    assert_eq!(fs::read(&file_b).unwrap(), b"new contents");
+    let entry = fs_remote.stat(&file_b).await.unwrap();
+    assert_eq!(entry.permissions.unwrap() & 0o777, 0o640);
+    assert!(!fs_remote.exists(&staged).await.unwrap());
+
     // listing sees exactly one file
     let listing = fs_remote.list(&base).await.unwrap();
     assert_eq!(listing.len(), 1);
