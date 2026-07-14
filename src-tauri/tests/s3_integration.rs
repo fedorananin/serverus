@@ -6,6 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -23,6 +24,7 @@ use zeroize::Zeroizing;
 const ACCESS_KEY: &str = "serverus-test-key";
 const SECRET_KEY: &str = "serverus-test-secret";
 const ALL_USERS: &str = "http://acs.amazonaws.com/groups/global/AllUsers";
+const MULTIPART_PART_SIZE: usize = 8 * 1024 * 1024;
 
 struct NullSink;
 impl ProgressSink for NullSink {
@@ -39,14 +41,16 @@ struct AclFs {
     public: Mutex<HashSet<(String, String)>>,
     /// upload_id → (bucket, key, public) for multipart uploads with an ACL.
     pending: Mutex<HashMap<String, (String, String, bool)>>,
+    multipart_probe: Option<Arc<MultipartProbe>>,
 }
 
 impl AclFs {
-    fn new(inner: s3s_fs::FileSystem) -> AclFs {
+    fn new(inner: s3s_fs::FileSystem, multipart_probe: Option<Arc<MultipartProbe>>) -> AclFs {
         AclFs {
             inner,
             public: Mutex::new(HashSet::new()),
             pending: Mutex::new(HashMap::new()),
+            multipart_probe,
         }
     }
 
@@ -120,6 +124,9 @@ impl S3 for AclFs {
         &self,
         req: S3Request<dto::PutObjectInput>,
     ) -> S3Result<S3Response<dto::PutObjectOutput>> {
+        if let Some(probe) = &self.multipart_probe {
+            probe.put_object_calls.fetch_add(1, Ordering::SeqCst);
+        }
         let bucket = req.input.bucket.clone();
         let key = req.input.key.clone();
         let public = Self::is_public_acl(req.input.acl.as_ref());
@@ -157,6 +164,9 @@ impl S3 for AclFs {
         &self,
         req: S3Request<dto::CreateMultipartUploadInput>,
     ) -> S3Result<S3Response<dto::CreateMultipartUploadOutput>> {
+        if let Some(probe) = &self.multipart_probe {
+            probe.create_calls.fetch_add(1, Ordering::SeqCst);
+        }
         let bucket = req.input.bucket.clone();
         let key = req.input.key.clone();
         let public = Self::is_public_acl(req.input.acl.as_ref());
@@ -174,6 +184,13 @@ impl S3 for AclFs {
         &self,
         req: S3Request<dto::UploadPartInput>,
     ) -> S3Result<S3Response<dto::UploadPartOutput>> {
+        if let Some(probe) = &self.multipart_probe {
+            probe.upload_part_calls.fetch_add(1, Ordering::SeqCst);
+            probe.upload_part_started.notify_one();
+            if probe.block_upload_part.load(Ordering::SeqCst) {
+                probe.release_upload_part.notified().await;
+            }
+        }
         self.inner.upload_part(req).await
     }
 
@@ -181,6 +198,9 @@ impl S3 for AclFs {
         &self,
         req: S3Request<dto::CompleteMultipartUploadInput>,
     ) -> S3Result<S3Response<dto::CompleteMultipartUploadOutput>> {
+        if let Some(probe) = &self.multipart_probe {
+            probe.complete_calls.fetch_add(1, Ordering::SeqCst);
+        }
         let upload_id = req.input.upload_id.clone();
         let resp = self.inner.complete_multipart_upload(req).await?;
         if let Some((bucket, key, public)) = self.pending.lock().unwrap().remove(&upload_id) {
@@ -193,6 +213,10 @@ impl S3 for AclFs {
         &self,
         req: S3Request<dto::AbortMultipartUploadInput>,
     ) -> S3Result<S3Response<dto::AbortMultipartUploadOutput>> {
+        if let Some(probe) = &self.multipart_probe {
+            probe.abort_calls.fetch_add(1, Ordering::SeqCst);
+            probe.abort_seen.notify_one();
+        }
         self.pending.lock().unwrap().remove(&req.input.upload_id);
         self.inner.abort_multipart_upload(req).await
     }
@@ -239,15 +263,32 @@ impl S3 for AclFs {
     }
 }
 
+#[derive(Default)]
+struct MultipartProbe {
+    block_upload_part: AtomicBool,
+    create_calls: AtomicUsize,
+    upload_part_calls: AtomicUsize,
+    complete_calls: AtomicUsize,
+    abort_calls: AtomicUsize,
+    put_object_calls: AtomicUsize,
+    upload_part_started: tokio::sync::Notify,
+    release_upload_part: tokio::sync::Notify,
+    abort_seen: tokio::sync::Notify,
+}
+
 // ---------------------------------------------------------------------------
 // Server + client fixtures
 // ---------------------------------------------------------------------------
 
 /// Serve an S3 API over real TCP; returns the port.
 async fn spawn_s3(root: &Path) -> u16 {
+    spawn_s3_with_probe(root, None).await
+}
+
+async fn spawn_s3_with_probe(root: &Path, multipart_probe: Option<Arc<MultipartProbe>>) -> u16 {
     let fs = s3s_fs::FileSystem::new(root).unwrap();
     let service = {
-        let mut builder = S3ServiceBuilder::new(AclFs::new(fs));
+        let mut builder = S3ServiceBuilder::new(AclFs::new(fs, multipart_probe));
         builder.set_auth(SimpleAuth::from_single(ACCESS_KEY, SECRET_KEY));
         builder.build()
     };
@@ -530,6 +571,95 @@ async fn s3_multipart_upload_roundtrip() {
     wait_for_drain(&manager).await;
     assert_all_done(&manager);
     assert_eq!(std::fs::read(dl.path().join("blob.bin")).unwrap(), payload);
+}
+
+#[tokio::test]
+async fn dropping_writer_aborts_multipart_after_create_while_first_part_is_pending() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("uploads")).unwrap();
+    let probe = Arc::new(MultipartProbe::default());
+    probe.block_upload_part.store(true, Ordering::SeqCst);
+    let port = spawn_s3_with_probe(root.path(), Some(probe.clone())).await;
+    let fs = fs_for(port, Some("uploads"));
+
+    let writer = fs.open_write("/cancelled.bin", 0).await.unwrap();
+    let mut write_task = tokio::spawn(async move {
+        let mut writer = writer;
+        tokio::io::AsyncWriteExt::write_all(&mut writer, &vec![1; MULTIPART_PART_SIZE]).await?;
+        tokio::io::AsyncWriteExt::flush(&mut writer).await
+    });
+
+    tokio::select! {
+        _ = probe.upload_part_started.notified() => {}
+        result = &mut write_task => panic!("the write ended before UploadPart was pending: {result:?}"),
+        _ = tokio::time::sleep(Duration::from_secs(5)) => {
+            panic!("the first UploadPart request never arrived; create calls: {}", probe.create_calls.load(Ordering::SeqCst));
+        }
+    }
+    assert_eq!(probe.create_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(probe.upload_part_calls.load(Ordering::SeqCst), 1);
+
+    write_task.abort();
+    assert!(write_task.await.unwrap_err().is_cancelled());
+
+    tokio::time::timeout(Duration::from_secs(5), probe.abort_seen.notified())
+        .await
+        .expect("dropping the writer did not abort the multipart upload");
+    assert_eq!(probe.abort_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(probe.complete_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn completed_multipart_upload_is_not_aborted() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("uploads")).unwrap();
+    let probe = Arc::new(MultipartProbe::default());
+    let port = spawn_s3_with_probe(root.path(), Some(probe.clone())).await;
+    let fs = fs_for(port, Some("uploads"));
+
+    let mut writer = fs.open_write("/complete.bin", 0).await.unwrap();
+    tokio::io::AsyncWriteExt::write_all(&mut writer, &vec![2; MULTIPART_PART_SIZE + 1])
+        .await
+        .unwrap();
+    tokio::io::AsyncWriteExt::shutdown(&mut writer)
+        .await
+        .unwrap();
+    drop(writer);
+
+    assert_eq!(probe.create_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(probe.upload_part_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(probe.complete_calls.load(Ordering::SeqCst), 1);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), probe.abort_seen.notified())
+            .await
+            .is_err(),
+        "a completed multipart upload was aborted"
+    );
+    assert_eq!(probe.abort_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn small_writer_still_uses_put_object_without_multipart() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("uploads")).unwrap();
+    let probe = Arc::new(MultipartProbe::default());
+    let port = spawn_s3_with_probe(root.path(), Some(probe.clone())).await;
+    let fs = fs_for(port, Some("uploads"));
+
+    let mut writer = fs.open_write("/small.bin", 0).await.unwrap();
+    tokio::io::AsyncWriteExt::write_all(&mut writer, b"small payload")
+        .await
+        .unwrap();
+    tokio::io::AsyncWriteExt::shutdown(&mut writer)
+        .await
+        .unwrap();
+    drop(writer);
+
+    assert_eq!(probe.put_object_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(probe.create_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(probe.upload_part_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(probe.complete_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(probe.abort_calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
