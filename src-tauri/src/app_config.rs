@@ -16,6 +16,37 @@ pub struct AppConfig {
     pub vault_path: Option<String>,
 }
 
+/// A fully written and fsynced config update that is not visible until
+/// `commit` atomically renames it over the live config.
+pub struct PreparedConfig {
+    temp: Option<PathBuf>,
+    target: PathBuf,
+}
+
+impl PreparedConfig {
+    pub fn commit(self) -> std::io::Result<()> {
+        self.commit_with(replace_config_file)
+    }
+
+    fn commit_with(
+        mut self,
+        replace: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
+    ) -> std::io::Result<()> {
+        let temp = self.temp.as_ref().expect("prepared config temp file");
+        replace(temp, &self.target)?;
+        self.temp = None;
+        Ok(())
+    }
+}
+
+impl Drop for PreparedConfig {
+    fn drop(&mut self) {
+        if let Some(temp) = self.temp.take() {
+            let _ = fs::remove_file(temp);
+        }
+    }
+}
+
 pub fn config_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -41,15 +72,24 @@ pub fn save(config: &AppConfig) -> std::io::Result<()> {
     save_to(&config_file(), config)
 }
 
-fn save_to(path: &Path, config: &AppConfig) -> std::io::Result<()> {
-    save_to_with(path, config, replace_config_file)
+pub fn prepare(config: &AppConfig) -> std::io::Result<PreparedConfig> {
+    prepare_to(&config_file(), config)
 }
 
+fn save_to(path: &Path, config: &AppConfig) -> std::io::Result<()> {
+    prepare_to(path, config)?.commit()
+}
+
+#[cfg(test)]
 fn save_to_with(
     path: &Path,
     config: &AppConfig,
     replace: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
 ) -> std::io::Result<()> {
+    prepare_to(path, config)?.commit_with(replace)
+}
+
+fn prepare_to(path: &Path, config: &AppConfig) -> std::io::Result<PreparedConfig> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent)?;
     let json = serde_json::to_vec_pretty(config).expect("config serializes");
@@ -64,8 +104,10 @@ fn save_to_with(
             .open(&temp)?;
         file.write_all(&json)?;
         file.sync_all()?;
-        drop(file);
-        replace(&temp, path)
+        Ok(PreparedConfig {
+            temp: Some(temp.clone()),
+            target: path.to_path_buf(),
+        })
     })();
     if result.is_err() {
         let _ = fs::remove_file(&temp);
@@ -116,7 +158,35 @@ pub fn vault_path() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{save_to_with, AppConfig};
+    use super::{prepare_to, save_to_with, AppConfig};
+
+    #[test]
+    fn prepared_config_is_not_visible_until_commit() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.json");
+        std::fs::write(&path, br#"{"vault_path":"/old.serverus"}"#).unwrap();
+        let config = AppConfig {
+            vault_path: Some("/new.serverus".into()),
+        };
+
+        let prepared = prepare_to(&path, &config).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<AppConfig>(&std::fs::read(&path).unwrap())
+                .unwrap()
+                .vault_path
+                .as_deref(),
+            Some("/old.serverus")
+        );
+
+        prepared.commit().unwrap();
+        assert_eq!(
+            serde_json::from_slice::<AppConfig>(&std::fs::read(&path).unwrap())
+                .unwrap()
+                .vault_path
+                .as_deref(),
+            Some("/new.serverus")
+        );
+    }
 
     #[test]
     fn failed_atomic_replace_preserves_the_previous_config() {

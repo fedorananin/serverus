@@ -6,62 +6,55 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 /** Commands */
 export const commands = {
 	vaultGetInfo: () => typedError<VaultInfo, ApiError>(__TAURI_INVOKE("vault_get_info")),
-	vaultCreate: (password: string) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("vault_create", { password })),
-	vaultUnlockPassword: (password: string) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("vault_unlock_password", { password })),
-	vaultUnlockQuick: () => typedError<PublicVault, ApiError>(__TAURI_INVOKE("vault_unlock_quick")),
-	vaultLock: () => typedError<null, ApiError>(__TAURI_INVOKE("vault_lock")),
-	vaultChangePassword: (currentPassword: string, newPassword: string) => typedError<null, ApiError>(__TAURI_INVOKE("vault_change_password", { currentPassword, newPassword })),
-	vaultSetTouchId: (enabled: boolean) => typedError<null, ApiError>(__TAURI_INVOKE("vault_set_touch_id", { enabled })),
+	vaultCreate: (password: string, contextEpoch: number) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("vault_create", { password, contextEpoch })),
+	vaultUnlockPassword: (password: string, contextEpoch: number) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("vault_unlock_password", { password, contextEpoch })),
+	vaultUnlockQuick: (contextEpoch: number) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("vault_unlock_quick", { contextEpoch })),
+	vaultLock: (contextEpoch: number) => typedError<null, ApiError>(__TAURI_INVOKE("vault_lock", { contextEpoch })),
+	vaultChangePassword: (currentPassword: string, newPassword: string, contextEpoch: number) => typedError<null, ApiError>(__TAURI_INVOKE("vault_change_password", { currentPassword, newPassword, contextEpoch })),
+	vaultSetTouchId: (enabled: boolean, contextEpoch: number) => typedError<null, ApiError>(__TAURI_INVOKE("vault_set_touch_id", { enabled, contextEpoch })),
 	/**
 	 *  Create or update a connection. When creating, the tree node is appended
 	 *  to `parent_folder` (or the root). Returns the updated public vault.
 	 */
-	connectionUpsert: (id: string | null, input: ConnectionInput, parentFolder: string | null) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("connection_upsert", { id, input, parentFolder })),
-	connectionSecrets: (id: string) => typedError<ConnectionSecrets, ApiError>(__TAURI_INVOKE("connection_secrets", { id })),
-	connectionDuplicate: (id: string) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("connection_duplicate", { id })),
-	connectionDelete: (id: string) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("connection_delete", { id })),
+	connectionUpsert: (id: string | null, input: ConnectionInput, parentFolder: string | null, contextEpoch: number) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("connection_upsert", { id, input, parentFolder, contextEpoch })),
+	connectionSecrets: (id: string, contextEpoch: number) => typedError<ConnectionSecrets, ApiError>(__TAURI_INVOKE("connection_secrets", { id, contextEpoch })),
+	connectionDuplicate: (id: string, contextEpoch: number) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("connection_duplicate", { id, contextEpoch })),
+	connectionDelete: (id: string, contextEpoch: number) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("connection_delete", { id, contextEpoch })),
 	folderCreate: (name: string, parentFolder: string | null, badge: {
 	kind: BadgeKind,
 	/**  Emoji character or hex color like `#e5484d`. */
 	value: string,
-} | null) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("folder_create", { name, parentFolder, badge })),
+} | null, contextEpoch: number) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("folder_create", { name, parentFolder, badge, contextEpoch })),
 	folderUpdate: (id: string, name: string, badge: {
 	kind: BadgeKind,
 	/**  Emoji character or hex color like `#e5484d`. */
 	value: string,
-} | null) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("folder_update", { id, name, badge })),
+} | null, contextEpoch: number) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("folder_update", { id, name, badge, contextEpoch })),
 	/**  Delete a folder; its children are lifted to the parent level. */
-	folderDelete: (id: string) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("folder_delete", { id })),
+	folderDelete: (id: string, contextEpoch: number) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("folder_delete", { id, contextEpoch })),
 	/**
 	 *  Replace the whole tree (drag & drop reordering). Validated against the
 	 *  connections map before committing.
 	 */
-	treeUpdate: (tree: TreeNode[]) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("tree_update", { tree })),
-	settingsUpdate: (settings: Settings) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("settings_update", { settings })),
-	knownHostRemove: (host: string) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("known_host_remove", { host })),
+	treeUpdate: (tree: TreeNode[], contextEpoch: number) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("tree_update", { tree, contextEpoch })),
+	settingsUpdate: (settings: Settings, contextEpoch: number) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("settings_update", { settings, contextEpoch })),
+	knownHostRemove: (host: string, contextEpoch: number) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("known_host_remove", { host, contextEpoch })),
 	/**
 	 *  Move the vault to a different path (§8 Vault settings). Requires an
 	 *  unlocked vault: the file is re-encrypted and written at the new location,
 	 *  the old file stays as a manual backup.
 	 */
-	vaultSetPath: (path: string) => typedError<null, ApiError>(__TAURI_INVOKE("vault_set_path", { path })),
-	/**
-	 *  Point the app at a different vault file WITHOUT unlocking anything —
-	 *  available from the lock screen (forgot password, multiple vaults).
-	 *  An existing file gets the unlock form, a fresh path gets the create
-	 *  form. The current vault is locked (secrets zeroized) before switching;
-	 *  nothing is moved or rewritten on disk.
-	 */
-	vaultSwitchPath: (path: string) => typedError<null, ApiError>(__TAURI_INVOKE("vault_switch_path", { path })),
+	vaultSetPath: (path: string, contextEpoch: number) => typedError<null, ApiError>(__TAURI_INVOKE("vault_set_path", { path, contextEpoch })),
+	vaultSwitchPath: (path: string, contextEpoch: number) => typedError<null, ApiError>(__TAURI_INVOKE("vault_switch_path", { path, contextEpoch })),
 	/**
 	 *  Open an SSH session. On an unknown or changed host key this fails with
 	 *  code `host_key_prompt` and a `host_key` payload; the UI confirms with the
 	 *  user, calls `host_key_accept`, then retries.
 	 */
-	sessionConnect: (connectionId: string) => typedError<SessionDto, ApiError>(__TAURI_INVOKE("session_connect", { connectionId })),
+	sessionConnect: (connectionId: string, contextEpoch: number) => typedError<SessionDto, ApiError>(__TAURI_INVOKE("session_connect", { connectionId, contextEpoch })),
 	sessionDisconnect: (sessionId: string) => typedError<null, ApiError>(__TAURI_INVOKE("session_disconnect", { sessionId })),
 	/**  Store an accepted host key in the vault (SPEC §4.1). */
-	hostKeyAccept: (host: string, port: number, keyLine: string) => typedError<null, ApiError>(__TAURI_INVOKE("host_key_accept", { host, port, keyLine })),
+	hostKeyAccept: (host: string, port: number, keyLine: string, contextEpoch: number) => typedError<null, ApiError>(__TAURI_INVOKE("host_key_accept", { host, port, keyLine, contextEpoch })),
 	termOpen: (sessionId: string, cols: number, rows: number) => typedError<string, ApiError>(__TAURI_INVOKE("term_open", { sessionId, cols, rows })),
 	termWrite: (termId: string, data: string) => typedError<null, ApiError>(__TAURI_INVOKE("term_write", { termId, data })),
 	termResize: (termId: string, cols: number, rows: number) => typedError<null, ApiError>(__TAURI_INVOKE("term_resize", { termId, cols, rows })),
@@ -101,17 +94,12 @@ export const commands = {
 	 *  object under the prefix. Returns the number of objects changed.
 	 */
 	s3SetAcl: (sessionId: string, targets: S3AclTarget[], makePublic: boolean) => typedError<number, ApiError>(__TAURI_INVOKE("s3_set_acl", { sessionId, targets, makePublic })),
-	/**
-	 *  Switch the ACL applied to subsequent uploads: the pane toggle and the
-	 *  "ask" dialog resolve here. Persists the choice in the connection config
-	 *  and applies it to every live session of that connection.
-	 */
-	s3SetUploadAcl: (sessionId: string, mode: S3UploadAcl, persist: boolean) => typedError<{
+	s3SetUploadAcl: (sessionId: string, mode: S3UploadAcl, persist: boolean, contextEpoch: number) => typedError<{
 	tree: TreeNode[],
 	connections: { [key in string]: PublicConnection },
 	known_hosts: { [key in string]: string },
 	settings: Settings,
-} | null, ApiError>(__TAURI_INVOKE("s3_set_upload_acl", { sessionId, mode, persist })),
+} | null, ApiError>(__TAURI_INVOKE("s3_set_upload_acl", { sessionId, mode, persist, contextEpoch })),
 	transferUpload: (sessionId: string, localPath: string, remoteDir: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_upload", { sessionId, localPath, remoteDir })),
 	transferDownload: (sessionId: string, remotePath: string, localDir: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_download", { sessionId, remotePath, localDir })),
 	transferList: () => typedError<TransferListDto, ApiError>(__TAURI_INVOKE("transfer_list")),
@@ -133,24 +121,24 @@ export const commands = {
 	tunnelStop: (tunnelId: string) => typedError<null, ApiError>(__TAURI_INVOKE("tunnel_stop", { tunnelId })),
 	tunnelList: (sessionId: string | null) => typedError<TunnelStatus[], ApiError>(__TAURI_INVOKE("tunnel_list", { sessionId })),
 	/**  Throttled user-activity ping for the auto-lock timer (SPEC §2.4). */
-	vaultTouchActivity: () => typedError<null, ApiError>(__TAURI_INVOKE("vault_touch_activity")),
+	vaultTouchActivity: (contextEpoch: number) => typedError<null, ApiError>(__TAURI_INVOKE("vault_touch_activity", { contextEpoch })),
 	/**
 	 *  Export an UNENCRYPTED copy of the configuration without any secrets
 	 *  (SPEC §8) — passwords, passphrases and inline keys are omitted.
 	 */
-	vaultExportConfig: (path: string) => typedError<null, ApiError>(__TAURI_INVOKE("vault_export_config", { path })),
+	vaultExportConfig: (path: string, contextEpoch: number) => typedError<null, ApiError>(__TAURI_INVOKE("vault_export_config", { path, contextEpoch })),
 	/**
 	 *  Import a config file (a Serverus export or a hand-written file following
 	 *  docs/CONFIG_FORMAT.md) into the unlocked vault. Merge semantics live in
 	 *  `vault::import`.
 	 */
-	vaultImportConfig: (path: string) => typedError<ImportReport, ApiError>(__TAURI_INVOKE("vault_import_config", { path })),
+	vaultImportConfig: (path: string, contextEpoch: number) => typedError<ImportReport, ApiError>(__TAURI_INVOKE("vault_import_config", { path, contextEpoch })),
 	/**
 	 *  Read a private key file so the UI can store its text inside the vault
 	 *  (the key then travels with vault backups). Validated in `local_fs` —
 	 *  only PEM-looking files are returned.
 	 */
-	sshKeyReadFile: (path: string) => typedError<string, ApiError>(__TAURI_INVOKE("ssh_key_read_file", { path })),
+	sshKeyReadFile: (path: string, contextEpoch: number) => typedError<string, ApiError>(__TAURI_INVOKE("ssh_key_read_file", { path, contextEpoch })),
 	/**
 	 *  Open an http(s) URL in the user's default browser (used by the About
 	 *  section). Each OS opener delegates and returns immediately; the URL is
@@ -317,6 +305,7 @@ export type PublicVault = {
  *  SPEC §5.3). `error` is set when the auto-upload failed.
  */
 export type RemoteEditUploadedEvent = {
+	context_epoch: number,
 	name: string,
 	remote_path: string,
 	error: string | null,
@@ -392,6 +381,7 @@ export type SessionDto = {
 
 /**  Session lifecycle: `connecting` → `connected` → `disconnected` / `error`. */
 export type SessionStateEvent = {
+	context_epoch: number,
 	session_id: string,
 	connection_id: string,
 	state: string,
@@ -414,12 +404,14 @@ export type SizeFormat =
 
 /**  Batched terminal output (base64-encoded raw bytes, ~16 ms cadence). */
 export type TerminalDataEvent = {
+	context_epoch: number,
 	term_id: string,
 	data: string,
 };
 
 /**  The remote shell ended (exit, EOF or channel close). */
 export type TerminalExitEvent = {
+	context_epoch: number,
 	term_id: string,
 };
 
@@ -437,12 +429,14 @@ export type TerminalSettings = {
 export type TransferKind = "upload" | "download";
 
 export type TransferListDto = {
+	context_epoch: number,
 	items: TransferSnapshot[],
 	summary: TransferSummary,
 };
 
 /**  Periodic transfer queue snapshot (~4 Hz while transfers are active). */
 export type TransferProgressEvent = {
+	context_epoch: number,
 	items: TransferSnapshot[],
 	summary: TransferSummary,
 };
@@ -513,6 +507,7 @@ export type TunnelStatus = {
 };
 
 export type VaultInfo = {
+	context_epoch: number,
 	path: string,
 	exists: boolean,
 	unlocked: boolean,
@@ -530,7 +525,9 @@ export type VaultInfo = {
 };
 
 /**  The vault was locked (auto-lock, sleep, or explicit). */
-export type VaultLockedEvent = null;
+export type VaultLockedEvent = {
+	context_epoch: number,
+};
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

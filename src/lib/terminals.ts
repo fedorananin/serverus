@@ -2,6 +2,7 @@
 // that owns each term_id. One global listener for all terminals.
 
 import { events } from "$lib/api";
+import { vault } from "$lib/stores/vault.svelte";
 
 type Sink = (data: Uint8Array) => void;
 type ExitSink = () => void;
@@ -21,9 +22,11 @@ async function ensureListener() {
   if (listening) return;
   listening = true;
   await events.terminalDataEvent.listen((e) => {
+    if (e.payload.context_epoch !== vault.runtimeEpoch) return;
     sinks.get(e.payload.term_id)?.(decode(e.payload.data));
   });
   await events.terminalExitEvent.listen((e) => {
+    if (e.payload.context_epoch !== vault.runtimeEpoch) return;
     exitSinks.get(e.payload.term_id)?.();
   });
 }
@@ -37,4 +40,9 @@ export function registerTerminal(termId: string, sink: Sink, onExit: ExitSink) {
 export function unregisterTerminal(termId: string) {
   sinks.delete(termId);
   exitSinks.delete(termId);
+}
+
+export function resetTerminalContext() {
+  sinks.clear();
+  exitSinks.clear();
 }

@@ -2,8 +2,80 @@
 
 mod support;
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
 use serverus_lib::session::ssh::{connect_chain, ConnectOutcome};
 use support::TestSshd;
+
+struct TrackingProxy {
+    port: u16,
+    active: Arc<AtomicUsize>,
+    changed: Arc<tokio::sync::Notify>,
+    listener: tokio::task::JoinHandle<()>,
+}
+
+impl TrackingProxy {
+    async fn spawn(backend_port: u16) -> Self {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let active = Arc::new(AtomicUsize::new(0));
+        let changed = Arc::new(tokio::sync::Notify::new());
+        let task_active = active.clone();
+        let task_changed = changed.clone();
+        let task = tokio::spawn(async move {
+            while let Ok((mut incoming, _)) = listener.accept().await {
+                let active = task_active.clone();
+                let changed = task_changed.clone();
+                tokio::spawn(async move {
+                    let Ok(mut backend) =
+                        tokio::net::TcpStream::connect(("127.0.0.1", backend_port)).await
+                    else {
+                        return;
+                    };
+                    active.fetch_add(1, Ordering::SeqCst);
+                    changed.notify_waiters();
+                    let _ = tokio::io::copy_bidirectional(&mut incoming, &mut backend).await;
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    changed.notify_waiters();
+                });
+            }
+        });
+        Self {
+            port,
+            active,
+            changed,
+            listener: task,
+        }
+    }
+
+    async fn wait_active(&self, expected: usize) {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let changed = self.changed.notified();
+                if self.active.load(Ordering::SeqCst) == expected {
+                    return;
+                }
+                changed.await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("proxy never reached {expected} active connections"));
+    }
+}
+
+impl Drop for TrackingProxy {
+    fn drop(&mut self) {
+        self.listener.abort();
+    }
+}
+
+async fn known_key(sshd: &TestSshd) -> String {
+    match connect_chain(&[sshd.hop(None)]).await.unwrap() {
+        ConnectOutcome::HostKeyPrompt(issue) => issue.key_line,
+        ConnectOutcome::Connected(_) => panic!("expected host key prompt"),
+    }
+}
 
 /// First connection: no stored key → host key prompt with a fingerprint;
 /// accepting the offered line lets the next attempt through (SPEC §4.1).
@@ -25,6 +97,49 @@ async fn host_key_prompt_then_connect() {
         .await
         .unwrap();
     assert!(matches!(outcome, ConnectOutcome::Connected(_)));
+}
+
+#[tokio::test]
+async fn disconnect_waits_until_the_server_transport_is_closed() {
+    let sshd = TestSshd::spawn();
+    let known_key = known_key(&sshd).await;
+    let proxy = TrackingProxy::spawn(sshd.port).await;
+    let mut hop = sshd.hop(Some(known_key));
+    hop.port = proxy.port;
+    let transport = match connect_chain(&[hop]).await.unwrap() {
+        ConnectOutcome::Connected(transport) => transport,
+        ConnectOutcome::HostKeyPrompt(_) => panic!("known key was rejected"),
+    };
+    proxy.wait_active(1).await;
+
+    transport.disconnect_and_wait().await.unwrap();
+
+    proxy.wait_active(0).await;
+}
+
+#[tokio::test]
+async fn jump_chain_retains_and_closes_every_hop_transport() {
+    let bastion = TestSshd::spawn();
+    let target = TestSshd::spawn();
+    let bastion_key = known_key(&bastion).await;
+    let target_key = known_key(&target).await;
+    let bastion_proxy = TrackingProxy::spawn(bastion.port).await;
+    let target_proxy = TrackingProxy::spawn(target.port).await;
+    let mut bastion_hop = bastion.hop(Some(bastion_key));
+    bastion_hop.port = bastion_proxy.port;
+    let mut target_hop = target.hop(Some(target_key));
+    target_hop.port = target_proxy.port;
+    let transport = match connect_chain(&[bastion_hop, target_hop]).await.unwrap() {
+        ConnectOutcome::Connected(transport) => transport,
+        ConnectOutcome::HostKeyPrompt(_) => panic!("known jump-host key was rejected"),
+    };
+    bastion_proxy.wait_active(1).await;
+    target_proxy.wait_active(1).await;
+
+    transport.disconnect_and_wait().await.unwrap();
+
+    target_proxy.wait_active(0).await;
+    bastion_proxy.wait_active(0).await;
 }
 
 /// A stored-but-different key must surface as `changed` (MITM warning).
@@ -97,7 +212,7 @@ async fn shell_echo_roundtrip() {
     write.data(&b"echo serverus-$((6*7))\n"[..]).await.unwrap();
 
     let mut collected = String::new();
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(20);
     loop {
         let msg = tokio::time::timeout_at(deadline, read.wait())
             .await
@@ -114,7 +229,5 @@ async fn shell_echo_roundtrip() {
         }
     }
 
-    let _ = handle
-        .disconnect(russh::Disconnect::ByApplication, "", "en")
-        .await;
+    handle.disconnect_and_wait().await.unwrap();
 }

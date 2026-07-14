@@ -34,7 +34,10 @@
   const creating = $derived(vault.info !== null && !vault.info.exists);
   const mismatch = $derived(creating && confirm.length > 0 && password !== confirm);
   const canSubmit = $derived(
-    password.length > 0 && !vault.busy && (!creating || password === confirm),
+    vault.contextOpen &&
+      password.length > 0 &&
+      !vault.busy &&
+      (!creating || password === confirm),
   );
 
   async function submit(e: SubmitEvent) {
@@ -70,7 +73,7 @@
         placeholder="Master password"
         bind:value={password}
         bind:this={passwordInput}
-        disabled={vault.busy}
+        disabled={vault.busy || !vault.contextOpen}
         use:focusOnMount
       />
       {#if creating}
@@ -78,7 +81,7 @@
           type="password"
           placeholder="Repeat master password"
           bind:value={confirm}
-          disabled={vault.busy}
+          disabled={vault.busy || !vault.contextOpen}
         />
         {#if mismatch}
           <div class="error">Passwords do not match</div>
@@ -102,7 +105,7 @@
           type="button"
           class="touch-id"
           onclick={() => vault.unlockQuick()}
-          disabled={vault.busy}
+          disabled={vault.busy || !vault.contextOpen}
         >
           Use {vault.info?.quick_unlock_method ?? "biometrics"}
         </button>

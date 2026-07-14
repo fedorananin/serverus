@@ -17,11 +17,55 @@ use tokio_util::io::SyncIoBridge;
 use crate::error::{AppError, AppResult};
 use crate::session::remote_fs::parent_remote;
 use crate::session::ssh::SshSession;
+use crate::session::LifecycleCleanup;
 
 use super::{Control, TransferItem, TransferKind, TransferState};
 
 pub struct TarJob {
     pub ssh: Arc<SshSession>,
+    pub(crate) cleanup: Option<LifecycleCleanup>,
+}
+
+struct BlockingTaskGuard<T: Send + 'static> {
+    handle: Option<tokio::task::JoinHandle<T>>,
+    cleanup: Option<LifecycleCleanup>,
+}
+
+impl<T: Send + 'static> BlockingTaskGuard<T> {
+    fn new(handle: tokio::task::JoinHandle<T>, cleanup: Option<LifecycleCleanup>) -> Self {
+        Self {
+            handle: Some(handle),
+            cleanup,
+        }
+    }
+
+    async fn join(mut self) -> Result<T, tokio::task::JoinError> {
+        let result = self.handle.as_mut().unwrap().await;
+        self.handle.take();
+        result
+    }
+}
+
+impl<T: Send + 'static> Drop for BlockingTaskGuard<T> {
+    fn drop(&mut self) {
+        let Some(handle) = self.handle.take() else {
+            return;
+        };
+        let wait = async move {
+            let _ = handle.await;
+        };
+        let wait = if let Some(cleanup) = &self.cleanup {
+            match cleanup.try_spawn(wait) {
+                Ok(()) => return,
+                Err(wait) => wait,
+            }
+        } else {
+            wait
+        };
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(wait);
+        }
+    }
 }
 
 /// POSIX single-quote escaping.
@@ -55,13 +99,11 @@ async fn download(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferS
         .await
         .map_err(|e| AppError::Transfer(e.to_string()))?;
 
-    let channel = {
-        let handle = job.ssh.handle.lock().await;
-        handle
-            .channel_open_session()
-            .await
-            .map_err(|e| AppError::Transfer(format!("tar channel: {e}")))?
-    };
+    let channel = job
+        .ssh
+        .channel_open_session()
+        .await
+        .map_err(|e| AppError::Transfer(format!("tar channel: {e}")))?;
     channel
         .exec(
             true,
@@ -73,11 +115,14 @@ async fn download(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferS
     let (mut pipe_w, pipe_r) = tokio::io::duplex(512 * 1024);
     // Bridge must be created on the runtime, then moved to the blocking pool.
     let bridge = SyncIoBridge::new(pipe_r);
-    let unpack = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-        let mut archive = tar::Archive::new(bridge);
-        archive.set_preserve_mtime(true);
-        archive.unpack(&local_parent)
-    });
+    let unpack = BlockingTaskGuard::new(
+        tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+            let mut archive = tar::Archive::new(bridge);
+            archive.set_preserve_mtime(true);
+            archive.unpack(&local_parent)
+        }),
+        job.cleanup.clone(),
+    );
 
     let mut ctrl = item.control.subscribe();
     let (mut read, write) = channel.split();
@@ -111,10 +156,11 @@ async fn download(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferS
     let _ = write.close().await;
 
     if cancelled {
-        let _ = unpack.await;
+        let _ = unpack.join().await;
         return Ok(TransferState::Cancelled);
     }
     unpack
+        .join()
         .await
         .map_err(|e| AppError::Transfer(format!("unpack task: {e}")))?
         .map_err(|e| AppError::Transfer(format!("unpack: {e}")))?;
@@ -143,13 +189,11 @@ async fn upload(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferSta
         .into_owned();
     let local_root = item.local_path.clone();
 
-    let channel = {
-        let handle = job.ssh.handle.lock().await;
-        handle
-            .channel_open_session()
-            .await
-            .map_err(|e| AppError::Transfer(format!("tar channel: {e}")))?
-    };
+    let channel = job
+        .ssh
+        .channel_open_session()
+        .await
+        .map_err(|e| AppError::Transfer(format!("tar channel: {e}")))?;
     channel
         .exec(true, format!("tar -xf - -C {}", shq(&remote_parent)))
         .await
@@ -157,14 +201,17 @@ async fn upload(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferSta
 
     let (pipe_w, pipe_r) = tokio::io::duplex(512 * 1024);
     let bridge = SyncIoBridge::new(pipe_w);
-    let pack = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-        let mut builder = tar::Builder::new(bridge);
-        builder.follow_symlinks(false);
-        builder.append_dir_all(&base_name, &local_root)?;
-        let mut inner = builder.into_inner()?;
-        std::io::Write::flush(&mut inner)?;
-        Ok(())
-    });
+    let pack = BlockingTaskGuard::new(
+        tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+            let mut builder = tar::Builder::new(bridge);
+            builder.follow_symlinks(false);
+            builder.append_dir_all(&base_name, &local_root)?;
+            let mut inner = builder.into_inner()?;
+            std::io::Write::flush(&mut inner)?;
+            Ok(())
+        }),
+        job.cleanup.clone(),
+    );
 
     let reader = CountingReader {
         inner: pipe_r,
@@ -193,7 +240,7 @@ async fn upload(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferSta
         }
     }
     let _ = write.close().await;
-    let pack_result = pack.await;
+    let pack_result = pack.join().await;
 
     if cancelled {
         return Ok(TransferState::Cancelled);
@@ -238,5 +285,84 @@ impl AsyncRead for CountingReader {
             self.item.done.fetch_add(n as u64, Ordering::Relaxed);
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use super::BlockingTaskGuard;
+    use crate::session::lifecycle::LifecycleGate;
+
+    #[tokio::test]
+    async fn dropped_blocking_task_stays_in_the_session_close_barrier() {
+        let lifecycle = Arc::new(LifecycleGate::default());
+        let operation = lifecycle.try_begin_operation().unwrap();
+        let cleanup = operation.cleanup();
+        let (started, started_rx) = std::sync::mpsc::channel();
+        let (release, release_rx) = std::sync::mpsc::channel();
+        let task = BlockingTaskGuard::new(
+            tokio::task::spawn_blocking(move || {
+                started.send(()).unwrap();
+                release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            }),
+            Some(cleanup),
+        );
+        started_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+
+        let close = tokio::spawn({
+            let lifecycle = lifecycle.clone();
+            async move { lifecycle.begin_close().await }
+        });
+        operation.cancelled().await;
+        drop(task);
+        drop(operation);
+        assert!(!close.is_finished());
+
+        release.send(()).unwrap();
+        let guard = tokio::time::timeout(Duration::from_secs(1), close)
+            .await
+            .expect("close did not wait for the blocking tar task")
+            .unwrap();
+        guard.finish().await;
+    }
+
+    #[tokio::test]
+    async fn cancelled_join_transfers_the_blocking_task_to_the_close_barrier() {
+        let lifecycle = Arc::new(LifecycleGate::default());
+        let operation = lifecycle.try_begin_operation().unwrap();
+        let cleanup = operation.cleanup();
+        let (started, started_rx) = std::sync::mpsc::channel();
+        let (release, release_rx) = std::sync::mpsc::channel();
+        let task = BlockingTaskGuard::new(
+            tokio::task::spawn_blocking(move || {
+                started.send(()).unwrap();
+                release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            }),
+            Some(cleanup),
+        );
+        let join = tokio::spawn(async move {
+            let _ = task.join().await;
+        });
+        started_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+
+        let close = tokio::spawn({
+            let lifecycle = lifecycle.clone();
+            async move { lifecycle.begin_close().await }
+        });
+        operation.cancelled().await;
+        join.abort();
+        let _ = join.await;
+        drop(operation);
+        assert!(!close.is_finished());
+
+        release.send(()).unwrap();
+        let guard = tokio::time::timeout(Duration::from_secs(1), close)
+            .await
+            .expect("close did not inherit the cancelled tar join")
+            .unwrap();
+        guard.finish().await;
     }
 }

@@ -33,6 +33,12 @@
 
   const tree = $derived(vault.data?.tree ?? []);
 
+  // MainScreen intentionally survives an ordinary lock so terminal channels
+  // stay mounted. ConnectionDialog cannot: it owns decrypted credentials.
+  $effect(() => {
+    if (!vault.data) connectionDialog = null;
+  });
+
   // Live search over name/host (SPEC §5.1) — flat result list.
   const searchResults = $derived.by(() => {
     const q = search.trim().toLowerCase();

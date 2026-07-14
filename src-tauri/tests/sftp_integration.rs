@@ -28,9 +28,7 @@ async fn connect(sshd: &TestSshd) -> SshSession {
         .await
         .unwrap()
     {
-        ConnectOutcome::Connected(handle) => SshSession {
-            handle: tokio::sync::Mutex::new(handle),
-        },
+        ConnectOutcome::Connected(transport) => SshSession::new(transport),
         _ => panic!("expected connection"),
     }
 }

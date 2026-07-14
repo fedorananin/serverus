@@ -1,26 +1,10 @@
-<script lang="ts" module>
-  interface Toast {
-    id: number;
-    text: string;
-    error: boolean;
-  }
-
-  let toasts = $state<Toast[]>([]);
-  let nextToastId = 1;
-
-  export function showToast(text: string, error = false) {
-    const toast: Toast = { id: nextToastId++, text, error };
-    toasts.push(toast);
-    setTimeout(() => {
-      const idx = toasts.findIndex((t) => t.id === toast.id);
-      if (idx !== -1) toasts.splice(idx, 1);
-    }, error ? 6000 : 2500);
-  }
+<script lang="ts">
+  import { toasts } from "$lib/stores/toasts.svelte";
 </script>
 
-{#if toasts.length > 0}
+{#if toasts.items.length > 0}
   <div class="toasts">
-    {#each toasts as toast (toast.id)}
+    {#each toasts.items as toast (toast.id)}
       <div class="toast" class:error={toast.error}>{toast.text}</div>
     {/each}
   </div>

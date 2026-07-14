@@ -15,6 +15,7 @@ use tokio::io::AsyncWriteExt;
 use crate::error::{AppError, AppResult};
 use crate::events::RemoteEditUploadedEvent;
 use crate::session::remote_fs::{join_remote, parent_remote, RemoteFs};
+use crate::session::SessionOperation;
 use crate::vault::model::EditorSettings;
 
 struct WatchedFile {
@@ -206,20 +207,65 @@ impl Drop for PendingCacheDir {
     }
 }
 
-/// Best-effort cleanup of downloaded copies (SPEC §5.3).
+fn remove_cache_dir(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_dir_all(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        result => result,
+    }
+}
+
+fn cleanup_cache(path: &Path, remove: impl FnOnce(&Path) -> std::io::Result<()>) -> AppResult<()> {
+    remove(path).map_err(|error| {
+        AppError::Other(format!(
+            "failed to remove plaintext edit cache {}: {error}",
+            path.display()
+        ))
+    })
+}
+
+/// Best-effort cleanup of downloaded copies on application exit.
 pub fn cleanup_all() {
-    let _ = std::fs::remove_dir_all(edit_cache_dir());
+    let _ = remove_cache_dir(&edit_cache_dir());
 }
 
 impl EditWatcher {
+    #[cfg(test)]
+    pub(crate) fn insert_test_watch(&self, session_id: &str) -> tokio::sync::oneshot::Receiver<()> {
+        let watcher = notify::recommended_watcher(|_: notify::Result<notify::Event>| {}).unwrap();
+        let (shutdown, mut shutdown_rx) = tokio::sync::watch::channel(false);
+        let completion = Arc::new(TaskCompletion::default());
+        let task_completion = completion.clone();
+        let (stopped, stopped_rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let _completion = TaskCompletionGuard(task_completion);
+            let _ = shutdown_rx.changed().await;
+            let _ = stopped.send(());
+        });
+        let directory = edit_cache_dir().join(format!("test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        self.files.lock().unwrap().insert(
+            directory.join("watched-file"),
+            WatchedFile {
+                session_id: session_id.to_string(),
+                _watcher: watcher,
+                shutdown,
+                completion,
+            },
+        );
+        stopped_rx
+    }
+
     /// Download `remote_path`, open it in the editor and auto-upload saves.
-    pub async fn open(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn open(
         self: &Arc<Self>,
         app: AppHandle,
         fs_remote: Arc<dyn RemoteFs>,
         session_id: &str,
         remote_path: &str,
         editor: &EditorSettings,
+        operation: &SessionOperation,
+        context_epoch: u64,
     ) -> AppResult<()> {
         let name = remote_path.rsplit('/').next().unwrap_or("file").to_string();
         validate_edit_filename(&name)?;
@@ -255,10 +301,6 @@ impl EditWatcher {
         watcher
             .watch(&watch_target, RecursiveMode::NonRecursive)
             .map_err(|e| AppError::Other(format!("watch {name}: {e}")))?;
-
-        // Open only after watcher setup succeeds. On an editor-launch error,
-        // the watcher is dropped before the cache cleanup guard runs.
-        open_in_editor(&local_path, editor)?;
 
         let (shutdown, mut shutdown_rx) = tokio::sync::watch::channel(false);
         let completion = Arc::new(TaskCompletion::default());
@@ -312,6 +354,7 @@ impl EditWatcher {
                 match result {
                     Ok(()) => {
                         let _ = RemoteEditUploadedEvent {
+                            context_epoch,
                             name: display_name.clone(),
                             remote_path: remote_path.clone(),
                             error: None,
@@ -320,6 +363,7 @@ impl EditWatcher {
                     }
                     Err(e) => {
                         let _ = RemoteEditUploadedEvent {
+                            context_epoch,
                             name: display_name.clone(),
                             remote_path: remote_path.clone(),
                             error: Some(e.to_string()),
@@ -330,10 +374,8 @@ impl EditWatcher {
             }
         };
 
-        // Register and spawn under the same lock used by close_session. The
-        // task is therefore either visible to shutdown or does not exist yet.
-        let mut files = self.files.lock().unwrap();
-        files.insert(
+        self.register_watch(
+            operation,
             local_path.clone(),
             WatchedFile {
                 session_id: session_id.to_string(),
@@ -341,11 +383,38 @@ impl EditWatcher {
                 shutdown,
                 completion,
             },
-        );
-        drop(tokio::spawn(upload_loop));
+            || open_in_editor(&local_path, editor),
+            upload_loop,
+        )?;
 
         pending_cache.keep();
 
+        Ok(())
+    }
+
+    fn register_watch(
+        &self,
+        operation: &SessionOperation,
+        local_path: PathBuf,
+        watched_file: WatchedFile,
+        launch_editor: impl FnOnce() -> AppResult<()>,
+        upload_loop: impl std::future::Future<Output = ()> + Send + 'static,
+    ) -> AppResult<()> {
+        // Register and spawn under the same lock used by close_session. The
+        // task is therefore either visible to shutdown or does not exist yet.
+        let mut files = self.files.lock().unwrap();
+        let mut pending = Some(watched_file);
+        let mut launch_editor = Some(launch_editor);
+        let mut upload_loop = Some(upload_loop);
+        operation.register(|| -> AppResult<()> {
+            // Launch and registration share the lifecycle critical section:
+            // closing cannot begin after plaintext is handed to an editor but
+            // before its watcher becomes visible to teardown.
+            launch_editor.take().unwrap()()?;
+            files.insert(local_path, pending.take().unwrap());
+            drop(tokio::spawn(upload_loop.take().unwrap()));
+            Ok(())
+        })??;
         Ok(())
     }
 
@@ -372,6 +441,19 @@ impl EditWatcher {
                 let _ = std::fs::remove_dir_all(dir);
             }
         }
+    }
+
+    /// Stop every remaining edit and require all plaintext cache data to be
+    /// deleted before another vault context can open.
+    pub async fn close_all(&self) -> AppResult<()> {
+        let watched: Vec<_> = self.files.lock().unwrap().drain().collect();
+        for (_, watched_file) in &watched {
+            let _ = watched_file.shutdown.send(true);
+        }
+        for (_, watched_file) in watched {
+            watched_file.completion.wait().await;
+        }
+        cleanup_cache(&edit_cache_dir(), remove_cache_dir)
     }
 }
 
@@ -535,11 +617,72 @@ mod tests {
     use tokio::io::AsyncWrite;
 
     use super::{
-        create_private_cache_file, create_private_edit_dir, upload_back, upload_back_controlled,
-        validate_edit_filename, PendingCacheDir,
+        cleanup_cache, create_private_cache_file, create_private_edit_dir, upload_back,
+        upload_back_controlled, validate_edit_filename, EditWatcher, PendingCacheDir,
+        TaskCompletion, WatchedFile,
     };
     use crate::error::{AppError, AppResult};
+    use crate::session::lifecycle::LifecycleGate;
     use crate::session::remote_fs::{BoxRead, BoxWrite, RemoteEntry, RemoteFs};
+
+    #[test]
+    fn plaintext_cache_deletion_failure_is_reported() {
+        let path = std::path::Path::new("/simulated/edit-cache");
+        let error = cleanup_cache(path, |_| {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "simulated cleanup failure",
+            ))
+        })
+        .unwrap_err();
+
+        assert!(error.to_string().contains("simulated cleanup failure"));
+        assert!(error.to_string().contains("/simulated/edit-cache"));
+    }
+
+    #[tokio::test]
+    async fn late_remote_edit_is_rejected_without_spawning_its_upload_loop() {
+        let lifecycle = Arc::new(LifecycleGate::default());
+        let operation = lifecycle.try_begin_operation().unwrap();
+        let close = tokio::spawn({
+            let lifecycle = lifecycle.clone();
+            async move { lifecycle.begin_close().await }
+        });
+        operation.cancelled().await;
+
+        let watcher = notify::recommended_watcher(|_: notify::Result<notify::Event>| {}).unwrap();
+        let (shutdown, _) = tokio::sync::watch::channel(false);
+        let polled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let upload_polled = polled.clone();
+        let launched = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let editor_launched = launched.clone();
+        let edits = EditWatcher::default();
+        let result = edits.register_watch(
+            &operation,
+            "/tmp/late-edit".into(),
+            WatchedFile {
+                session_id: "session".into(),
+                _watcher: watcher,
+                shutdown,
+                completion: Arc::new(TaskCompletion::default()),
+            },
+            move || {
+                editor_launched.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            },
+            async move {
+                upload_polled.store(true, std::sync::atomic::Ordering::SeqCst);
+            },
+        );
+
+        assert!(matches!(result, Err(AppError::SessionNotFound)));
+        assert!(!launched.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(edits.files.lock().unwrap().is_empty());
+        tokio::task::yield_now().await;
+        assert!(!polled.load(std::sync::atomic::Ordering::SeqCst));
+        drop(operation);
+        close.await.unwrap().finish().await;
+    }
 
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum UploadFailure {

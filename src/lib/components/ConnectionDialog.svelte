@@ -81,7 +81,8 @@
     let cancelled = false;
     secretLoadState = "loading";
     secretLoadError = null;
-    void unwrap(commands.connectionSecrets(connection.id))
+    const contextEpoch = vault.requireRuntimeEpoch();
+    void unwrap(commands.connectionSecrets(connection.id, contextEpoch))
       .then((secrets) => {
         if (cancelled) return;
         password = secrets.password ?? "";
@@ -149,7 +150,9 @@
   async function importKeyFile(path: string) {
     keyImportError = null;
     try {
-      keyInline = await unwrap(commands.sshKeyReadFile(path));
+      keyInline = await unwrap(
+        commands.sshKeyReadFile(path, vault.requireRuntimeEpoch()),
+      );
       keySource = "text";
       keyPath = "";
     } catch (e) {
