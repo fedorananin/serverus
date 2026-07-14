@@ -167,11 +167,10 @@ impl VaultManager {
         &mut self,
         f: impl FnOnce(&mut VaultPayload) -> AppResult<T>,
     ) -> AppResult<T> {
-        if self.payload.is_none() {
-            return Err(AppError::VaultLocked);
-        }
-        let result = f(self.payload.as_mut().unwrap())?;
-        self.save()?;
+        let mut next = self.payload()?.clone();
+        let result = f(&mut next)?;
+        self.save_payload(&next)?;
+        self.payload = Some(next);
         Ok(result)
     }
 
@@ -190,10 +189,13 @@ impl VaultManager {
     /// with a `.bak` copy of the previous version (SPEC §2.2). The plaintext
     /// payload never touches the disk.
     pub fn save(&self) -> AppResult<()> {
+        let payload = self.payload.as_ref().ok_or(AppError::VaultLocked)?;
+        self.save_payload(payload)
+    }
+
+    fn save_payload(&self, payload: &VaultPayload) -> AppResult<()> {
         let header = self.header.as_ref().ok_or(AppError::VaultLocked)?;
         let dek = self.dek.as_ref().ok_or(AppError::VaultLocked)?;
-        let payload = self.payload.as_ref().ok_or(AppError::VaultLocked)?;
-
         let json = Zeroizing::new(
             serde_json::to_vec(payload)
                 .map_err(|e| AppError::Other(format!("payload serialization failed: {e}")))?,
@@ -335,6 +337,44 @@ mod tests {
         assert!(mgr.unlock_with_password("old").is_err());
         mgr.unlock_with_password("new").unwrap();
         assert!(mgr.payload().unwrap().connections.contains_key("c1"));
+    }
+
+    #[test]
+    fn with_payload_rolls_back_when_mutation_fails() {
+        let (_dir, mut mgr) = temp_vault();
+        mgr.create("pw", test_kdf()).unwrap();
+
+        let result: AppResult<()> = mgr.with_payload(|p| {
+            p.connections.insert("c1".into(), sample_connection());
+            Err(AppError::Other("mutation failed".into()))
+        });
+
+        assert!(result.is_err());
+        assert!(!mgr.payload().unwrap().connections.contains_key("c1"));
+    }
+
+    #[test]
+    fn with_payload_rolls_back_when_save_fails() {
+        let (dir, mut mgr) = temp_vault();
+        mgr.create("pw", test_kdf()).unwrap();
+        let original_path = mgr.path().to_path_buf();
+
+        let non_directory = dir.path().join("not-a-directory");
+        fs::write(&non_directory, b"block parent directory creation").unwrap();
+        mgr.path = non_directory.join("test.serverus");
+
+        let result = mgr.with_payload(|p| {
+            p.connections.insert("c1".into(), sample_connection());
+            Ok(())
+        });
+
+        assert!(result.is_err());
+        assert!(!mgr.payload().unwrap().connections.contains_key("c1"));
+
+        mgr.path = original_path;
+        mgr.lock();
+        mgr.unlock_with_password("pw").unwrap();
+        assert!(!mgr.payload().unwrap().connections.contains_key("c1"));
     }
 
     #[test]
