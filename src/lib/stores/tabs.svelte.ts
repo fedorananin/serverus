@@ -30,6 +30,8 @@ class TabsStore {
   tabs = $state<Tab[]>([]);
   activeId = $state<string | null>(null);
   private listening = false;
+  /** Latest in-flight connect call for each tab. Older results are stale. */
+  private connectAttempts = new Map<string, symbol>();
 
   get active(): Tab | null {
     return this.tabs.find((t) => t.id === this.activeId) ?? null;
@@ -96,16 +98,29 @@ class TabsStore {
   async connect(tabId: string) {
     const tab = this.tabs.find((t) => t.id === tabId);
     if (!tab) return;
+    const attempt = Symbol(tabId);
+    this.connectAttempts.set(tabId, attempt);
+    const isCurrent = () =>
+      this.tabs.includes(tab) && this.connectAttempts.get(tabId) === attempt;
     tab.state = "connecting";
     tab.error = null;
     tab.connectMessage = null;
     try {
       const dto = await unwrap(commands.sessionConnect(tab.connectionId));
+      if (!isCurrent()) {
+        // A closed tab or a newer retry cannot own this backend session.
+        await unwrap(commands.sessionDisconnect(dto.session_id)).catch(() => {});
+        return;
+      }
+      this.connectAttempts.delete(tabId);
       tab.sessionId = dto.session_id;
       tab.state = "connected";
       tab.connectMessage = null;
       tab.reconnectAttempts = 0;
     } catch (e) {
+      // Errors and prompts also belong only to the latest live attempt.
+      if (!isCurrent()) return;
+      this.connectAttempts.delete(tabId);
       if (isApiError(e) && e.code === "host_key_prompt" && e.host_key) {
         hostKey.ask(e.host_key, {
           accepted: () => void this.connect(tabId),
@@ -125,6 +140,7 @@ class TabsStore {
     const idx = this.tabs.findIndex((t) => t.id === id);
     if (idx === -1) return;
     const [tab] = this.tabs.splice(idx, 1);
+    this.connectAttempts.delete(id);
     if (tab.sessionId) {
       void unwrap(commands.sessionDisconnect(tab.sessionId)).catch(() => {});
     }

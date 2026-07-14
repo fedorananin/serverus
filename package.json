@@ -9,6 +9,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "vitest run",
     "check": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'state_referenced_locally:ignore' && tsc --noEmit -p tsconfig.node.json",
     "tauri": "node scripts/with-signing-env.mjs"
   },
@@ -29,6 +30,7 @@
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
     "typescript": "~5.6.2",
-    "vite": "^6.0.3"
+    "vite": "^6.0.3",
+    "vitest": "^4.1.10"
   }
 }
