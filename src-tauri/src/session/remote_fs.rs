@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct RemoteEntry {
@@ -38,6 +38,13 @@ pub trait RemoteFs: Send + Sync {
     /// Create an empty file (fails if it exists).
     async fn create_file(&self, path: &str) -> AppResult<()>;
     async fn rename(&self, from: &str, to: &str) -> AppResult<()>;
+    /// Promote a fully written staging file over an existing file without
+    /// deleting the existing data first. The default implementation uses a
+    /// same-directory backup/rename/rollback sequence so it also works with
+    /// SFTP v3 servers whose plain RENAME refuses an existing target.
+    async fn replace_file(&self, staged: &str, target: &str) -> AppResult<()> {
+        replace_file_via_backup(self, staged, target).await
+    }
     async fn delete_file(&self, path: &str) -> AppResult<()>;
     /// Remove an *empty* directory; recursion lives in the transfer module.
     async fn delete_dir(&self, path: &str) -> AppResult<()>;
@@ -48,12 +55,54 @@ pub trait RemoteFs: Send + Sync {
     /// Open for writing. `offset == 0` truncates/creates; `offset > 0`
     /// appends starting at that position (resume support).
     async fn open_write(&self, path: &str, offset: u64) -> AppResult<BoxWrite>;
+    /// Create a same-directory replacement staging file with permissions no
+    /// broader than the target from its first byte, when the protocol can.
+    async fn open_write_replacement(&self, staged: &str, _target: &str) -> AppResult<BoxWrite> {
+        self.open_write(staged, 0).await
+    }
     /// Whether a path exists (used for conflict detection).
     async fn exists(&self, path: &str) -> AppResult<bool>;
     /// Whether `open_write` honours a non-zero offset (partial-upload
     /// resume). S3 cannot — a retried upload restarts the file.
     fn supports_write_resume(&self) -> bool {
         true
+    }
+}
+
+/// Replace a file using only baseline [`RemoteFs`] operations.
+///
+/// The original is moved aside, never deleted, before the staged file is
+/// promoted. A failed promotion rolls the original back into place. This is
+/// the portable fallback for protocols without an overwrite primitive.
+pub(crate) async fn replace_file_via_backup<F>(fs: &F, staged: &str, target: &str) -> AppResult<()>
+where
+    F: RemoteFs + ?Sized,
+{
+    if !fs.exists(target).await? {
+        return fs.rename(staged, target).await;
+    }
+
+    let backup = join_remote(
+        &parent_remote(target),
+        &format!(".serverus-replace-{}.bak", uuid::Uuid::new_v4()),
+    );
+    fs.rename(target, &backup).await?;
+
+    match fs.rename(staged, target).await {
+        Ok(()) => {
+            fs.delete_file(&backup).await.map_err(|error| {
+                AppError::RemoteFs(format!(
+                    "{target}: replacement succeeded, but old-file cleanup failed at {backup}: {error}"
+                ))
+            })?;
+            Ok(())
+        }
+        Err(replace_error) => match fs.rename(&backup, target).await {
+            Ok(()) => Err(replace_error),
+            Err(rollback_error) => Err(AppError::RemoteFs(format!(
+                "{target}: replacement failed ({replace_error}); original remains at {backup}, but rollback failed: {rollback_error}"
+            ))),
+        },
     }
 }
 

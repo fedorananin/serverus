@@ -683,6 +683,35 @@ impl RemoteFs for S3Fs {
         Ok(())
     }
 
+    async fn replace_file(&self, staged: &str, target: &str) -> AppResult<()> {
+        let (source_bucket, source_key) = self.object(staged)?;
+        let (target_bucket, target_key) = self.object(target)?;
+        let target_acl = self.acl_status_one(&target_bucket, &target_key).await;
+
+        // CopyObject publishes only the completed staged object at the
+        // destination. Apply the previous destination ACL in the same request
+        // instead of inheriting the private staging object's visibility.
+        let mut request = self
+            .client
+            .copy_object()
+            .copy_source(encode_copy_source(&source_bucket, &source_key))
+            .bucket(&target_bucket)
+            .key(&target_key);
+        request = match target_acl {
+            S3AclStatus::Public => request.acl(ObjectCannedAcl::PublicRead),
+            // The provider default is private. Omitting the header also keeps
+            // replacement compatible with ACL-less providers.
+            S3AclStatus::Private | S3AclStatus::Unknown => request,
+        };
+        request
+            .send()
+            .await
+            .map_err(|error| sdk_err(staged, error))?;
+
+        // The destination is complete and visible before staging cleanup.
+        self.delete_object(&source_bucket, &source_key).await
+    }
+
     async fn delete_file(&self, path: &str) -> AppResult<()> {
         let (bucket, key) = self.object(path)?;
         self.delete_object(&bucket, &key).await
@@ -739,6 +768,19 @@ impl RemoteFs for S3Fs {
             bucket,
             key,
             self.upload_canned_acl(),
+        )))
+    }
+
+    async fn open_write_replacement(&self, staged: &str, _target: &str) -> AppResult<BoxWrite> {
+        let (bucket, key) = self.object(staged)?;
+        // Remote-edit staging may contain sensitive data and must never use a
+        // session-wide PublicRead policy. Omitting the ACL keeps the provider
+        // default private and works with providers that reject ACL headers.
+        Ok(Box::new(S3Writer::new(
+            self.client.clone(),
+            bucket,
+            key,
+            None,
         )))
     }
 

@@ -112,6 +112,19 @@ async fn ftp_basic_operations() {
     pool.create_file("/dir/a.txt").await.unwrap();
     pool.rename("/dir/a.txt", "/dir/b.txt").await.unwrap();
 
+    // Replacement is a separate contract from a plain rename: it must work
+    // even when the FTP server refuses RNTO over an existing target.
+    fs::write(server_root.path().join("dir/b.txt"), b"old").unwrap();
+    fs::write(server_root.path().join("dir/edit-staged"), b"new").unwrap();
+    pool.replace_file("/dir/edit-staged", "/dir/b.txt")
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(server_root.path().join("dir/b.txt")).unwrap(),
+        b"new"
+    );
+    assert!(!server_root.path().join("dir/edit-staged").exists());
+
     let listing = pool.list("/dir").await.unwrap();
     assert_eq!(listing.len(), 1);
     assert_eq!(listing[0].name, "b.txt");
