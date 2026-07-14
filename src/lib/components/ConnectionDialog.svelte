@@ -55,22 +55,54 @@
   let notes = $state(existing?.notes ?? "");
   let saving = $state(false);
   let error = $state<string | null>(null);
+  let secretLoadState = $state<"loading" | "ready" | "error">(
+    existing ? "loading" : "ready",
+  );
+  let secretLoadError = $state<string | null>(null);
+  let secretLoadAttempt = $state(0);
   // Secrets are shown in cleartext — the vault is already unlocked, so
   // masking adds nothing and makes copying a password between servers harder.
   let showSecrets = $state(true);
 
   // When editing, load the real stored secrets so the form shows them.
   $effect(() => {
-    if (existing) {
-      void unwrap(commands.connectionSecrets(existing.id))
-        .then((s) => {
-          password = s.password ?? "";
-          keyPassphrase = s.key_passphrase ?? "";
-          keyInline = s.key_inline ?? "";
-        })
-        .catch(() => {});
+    const connection = existing;
+    secretLoadAttempt;
+    password = "";
+    keyPassphrase = "";
+    keyInline = "";
+
+    if (!connection) {
+      secretLoadState = "ready";
+      secretLoadError = null;
+      return;
     }
+
+    let cancelled = false;
+    secretLoadState = "loading";
+    secretLoadError = null;
+    void unwrap(commands.connectionSecrets(connection.id))
+      .then((secrets) => {
+        if (cancelled) return;
+        password = secrets.password ?? "";
+        keyPassphrase = secrets.key_passphrase ?? "";
+        keyInline = secrets.key_inline ?? "";
+        secretLoadState = "ready";
+      })
+      .catch((loadError) => {
+        if (cancelled) return;
+        secretLoadState = "error";
+        secretLoadError = `Could not load saved credentials: ${errorMessage(loadError)}`;
+      });
+
+    return () => {
+      cancelled = true;
+    };
   });
+
+  function retrySecretLoad() {
+    if (secretLoadState === "error") secretLoadAttempt += 1;
+  }
 
   // Default port follows protocol until the user edits it.
   $effect(() => {
@@ -143,7 +175,13 @@
     ),
   );
 
-  const canSave = $derived(name.trim() !== "" && host.trim() !== "" && username.trim() !== "" && !saving);
+  const canSave = $derived(
+    name.trim() !== "" &&
+      host.trim() !== "" &&
+      username.trim() !== "" &&
+      secretLoadState === "ready" &&
+      !saving,
+  );
 
   function addTunnel() {
     tunnels.push({
@@ -488,6 +526,15 @@
       <textarea rows="2" bind:value={notes}></textarea>
     </label>
 
+    {#if secretLoadState === "loading"}
+      <div class="hint" aria-live="polite">Loading saved credentials…</div>
+    {:else if secretLoadError}
+      <div class="credential-error" role="alert">
+        <span>{secretLoadError}</span>
+        <button type="button" onclick={retrySecretLoad}>Retry</button>
+      </div>
+    {/if}
+
     {#if error}
       <div class="error">{error}</div>
     {/if}
@@ -647,6 +694,20 @@
   }
 
   .error {
+    color: var(--danger);
+    font-size: 12px;
+  }
+
+  .hint {
+    color: var(--text-2);
+    font-size: 12px;
+  }
+
+  .credential-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     color: var(--danger);
     font-size: 12px;
   }
