@@ -96,6 +96,7 @@ pub async fn vault_get_info(state: State<'_, AppState>) -> ApiResult<VaultInfo> 
 pub async fn vault_create(state: State<'_, AppState>, password: String) -> ApiResult<PublicVault> {
     let vault = state.vault.clone();
     let quick = state.quick.clone();
+    let activity = state.activity.clone();
     blocking(move || {
         let password = Zeroizing::new(password);
         let mut mgr = vault.lock().unwrap();
@@ -104,7 +105,9 @@ pub async fn vault_create(state: State<'_, AppState>, password: String) -> ApiRe
             // Best-effort: quick unlock failing must never block vault use.
             let _ = quick.store_dek(&mgr.vault_id(), mgr.dek()?);
         }
-        Ok(mgr.payload()?.to_public())
+        let public = mgr.payload()?.to_public();
+        activity.touch();
+        Ok(public)
     })
     .await
 }
@@ -117,6 +120,7 @@ pub async fn vault_unlock_password(
 ) -> ApiResult<PublicVault> {
     let vault = state.vault.clone();
     let quick = state.quick.clone();
+    let activity = state.activity.clone();
     blocking(move || {
         let password = Zeroizing::new(password);
         let mut mgr = vault.lock().unwrap();
@@ -126,7 +130,9 @@ pub async fn vault_unlock_password(
         if mgr.payload()?.settings.security.touch_id && quick.is_available() {
             let _ = quick.store_dek(&mgr.vault_id(), mgr.dek()?);
         }
-        Ok(mgr.payload()?.to_public())
+        let public = mgr.payload()?.to_public();
+        activity.touch();
+        Ok(public)
     })
     .await
 }
@@ -136,6 +142,7 @@ pub async fn vault_unlock_password(
 pub async fn vault_unlock_quick(state: State<'_, AppState>) -> ApiResult<PublicVault> {
     let vault = state.vault.clone();
     let quick = state.quick.clone();
+    let activity = state.activity.clone();
     blocking(move || {
         // Prompt outside the vault lock: the Touch ID dialog can sit there
         // for a while and must not block other vault reads.
@@ -143,9 +150,145 @@ pub async fn vault_unlock_quick(state: State<'_, AppState>) -> ApiResult<PublicV
         let dek = quick.retrieve_dek(&vault_id)?;
         let mut mgr = vault.lock().unwrap();
         mgr.unlock_with_dek(&dek)?;
-        Ok(mgr.payload()?.to_public())
+        let public = mgr.payload()?.to_public();
+        activity.touch();
+        Ok(public)
     })
     .await
+}
+
+#[cfg(test)]
+mod vault_unlock_activity_tests {
+    use super::{vault_create, vault_unlock_password, vault_unlock_quick};
+    use crate::autolock::ActivityTracker;
+    use crate::error::AppResult;
+    use crate::session::SessionManager;
+    use crate::state::AppState;
+    use crate::transfer::TransferManager;
+    use crate::vault::format::KdfParams;
+    use crate::vault::quick_unlock::{NoQuickUnlock, QuickUnlock};
+    use crate::vault::VaultManager;
+    use crate::watcher::EditWatcher;
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+    use tauri::Manager;
+    use zeroize::Zeroizing;
+
+    struct StoredQuickUnlock {
+        dek: Zeroizing<Vec<u8>>,
+    }
+
+    impl QuickUnlock for StoredQuickUnlock {
+        fn is_available(&self) -> bool {
+            true
+        }
+
+        fn has_dek(&self, _vault_id: &str) -> bool {
+            true
+        }
+
+        fn store_dek(&self, _vault_id: &str, _dek: &[u8]) -> AppResult<()> {
+            Ok(())
+        }
+
+        fn retrieve_dek(&self, _vault_id: &str) -> AppResult<Zeroizing<Vec<u8>>> {
+            Ok(self.dek.clone())
+        }
+
+        fn clear(&self, _vault_id: &str) {}
+    }
+
+    fn test_kdf() -> KdfParams {
+        KdfParams {
+            m_cost_kib: 8 * 1024,
+            t_cost: 1,
+            p_cost: 1,
+        }
+    }
+
+    fn expired_activity() -> Arc<ActivityTracker> {
+        let activity = Arc::new(ActivityTracker::default());
+        *activity.last_activity.lock().unwrap() = Instant::now() - Duration::from_secs(120);
+        activity
+    }
+
+    fn test_app(
+        vault: VaultManager,
+        quick: Arc<dyn QuickUnlock>,
+        activity: Arc<ActivityTracker>,
+    ) -> tauri::App<tauri::test::MockRuntime> {
+        tauri::test::mock_builder()
+            .manage(AppState {
+                vault: Arc::new(Mutex::new(vault)),
+                quick,
+                sessions: Arc::new(SessionManager::default()),
+                transfers: Arc::new(TransferManager::default()),
+                edits: Arc::new(EditWatcher::default()),
+                activity,
+            })
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap()
+    }
+
+    fn assert_idle_interval_was_restarted(activity: &ActivityTracker, command_started: Instant) {
+        let last_activity = *activity.last_activity.lock().unwrap();
+        assert!(
+            last_activity >= command_started,
+            "expected the idle interval to start after the unlock command"
+        );
+    }
+
+    #[test]
+    fn vault_create_restarts_an_expired_idle_interval() {
+        let directory = tempfile::tempdir().unwrap();
+        let activity = expired_activity();
+        let app = test_app(
+            VaultManager::new(directory.path().join("created.serverus")),
+            Arc::new(NoQuickUnlock),
+            activity.clone(),
+        );
+        let command_started = Instant::now();
+
+        tauri::async_runtime::block_on(vault_create(app.state::<AppState>(), "password".into()))
+            .unwrap();
+
+        assert_idle_interval_was_restarted(&activity, command_started);
+    }
+
+    #[test]
+    fn password_unlock_restarts_an_expired_idle_interval() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut vault = VaultManager::new(directory.path().join("password.serverus"));
+        vault.create("password", test_kdf()).unwrap();
+        vault.lock();
+        let activity = expired_activity();
+        let app = test_app(vault, Arc::new(NoQuickUnlock), activity.clone());
+        let command_started = Instant::now();
+
+        tauri::async_runtime::block_on(vault_unlock_password(
+            app.state::<AppState>(),
+            "password".into(),
+        ))
+        .unwrap();
+
+        assert_idle_interval_was_restarted(&activity, command_started);
+    }
+
+    #[test]
+    fn quick_unlock_restarts_an_expired_idle_interval() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut vault = VaultManager::new(directory.path().join("quick.serverus"));
+        vault.create("password", test_kdf()).unwrap();
+        let dek = Zeroizing::new(vault.dek().unwrap().to_vec());
+        vault.lock();
+        let activity = expired_activity();
+        let app = test_app(vault, Arc::new(StoredQuickUnlock { dek }), activity.clone());
+        let command_started = Instant::now();
+
+        tauri::async_runtime::block_on(vault_unlock_quick(app.state::<AppState>())).unwrap();
+
+        assert_idle_interval_was_restarted(&activity, command_started);
+    }
 }
 
 #[tauri::command]
