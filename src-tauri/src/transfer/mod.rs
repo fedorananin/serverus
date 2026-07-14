@@ -2,7 +2,7 @@
 //! pause/resume/cancel, conflict handling. Works through the RemoteFs trait —
 //! it does not know whether a session is SFTP or FTP.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -18,6 +18,7 @@ pub mod tar_stream;
 use crate::error::{AppError, AppResult};
 use crate::events::TransferProgressEvent;
 use crate::session::remote_fs::{join_remote, RemoteFs};
+use crate::session::SessionOperation;
 use crate::vault::model::{ConflictPolicy, TransferSettings};
 
 /// Where progress events go. The real app emits Tauri events; tests use a
@@ -280,6 +281,13 @@ pub struct TransferManager {
     items: Mutex<Vec<Arc<TransferItem>>>,
     queues: Mutex<HashMap<String, Arc<ServerQueue>>>,
     emitter_running: std::sync::atomic::AtomicBool,
+    tasks: Mutex<TransferTasks>,
+}
+
+#[derive(Default)]
+struct TransferTasks {
+    closing: HashSet<String>,
+    handles: HashMap<String, Vec<tokio::task::JoinHandle<()>>>,
 }
 
 impl TransferManager {
@@ -304,6 +312,10 @@ impl TransferManager {
             .iter()
             .find(|i| i.id == id)
             .cloned()
+    }
+
+    pub(crate) fn session_id(&self, id: &str) -> Option<String> {
+        self.find(id).map(|item| item.session_id.clone())
     }
 
     pub fn snapshot(&self) -> (Vec<TransferSnapshot>, TransferSummary) {
@@ -344,7 +356,12 @@ impl TransferManager {
     /// Drop all transfers belonging to a session (its tab was closed /
     /// disconnected). The queue and history live only for the lifetime of
     /// the connection (SPEC §6.1).
-    pub fn clear_session(&self, session_id: &str) {
+    pub async fn clear_session(&self, session_id: &str) {
+        let handles = {
+            let mut tasks = self.tasks.lock().unwrap();
+            tasks.closing.insert(session_id.to_string());
+            tasks.handles.remove(session_id).unwrap_or_default()
+        };
         let ids: Vec<String> = self
             .items
             .lock()
@@ -356,6 +373,23 @@ impl TransferManager {
         for id in &ids {
             self.cancel(id); // stop any running/queued worker first
         }
+        self.items
+            .lock()
+            .unwrap()
+            .retain(|i| i.session_id != session_id);
+        self.queues.lock().unwrap().remove(session_id);
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(250);
+        for mut handle in handles {
+            if tokio::time::timeout_at(deadline, &mut handle)
+                .await
+                .is_err()
+            {
+                handle.abort();
+                let _ = handle.await;
+            }
+        }
+        // A worker that was already completing when closing started may have
+        // touched queue/item state before observing cancellation.
         self.items
             .lock()
             .unwrap()
@@ -397,7 +431,10 @@ impl TransferManager {
     pub fn cancel(&self, id: &str) {
         if let Some(item) = self.find(id) {
             match item.state() {
-                TransferState::Queued => item.set_state(TransferState::Cancelled, None),
+                TransferState::Queued => {
+                    item.set_state(TransferState::Cancelled, None);
+                    let _ = item.control.send(Control::Cancel);
+                }
                 TransferState::Conflict => {
                     item.set_state(TransferState::Cancelled, None);
                     // Unblock the waiting worker.
@@ -519,7 +556,8 @@ impl TransferManager {
         settings: TransferSettings,
         local_target: Option<LocalDownloadTarget>,
         tar: Option<tar_stream::TarJob>,
-    ) -> Arc<TransferItem> {
+        operation: Option<&SessionOperation>,
+    ) -> AppResult<Arc<TransferItem>> {
         let name = match kind {
             TransferKind::Upload => local_path
                 .file_name()
@@ -554,19 +592,68 @@ impl TransferManager {
             tar,
             local_target,
         });
-        self.items.lock().unwrap().push(item.clone());
-        item
+        let tasks = self.tasks.lock().unwrap();
+        if tasks.closing.contains(session_id) {
+            return Err(AppError::SessionNotFound);
+        }
+        let register = || self.items.lock().unwrap().push(item.clone());
+        if let Some(operation) = operation {
+            operation.register(register)?;
+        } else {
+            register();
+        }
+        drop(tasks);
+        Ok(item)
+    }
+
+    fn spawn_task(
+        &self,
+        session_id: &str,
+        task: impl std::future::Future<Output = ()> + Send + 'static,
+    ) -> bool {
+        let mut tasks = self.tasks.lock().unwrap();
+        if tasks.closing.contains(session_id) {
+            false
+        } else {
+            let handle = tokio::spawn(task);
+            tasks
+                .handles
+                .entry(session_id.to_string())
+                .or_default()
+                .push(handle);
+            true
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn insert_test_task(&self, session_id: &str) -> tokio::sync::oneshot::Receiver<()> {
+        struct StopSignal(Option<tokio::sync::oneshot::Sender<()>>);
+        impl Drop for StopSignal {
+            fn drop(&mut self) {
+                if let Some(signal) = self.0.take() {
+                    let _ = signal.send(());
+                }
+            }
+        }
+
+        let (stopped, stopped_rx) = tokio::sync::oneshot::channel();
+        assert!(self.spawn_task(session_id, async move {
+            let _stopped = StopSignal(Some(stopped));
+            std::future::pending::<()>().await;
+        }));
+        stopped_rx
     }
 
     fn spawn_worker(self: &Arc<Self>, app: &Arc<dyn ProgressSink>, item: Arc<TransferItem>) {
-        let queue = self.queue_for(
-            &item.session_id,
-            item.settings.max_parallel_per_server as usize,
-        );
         let manager = self.clone();
         let app = app.clone();
-        self.ensure_emitter(app.clone());
-        tokio::spawn(async move {
+        let session_id = item.session_id.clone();
+        let task = async move {
+            let queue = manager.queue_for(
+                &item.session_id,
+                item.settings.max_parallel_per_server as usize,
+            );
+            manager.ensure_emitter(app.clone());
             let _permit = queue.semaphore.clone().acquire_owned().await;
             if item.state() != TransferState::Queued {
                 return; // cancelled while queued
@@ -583,7 +670,8 @@ impl TransferManager {
                     manager.schedule_auto_retry(&app, item);
                 }
             }
-        });
+        };
+        let _ = self.spawn_task(&session_id, task);
     }
 
     /// Requeue a freshly failed item after a short backoff — transient
@@ -597,7 +685,8 @@ impl TransferManager {
         }
         let manager = self.clone();
         let app = app.clone();
-        tokio::spawn(async move {
+        let session_id = item.session_id.clone();
+        let task = async move {
             tokio::time::sleep(Duration::from_millis(1000 * u64::from(attempt))).await;
             // Skip when the user already cancelled, cleared or retried it.
             if manager.find(&item.id).is_none() || item.state() != TransferState::Error {
@@ -609,13 +698,32 @@ impl TransferManager {
             let _ = item.control.send(Control::Run);
             item.set_state(TransferState::Queued, None);
             manager.spawn_worker(&app, item);
-        });
+        };
+        let _ = self.spawn_task(&session_id, task);
     }
 
     /// Retry a failed/cancelled item, resuming partial files where possible.
     /// A failed tar-stream item is re-enqueued as a plain per-file transfer
     /// (SPEC §6.2 transparent fallback).
     pub async fn retry(self: &Arc<Self>, app: &Arc<dyn ProgressSink>, id: &str) -> AppResult<()> {
+        self.retry_inner(app, id, None).await
+    }
+
+    pub(crate) async fn retry_guarded(
+        self: &Arc<Self>,
+        app: &Arc<dyn ProgressSink>,
+        id: &str,
+        operation: &SessionOperation,
+    ) -> AppResult<()> {
+        self.retry_inner(app, id, Some(operation)).await
+    }
+
+    async fn retry_inner(
+        self: &Arc<Self>,
+        app: &Arc<dyn ProgressSink>,
+        id: &str,
+        operation: Option<&SessionOperation>,
+    ) -> AppResult<()> {
         let Some(item) = self.find(id) else {
             return Ok(());
         };
@@ -642,6 +750,7 @@ impl TransferManager {
                         &remote_dir,
                         settings,
                         None,
+                        operation,
                     )
                     .await?;
                 }
@@ -659,11 +768,15 @@ impl TransferManager {
                         &local_dir,
                         settings,
                         None,
+                        operation,
                     )
                     .await?;
                 }
             }
             return Ok(());
+        }
+        if let Some(operation) = operation {
+            operation.register(|| ())?;
         }
         item.done.store(0, Ordering::Relaxed);
         item.resume
@@ -687,8 +800,10 @@ impl TransferManager {
         remote_dir: &str,
         settings: TransferSettings,
     ) -> AppResult<()> {
-        self.enqueue_upload_inner(app, fs, session_id, local_path, remote_dir, settings, None)
-            .await
+        self.enqueue_upload_inner(
+            app, fs, session_id, local_path, remote_dir, settings, None, None,
+        )
+        .await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -703,7 +818,32 @@ impl TransferManager {
         tar_ssh: Option<Arc<crate::session::ssh::SshSession>>,
     ) -> AppResult<()> {
         self.enqueue_upload_inner(
-            app, fs, session_id, local_path, remote_dir, settings, tar_ssh,
+            app, fs, session_id, local_path, remote_dir, settings, tar_ssh, None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn enqueue_upload_guarded(
+        self: &Arc<Self>,
+        app: &Arc<dyn ProgressSink>,
+        fs: Arc<dyn RemoteFs>,
+        session_id: &str,
+        local_path: &str,
+        remote_dir: &str,
+        settings: TransferSettings,
+        tar_ssh: Option<Arc<crate::session::ssh::SshSession>>,
+        operation: &SessionOperation,
+    ) -> AppResult<()> {
+        self.enqueue_upload_inner(
+            app,
+            fs,
+            session_id,
+            local_path,
+            remote_dir,
+            settings,
+            tar_ssh,
+            Some(operation),
         )
         .await
     }
@@ -718,6 +858,7 @@ impl TransferManager {
         remote_dir: &str,
         settings: TransferSettings,
         tar_ssh: Option<Arc<crate::session::ssh::SshSession>>,
+        operation: Option<&SessionOperation>,
     ) -> AppResult<()> {
         let root = crate::local_fs::expand(local_path);
         let meta = tokio::fs::metadata(&root)
@@ -740,7 +881,8 @@ impl TransferManager {
                 settings,
                 None,
                 None,
-            );
+                operation,
+            )?;
             self.spawn_worker(app, item);
             return Ok(());
         }
@@ -758,8 +900,12 @@ impl TransferManager {
                     fs,
                     settings,
                     None,
-                    Some(tar_stream::TarJob { ssh }),
-                );
+                    Some(tar_stream::TarJob {
+                        ssh,
+                        cleanup: operation.map(SessionOperation::cleanup),
+                    }),
+                    operation,
+                )?;
                 self.spawn_worker(app, item);
                 return Ok(());
             }
@@ -799,7 +945,8 @@ impl TransferManager {
                         settings.clone(),
                         None,
                         None,
-                    );
+                        operation,
+                    )?;
                     self.spawn_worker(app, item);
                 }
             }
@@ -817,8 +964,17 @@ impl TransferManager {
         local_dir: &str,
         settings: TransferSettings,
     ) -> AppResult<()> {
-        self.enqueue_download_inner(app, fs, session_id, remote_path, local_dir, settings, None)
-            .await
+        self.enqueue_download_inner(
+            app,
+            fs,
+            session_id,
+            remote_path,
+            local_dir,
+            settings,
+            None,
+            None,
+        )
+        .await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -840,6 +996,32 @@ impl TransferManager {
             local_dir,
             settings,
             tar_ssh,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn enqueue_download_guarded(
+        self: &Arc<Self>,
+        app: &Arc<dyn ProgressSink>,
+        fs: Arc<dyn RemoteFs>,
+        session_id: &str,
+        remote_path: &str,
+        local_dir: &str,
+        settings: TransferSettings,
+        tar_ssh: Option<Arc<crate::session::ssh::SshSession>>,
+        operation: &SessionOperation,
+    ) -> AppResult<()> {
+        self.enqueue_download_inner(
+            app,
+            fs,
+            session_id,
+            remote_path,
+            local_dir,
+            settings,
+            tar_ssh,
+            Some(operation),
         )
         .await
     }
@@ -854,6 +1036,7 @@ impl TransferManager {
         local_dir: &str,
         settings: TransferSettings,
         tar_ssh: Option<Arc<crate::session::ssh::SshSession>>,
+        operation: Option<&SessionOperation>,
     ) -> AppResult<()> {
         let entry = fs.stat(remote_path).await?;
         let local_base = crate::local_fs::expand(local_dir);
@@ -876,7 +1059,8 @@ impl TransferManager {
                 settings,
                 Some(local_target),
                 None,
-            );
+                operation,
+            )?;
             self.spawn_worker(app, item);
             return Ok(());
         }
@@ -894,8 +1078,12 @@ impl TransferManager {
                     fs,
                     settings,
                     None,
-                    Some(tar_stream::TarJob { ssh }),
-                );
+                    Some(tar_stream::TarJob {
+                        ssh,
+                        cleanup: operation.map(SessionOperation::cleanup),
+                    }),
+                    operation,
+                )?;
                 self.spawn_worker(app, item);
                 return Ok(());
             }
@@ -927,7 +1115,8 @@ impl TransferManager {
                         settings.clone(),
                         Some(local_target),
                         None,
-                    );
+                        operation,
+                    )?;
                     self.spawn_worker(app, item);
                 }
             }
@@ -1191,4 +1380,272 @@ async fn remote_tree_size(fs: &dyn RemoteFs, root: &str) -> AppResult<u64> {
         }
     }
     Ok(total)
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    use super::{tar_stream, ProgressSink, TransferKind, TransferManager, TransferState};
+    use crate::error::AppError;
+    use crate::session::lifecycle::LifecycleGate;
+    use crate::session::remote_fs::{BoxRead, BoxWrite, RemoteEntry, RemoteFs};
+    use crate::session::s3::{S3Config, S3Fs};
+    use crate::session::ssh::SshSession;
+    use crate::session::SessionManager;
+    use crate::vault::model::{S3UploadAcl, TransferSettings};
+
+    struct NullSink;
+
+    impl ProgressSink for NullSink {
+        fn emit(&self, _event: crate::events::TransferProgressEvent) {}
+    }
+
+    struct BlockingStatFs {
+        started: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+        dropped: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl RemoteFs for BlockingStatFs {
+        async fn list(&self, _path: &str) -> crate::error::AppResult<Vec<RemoteEntry>> {
+            Err(AppError::RemoteFs("unexpected list".into()))
+        }
+
+        async fn stat(&self, _path: &str) -> crate::error::AppResult<RemoteEntry> {
+            struct DropSignal(Option<tokio::sync::oneshot::Sender<()>>);
+
+            impl Drop for DropSignal {
+                fn drop(&mut self) {
+                    if let Some(signal) = self.0.take() {
+                        let _ = signal.send(());
+                    }
+                }
+            }
+
+            let _drop_signal = DropSignal(self.dropped.lock().unwrap().take());
+            if let Some(started) = self.started.lock().unwrap().take() {
+                let _ = started.send(());
+            }
+            std::future::pending().await
+        }
+
+        async fn home_dir(&self) -> crate::error::AppResult<String> {
+            Err(AppError::RemoteFs("unexpected home_dir".into()))
+        }
+
+        async fn mkdir(&self, _path: &str) -> crate::error::AppResult<()> {
+            Err(AppError::RemoteFs("unexpected mkdir".into()))
+        }
+
+        async fn create_file(&self, _path: &str) -> crate::error::AppResult<()> {
+            Err(AppError::RemoteFs("unexpected create_file".into()))
+        }
+
+        async fn rename(&self, _from: &str, _to: &str) -> crate::error::AppResult<()> {
+            Err(AppError::RemoteFs("unexpected rename".into()))
+        }
+
+        async fn delete_file(&self, _path: &str) -> crate::error::AppResult<()> {
+            Err(AppError::RemoteFs("unexpected delete_file".into()))
+        }
+
+        async fn delete_dir(&self, _path: &str) -> crate::error::AppResult<()> {
+            Err(AppError::RemoteFs("unexpected delete_dir".into()))
+        }
+
+        async fn chmod(&self, _path: &str, _mode: u32) -> crate::error::AppResult<()> {
+            Err(AppError::RemoteFs("unexpected chmod".into()))
+        }
+
+        async fn set_mtime(&self, _path: &str, _mtime_unix: i64) -> crate::error::AppResult<()> {
+            Err(AppError::RemoteFs("unexpected set_mtime".into()))
+        }
+
+        async fn open_read(&self, _path: &str, _offset: u64) -> crate::error::AppResult<BoxRead> {
+            Err(AppError::RemoteFs("unexpected open_read".into()))
+        }
+
+        async fn open_write(&self, _path: &str, _offset: u64) -> crate::error::AppResult<BoxWrite> {
+            Err(AppError::RemoteFs("unexpected open_write".into()))
+        }
+
+        async fn exists(&self, _path: &str) -> crate::error::AppResult<bool> {
+            Err(AppError::RemoteFs("unexpected exists".into()))
+        }
+    }
+
+    #[tokio::test]
+    async fn clear_session_joins_workers_and_rejects_late_tasks() {
+        let manager = Arc::new(TransferManager::default());
+        let (started, started_rx) = tokio::sync::oneshot::channel();
+        let (release, release_rx) = tokio::sync::oneshot::channel();
+        assert!(manager.spawn_task("session", async move {
+            let _ = started.send(());
+            let _ = release_rx.await;
+        }));
+        started_rx.await.unwrap();
+
+        let clear = tokio::spawn({
+            let manager = manager.clone();
+            async move { manager.clear_session("session").await }
+        });
+        tokio::task::yield_now().await;
+        assert!(!clear.is_finished());
+        release.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(1), clear)
+            .await
+            .expect("session clear did not join its worker")
+            .unwrap();
+
+        let polled = Arc::new(AtomicBool::new(false));
+        let late_polled = polled.clone();
+        assert!(!manager.spawn_task("session", async move {
+            late_polled.store(true, Ordering::SeqCst);
+        }));
+        tokio::task::yield_now().await;
+        assert!(!polled.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn closing_gate_and_tombstone_reject_the_real_transfer_registry_path() {
+        let manager = TransferManager::default();
+        let lifecycle = Arc::new(LifecycleGate::default());
+        let operation = lifecycle.try_begin_operation().unwrap();
+        lifecycle.start_closing();
+        let fs = S3Fs::new(S3Config {
+            endpoint: "http://127.0.0.1:1".into(),
+            region: "us-east-1".into(),
+            access_key: "access".into(),
+            secret_key: zeroize::Zeroizing::new("secret".into()),
+            bucket: Some("bucket".into()),
+            path_style: true,
+            upload_acl: S3UploadAcl::Private,
+        });
+
+        let result = manager.add_item(
+            "session",
+            TransferKind::Upload,
+            "/tmp/file".into(),
+            "/file".into(),
+            0,
+            fs,
+            TransferSettings::default(),
+            None,
+            None,
+            Some(&operation),
+        );
+
+        assert!(matches!(result, Err(AppError::SessionNotFound)));
+        assert!(manager.items.lock().unwrap().is_empty());
+
+        manager.clear_session("session").await;
+        let result = manager.add_item(
+            "session",
+            TransferKind::Upload,
+            "/tmp/file".into(),
+            "/file".into(),
+            0,
+            S3Fs::new(S3Config {
+                endpoint: "http://127.0.0.1:1".into(),
+                region: "us-east-1".into(),
+                access_key: "access".into(),
+                secret_key: zeroize::Zeroizing::new("secret".into()),
+                bucket: Some("bucket".into()),
+                path_style: true,
+                upload_acl: S3UploadAcl::Private,
+            }),
+            TransferSettings::default(),
+            None,
+            None,
+            None,
+        );
+        assert!(matches!(result, Err(AppError::SessionNotFound)));
+    }
+
+    #[tokio::test]
+    async fn closing_drops_a_blocked_manual_tar_retry_without_recreating_items() {
+        let sessions = Arc::new(SessionManager::default());
+        let lifecycle = sessions.insert_test_session("session");
+        let session = sessions.get("session").unwrap();
+        let manager = Arc::new(TransferManager::default());
+        let sink: Arc<dyn ProgressSink> = Arc::new(NullSink);
+        let local = tempfile::tempdir().unwrap();
+        let (stat_started, stat_started_rx) = tokio::sync::oneshot::channel();
+        let (stat_dropped, stat_dropped_rx) = tokio::sync::oneshot::channel();
+        let fs: Arc<dyn RemoteFs> = Arc::new(BlockingStatFs {
+            started: Mutex::new(Some(stat_started)),
+            dropped: Mutex::new(Some(stat_dropped)),
+        });
+        let settings = TransferSettings {
+            tar_acceleration: true,
+            ..TransferSettings::default()
+        };
+        let item = manager
+            .add_item(
+                "session",
+                TransferKind::Download,
+                local.path().join("archive"),
+                "/archive".into(),
+                0,
+                fs,
+                settings,
+                None,
+                Some(tar_stream::TarJob {
+                    ssh: Arc::new(SshSession::disconnected_for_test()),
+                    cleanup: Some(session.operation().cleanup()),
+                }),
+                Some(session.operation()),
+            )
+            .unwrap();
+        item.set_state(TransferState::Error, Some("tar failed".into()));
+        let item_id = item.id.clone();
+
+        let retry = tokio::spawn({
+            let manager = manager.clone();
+            async move {
+                crate::commands::run_session_operation(
+                    &session,
+                    manager.retry_guarded(&sink, &item_id, session.operation()),
+                )
+                .await
+            }
+        });
+        stat_started_rx.await.unwrap();
+
+        let closing = sessions.start_disconnect("session").unwrap();
+        let teardown = tokio::spawn({
+            let manager = manager.clone();
+            let sessions = sessions.clone();
+            async move {
+                tokio::join!(
+                    manager.clear_session("session"),
+                    sessions.finish_disconnect(closing)
+                );
+            }
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(1), retry)
+            .await
+            .expect("retry did not observe session cancellation")
+            .unwrap();
+        assert!(matches!(result, Err(AppError::SessionNotFound)));
+        stat_dropped_rx
+            .await
+            .expect("blocked stat future survived command cancellation");
+        tokio::time::timeout(Duration::from_secs(1), teardown)
+            .await
+            .expect("session teardown remained blocked by retry")
+            .unwrap();
+        lifecycle.wait_closed().await;
+        assert!(manager.snapshot().0.is_empty());
+        assert!(!manager
+            .tasks
+            .lock()
+            .unwrap()
+            .handles
+            .contains_key("session"));
+    }
 }

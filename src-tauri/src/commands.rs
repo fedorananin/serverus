@@ -218,14 +218,14 @@ mod vault_unlock_activity_tests {
         activity: Arc<ActivityTracker>,
     ) -> tauri::App<tauri::test::MockRuntime> {
         tauri::test::mock_builder()
-            .manage(AppState {
-                vault: Arc::new(Mutex::new(vault)),
+            .manage(AppState::with_parts(
+                Arc::new(Mutex::new(vault)),
                 quick,
-                sessions: Arc::new(SessionManager::default()),
-                transfers: Arc::new(TransferManager::default()),
-                edits: Arc::new(EditWatcher::default()),
+                Arc::new(SessionManager::default()),
+                Arc::new(TransferManager::default()),
+                Arc::new(EditWatcher::default()),
                 activity,
-            })
+            ))
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap()
     }
@@ -707,8 +707,12 @@ pub async fn session_connect(
     let vault = state.vault.clone();
     match sessions.connect(&app, &vault, &connection_id).await {
         Ok(Ok(entry)) => {
+            state
+                .install_ssh_watchdog(app.clone(), &entry)
+                .await
+                .map_err(crate::error::ApiError::from)?;
             // Autostart tunnels flagged in the connection config (SPEC §4.2).
-            if let Some(ssh) = entry.ssh.clone() {
+            if entry.ssh.is_some() {
                 let autostart: Vec<crate::vault::model::TunnelConfig> = vault
                     .lock()
                     .unwrap()
@@ -722,9 +726,7 @@ pub async fn session_connect(
                     .unwrap_or_default();
                 for t in autostart {
                     let _ = sessions
-                        .tunnels
-                        .start(
-                            ssh.clone(),
+                        .tunnel_start(
                             &entry.id,
                             &t.name,
                             t.local_port,
@@ -785,10 +787,9 @@ pub async fn host_key_accept(
 #[tauri::command]
 #[specta::specta]
 pub async fn session_disconnect(state: State<'_, AppState>, session_id: String) -> ApiResult<()> {
-    state.edits.close_session(&session_id).await;
-    // Queue + history are per-connection: drop them when the tab closes.
-    state.transfers.clear_session(&session_id);
-    state.sessions.disconnect(&session_id).await;
+    if let Some(disconnect) = state.start_session_disconnect(&session_id) {
+        disconnect.completion.wait().await?;
+    }
     Ok(())
 }
 
@@ -840,8 +841,11 @@ pub async fn term_resize(
 #[tauri::command]
 #[specta::specta]
 pub async fn term_close(state: State<'_, AppState>, term_id: String) -> ApiResult<()> {
-    state.sessions.term_close(&term_id).await;
-    Ok(())
+    state
+        .sessions
+        .term_close(&term_id)
+        .await
+        .map_err(Into::into)
 }
 
 // ---------------------------------------------------------------------------
@@ -850,6 +854,17 @@ pub async fn term_close(state: State<'_, AppState>, term_id: String) -> ApiResul
 
 use crate::local_fs;
 use crate::session::remote_fs::{self, RemoteEntry};
+
+pub(crate) async fn run_session_operation<T>(
+    session: &crate::session::SessionLease,
+    operation: impl std::future::Future<Output = AppResult<T>>,
+) -> AppResult<T> {
+    tokio::select! {
+        biased;
+        _ = session.operation().cancelled() => Err(AppError::SessionNotFound),
+        result = operation => result,
+    }
+}
 
 #[tauri::command]
 #[specta::specta]
@@ -900,15 +915,25 @@ pub async fn remote_list(
     session_id: String,
     path: String,
 ) -> ApiResult<Vec<RemoteEntry>> {
-    let fs = state.sessions.get(&session_id)?.remote_fs().await?;
-    fs.list(&path).await.map_err(Into::into)
+    let session = state.sessions.get(&session_id)?;
+    run_session_operation(&session, async {
+        let fs = session.remote_fs().await?;
+        fs.list(&path).await
+    })
+    .await
+    .map_err(Into::into)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn remote_home(state: State<'_, AppState>, session_id: String) -> ApiResult<String> {
-    let fs = state.sessions.get(&session_id)?.remote_fs().await?;
-    fs.home_dir().await.map_err(Into::into)
+    let session = state.sessions.get(&session_id)?;
+    run_session_operation(&session, async {
+        let fs = session.remote_fs().await?;
+        fs.home_dir().await
+    })
+    .await
+    .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -918,8 +943,13 @@ pub async fn remote_mkdir(
     session_id: String,
     path: String,
 ) -> ApiResult<()> {
-    let fs = state.sessions.get(&session_id)?.remote_fs().await?;
-    fs.mkdir(&path).await.map_err(Into::into)
+    let session = state.sessions.get(&session_id)?;
+    run_session_operation(&session, async {
+        let fs = session.remote_fs().await?;
+        fs.mkdir(&path).await
+    })
+    .await
+    .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -929,8 +959,13 @@ pub async fn remote_create_file(
     session_id: String,
     path: String,
 ) -> ApiResult<()> {
-    let fs = state.sessions.get(&session_id)?.remote_fs().await?;
-    fs.create_file(&path).await.map_err(Into::into)
+    let session = state.sessions.get(&session_id)?;
+    run_session_operation(&session, async {
+        let fs = session.remote_fs().await?;
+        fs.create_file(&path).await
+    })
+    .await
+    .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -941,8 +976,13 @@ pub async fn remote_rename(
     from: String,
     to: String,
 ) -> ApiResult<()> {
-    let fs = state.sessions.get(&session_id)?.remote_fs().await?;
-    fs.rename(&from, &to).await.map_err(Into::into)
+    let session = state.sessions.get(&session_id)?;
+    run_session_operation(&session, async {
+        let fs = session.remote_fs().await?;
+        fs.rename(&from, &to).await
+    })
+    .await
+    .map_err(Into::into)
 }
 
 /// Recursive delete — works identically for SFTP and FTP (SPEC §4.3).
@@ -954,10 +994,13 @@ pub async fn remote_delete(
     path: String,
     is_dir: bool,
 ) -> ApiResult<()> {
-    let fs = state.sessions.get(&session_id)?.remote_fs().await?;
-    remote_fs::delete_recursive(fs.as_ref(), &path, is_dir)
-        .await
-        .map_err(Into::into)
+    let session = state.sessions.get(&session_id)?;
+    run_session_operation(&session, async {
+        let fs = session.remote_fs().await?;
+        remote_fs::delete_recursive(fs.as_ref(), &path, is_dir).await
+    })
+    .await
+    .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -968,8 +1011,13 @@ pub async fn remote_chmod(
     path: String,
     mode: u32,
 ) -> ApiResult<()> {
-    let fs = state.sessions.get(&session_id)?.remote_fs().await?;
-    fs.chmod(&path, mode).await.map_err(Into::into)
+    let session = state.sessions.get(&session_id)?;
+    run_session_operation(&session, async {
+        let fs = session.remote_fs().await?;
+        fs.chmod(&path, mode).await
+    })
+    .await
+    .map_err(Into::into)
 }
 
 // ---------------------------------------------------------------------------
@@ -982,13 +1030,16 @@ use crate::vault::model::S3UploadAcl;
 fn s3_of(
     state: &AppState,
     session_id: &str,
-) -> AppResult<std::sync::Arc<crate::session::s3::S3Fs>> {
-    state
-        .sessions
-        .get(session_id)?
+) -> AppResult<(
+    crate::session::SessionLease,
+    std::sync::Arc<crate::session::s3::S3Fs>,
+)> {
+    let session = state.sessions.get(session_id)?;
+    let fs = session
         .s3
         .clone()
-        .ok_or_else(|| AppError::Other("not an S3 session".into()))
+        .ok_or_else(|| AppError::Other("not an S3 session".into()))?;
+    Ok((session, fs))
 }
 
 /// Public/private status for a batch of objects — fetched in the background
@@ -1000,8 +1051,10 @@ pub async fn s3_acl_status(
     session_id: String,
     paths: Vec<String>,
 ) -> ApiResult<Vec<S3AclEntry>> {
-    let fs = s3_of(&state, &session_id)?;
-    Ok(fs.acl_status_batch(paths).await)
+    let (session, fs) = s3_of(&state, &session_id)?;
+    run_session_operation(&session, async { Ok(fs.acl_status_batch(paths).await) })
+        .await
+        .map_err(Into::into)
 }
 
 /// Make objects public or private; directories apply recursively to every
@@ -1014,8 +1067,10 @@ pub async fn s3_set_acl(
     targets: Vec<S3AclTarget>,
     make_public: bool,
 ) -> ApiResult<u32> {
-    let fs = s3_of(&state, &session_id)?;
-    fs.set_acl(targets, make_public).await.map_err(Into::into)
+    let (session, fs) = s3_of(&state, &session_id)?;
+    run_session_operation(&session, fs.set_acl(targets, make_public))
+        .await
+        .map_err(Into::into)
 }
 
 /// Switch the ACL applied to subsequent uploads: the pane toggle and the
@@ -1053,12 +1108,12 @@ pub async fn s3_set_upload_acl(
     mode: S3UploadAcl,
     persist: bool,
 ) -> ApiResult<Option<PublicVault>> {
-    let fs = s3_of(&state, &session_id)?;
+    let (session, fs) = s3_of(&state, &session_id)?;
     if !persist {
         fs.set_upload_acl(mode);
         return Ok(None);
     }
-    let connection_id = state.sessions.get(&session_id)?.connection_id.clone();
+    let connection_id = session.connection_id.clone();
     let vault = state.vault.clone();
     blocking(move || {
         persist_s3_upload_acl(vault.as_ref(), &connection_id, mode, |committed| {
@@ -1160,23 +1215,30 @@ pub async fn transfer_upload(
     remote_dir: String,
 ) -> ApiResult<()> {
     let entry = state.sessions.get(&session_id)?;
-    let fs = entry.remote_fs().await?;
     let settings = transfer_settings(&state);
-    let tar_ssh = entry.tar_ssh().await;
     let sink: std::sync::Arc<dyn crate::transfer::ProgressSink> = std::sync::Arc::new(app);
-    state
-        .transfers
-        .enqueue_upload_accelerated(
-            &sink,
-            fs,
-            &session_id,
-            &local_path,
-            &remote_dir,
-            settings,
-            tar_ssh,
-        )
-        .await
-        .map_err(Into::into)
+    let transfer = async {
+        let fs = entry.remote_fs().await?;
+        let tar_ssh = entry.tar_ssh().await;
+        state
+            .transfers
+            .enqueue_upload_guarded(
+                &sink,
+                fs,
+                &session_id,
+                &local_path,
+                &remote_dir,
+                settings,
+                tar_ssh,
+                entry.operation(),
+            )
+            .await
+    };
+    tokio::select! {
+        biased;
+        _ = entry.operation().cancelled() => Err(AppError::SessionNotFound.into()),
+        result = transfer => result.map_err(Into::into),
+    }
 }
 
 #[tauri::command]
@@ -1189,23 +1251,30 @@ pub async fn transfer_download(
     local_dir: String,
 ) -> ApiResult<()> {
     let entry = state.sessions.get(&session_id)?;
-    let fs = entry.remote_fs().await?;
     let settings = transfer_settings(&state);
-    let tar_ssh = entry.tar_ssh().await;
     let sink: std::sync::Arc<dyn crate::transfer::ProgressSink> = std::sync::Arc::new(app);
-    state
-        .transfers
-        .enqueue_download_accelerated(
-            &sink,
-            fs,
-            &session_id,
-            &remote_path,
-            &local_dir,
-            settings,
-            tar_ssh,
-        )
-        .await
-        .map_err(Into::into)
+    let transfer = async {
+        let fs = entry.remote_fs().await?;
+        let tar_ssh = entry.tar_ssh().await;
+        state
+            .transfers
+            .enqueue_download_guarded(
+                &sink,
+                fs,
+                &session_id,
+                &remote_path,
+                &local_dir,
+                settings,
+                tar_ssh,
+                entry.operation(),
+            )
+            .await
+    };
+    tokio::select! {
+        biased;
+        _ = entry.operation().cancelled() => Err(AppError::SessionNotFound.into()),
+        result = transfer => result.map_err(Into::into),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -1293,7 +1362,21 @@ pub async fn transfer_retry(
     id: String,
 ) -> ApiResult<()> {
     let sink: std::sync::Arc<dyn crate::transfer::ProgressSink> = std::sync::Arc::new(app);
-    state.transfers.retry(&sink, &id).await.map_err(Into::into)
+    let Some(session_id) = state.transfers.session_id(&id) else {
+        return Ok(());
+    };
+    let session = match state.sessions.get(&session_id) {
+        Ok(session) => session,
+        Err(AppError::SessionNotFound) => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    tokio::select! {
+        biased;
+        _ = session.operation().cancelled() => Err(AppError::SessionNotFound.into()),
+        result = state.transfers.retry_guarded(&sink, &id, session.operation()) => {
+            result.map_err(Into::into)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1310,7 +1393,7 @@ pub async fn remote_edit_open(
     session_id: String,
     remote_path: String,
 ) -> ApiResult<()> {
-    let fs = state.sessions.get(&session_id)?.remote_fs().await?;
+    let session = state.sessions.get(&session_id)?;
     let editor = state
         .vault
         .lock()
@@ -1318,11 +1401,25 @@ pub async fn remote_edit_open(
         .payload()
         .map(|p| p.settings.editor.clone())
         .unwrap_or_default();
-    state
-        .edits
-        .open(app, fs, &session_id, &remote_path, &editor)
-        .await
-        .map_err(Into::into)
+    let open = async {
+        let fs = session.remote_fs().await?;
+        state
+            .edits
+            .open(
+                app,
+                fs,
+                &session_id,
+                &remote_path,
+                &editor,
+                session.operation(),
+            )
+            .await
+    };
+    tokio::select! {
+        biased;
+        _ = session.operation().cancelled() => Err(AppError::SessionNotFound.into()),
+        result = open => result.map_err(Into::into),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1341,18 +1438,9 @@ pub async fn tunnel_start(
     remote_host: String,
     remote_port: u16,
 ) -> ApiResult<TunnelStatus> {
-    let ssh = state.sessions.ssh_of(&session_id)?;
     state
         .sessions
-        .tunnels
-        .start(
-            ssh,
-            &session_id,
-            &name,
-            local_port,
-            &remote_host,
-            remote_port,
-        )
+        .tunnel_start(&session_id, &name, local_port, &remote_host, remote_port)
         .await
         .map_err(Into::into)
 }
@@ -1360,8 +1448,11 @@ pub async fn tunnel_start(
 #[tauri::command]
 #[specta::specta]
 pub async fn tunnel_stop(state: State<'_, AppState>, tunnel_id: String) -> ApiResult<()> {
-    state.sessions.tunnels.stop(&tunnel_id);
-    Ok(())
+    state
+        .sessions
+        .tunnel_stop(&tunnel_id)
+        .await
+        .map_err(Into::into)
 }
 
 #[tauri::command]

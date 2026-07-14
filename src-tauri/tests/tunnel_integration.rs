@@ -20,9 +20,7 @@ async fn local_forwarding_roundtrip() {
         .await
         .unwrap()
     {
-        ConnectOutcome::Connected(handle) => Arc::new(SshSession {
-            handle: tokio::sync::Mutex::new(handle),
-        }),
+        ConnectOutcome::Connected(transport) => Arc::new(SshSession::new(transport)),
         _ => panic!(),
     };
 
@@ -97,7 +95,7 @@ async fn local_forwarding_roundtrip() {
     assert!(listed[0].bytes_down >= 15, "{listed:#?}");
 
     // Stop → the entrance closes.
-    manager.stop(&listed[0].id);
+    manager.stop(&listed[0].id).await;
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert!(tokio::net::TcpStream::connect(("127.0.0.1", local_port))
         .await

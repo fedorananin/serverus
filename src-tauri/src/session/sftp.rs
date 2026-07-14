@@ -22,9 +22,7 @@ impl SftpFs {
     /// Open the SFTP subsystem on a fresh channel of the existing session.
     pub async fn open(ssh: &SshSession) -> AppResult<SftpFs> {
         let channel = {
-            let handle = ssh.handle.lock().await;
-            handle
-                .channel_open_session()
+            ssh.channel_open_session()
                 .await
                 .map_err(|e| AppError::RemoteFs(format!("sftp channel: {e}")))?
         };
