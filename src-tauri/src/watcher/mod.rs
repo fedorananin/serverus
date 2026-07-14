@@ -65,6 +65,147 @@ fn edit_cache_dir() -> PathBuf {
     std::env::temp_dir().join("serverus-edit")
 }
 
+fn validate_edit_filename(name: &str) -> AppResult<()> {
+    let contains_unsafe_character = name.chars().any(|character| {
+        character < ' '
+            || matches!(
+                character,
+                '\0' | '/' | '\\' | ':' | '<' | '>' | '"' | '|' | '?' | '*'
+            )
+    });
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.ends_with(['.', ' '])
+        || contains_unsafe_character
+    {
+        return Err(AppError::RemoteFs(format!(
+            "remote edit filename is not portable: {name:?}"
+        )));
+    }
+
+    let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
+    let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || stem
+            .strip_prefix("COM")
+            .and_then(|suffix| suffix.parse::<u8>().ok())
+            .is_some_and(|number| (1..=9).contains(&number))
+        || stem
+            .strip_prefix("LPT")
+            .and_then(|suffix| suffix.parse::<u8>().ok())
+            .is_some_and(|number| (1..=9).contains(&number));
+    if reserved {
+        return Err(AppError::RemoteFs(format!(
+            "remote edit filename is reserved on Windows: {name:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn ensure_private_cache_root(root: &Path) -> AppResult<()> {
+    match std::fs::symlink_metadata(root) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                return Err(AppError::Other(format!(
+                    "edit cache path is not a directory: {}",
+                    root.display()
+                )));
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if metadata.permissions().mode() & 0o077 != 0 {
+                    std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700))?;
+                }
+                let secured = std::fs::symlink_metadata(root)?;
+                if secured.file_type().is_symlink()
+                    || !secured.is_dir()
+                    || secured.permissions().mode() & 0o077 != 0
+                {
+                    return Err(AppError::Other(format!(
+                        "edit cache directory is not private: {}",
+                        root.display()
+                    )));
+                }
+            }
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let builder = private_dir_builder();
+            match builder.create(root) {
+                Ok(()) => Ok(()),
+                // Another open may have created the shared root concurrently.
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    ensure_private_cache_root(root)
+                }
+                Err(error) => Err(error.into()),
+            }
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn create_private_edit_dir(root: &Path) -> AppResult<PathBuf> {
+    ensure_private_cache_root(root)?;
+    for _ in 0..16 {
+        let dir = root.join(uuid::Uuid::new_v4().to_string());
+        let builder = private_dir_builder();
+        match builder.create(&dir) {
+            Ok(()) => return Ok(dir),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Err(AppError::Other(
+        "could not allocate a unique remote-edit cache directory".into(),
+    ))
+}
+
+#[cfg(unix)]
+fn private_dir_builder() -> std::fs::DirBuilder {
+    use std::os::unix::fs::DirBuilderExt;
+
+    let mut builder = std::fs::DirBuilder::new();
+    builder.mode(0o700);
+    builder
+}
+
+#[cfg(not(unix))]
+fn private_dir_builder() -> std::fs::DirBuilder {
+    std::fs::DirBuilder::new()
+}
+
+async fn create_private_cache_file(path: &Path) -> AppResult<tokio::fs::File> {
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    options
+        .open(path)
+        .await
+        .map_err(|error| AppError::Other(format!("edit cache file: {error}")))
+}
+
+struct PendingCacheDir(Option<PathBuf>);
+
+impl PendingCacheDir {
+    fn new(path: PathBuf) -> Self {
+        Self(Some(path))
+    }
+
+    fn keep(&mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for PendingCacheDir {
+    fn drop(&mut self) {
+        if let Some(path) = self.0.take() {
+            let _ = std::fs::remove_dir_all(path);
+        }
+    }
+}
+
 /// Best-effort cleanup of downloaded copies (SPEC §5.3).
 pub fn cleanup_all() {
     let _ = std::fs::remove_dir_all(edit_cache_dir());
@@ -81,26 +222,22 @@ impl EditWatcher {
         editor: &EditorSettings,
     ) -> AppResult<()> {
         let name = remote_path.rsplit('/').next().unwrap_or("file").to_string();
+        validate_edit_filename(&name)?;
         // Isolated per-file dir avoids name collisions between servers.
-        let dir = edit_cache_dir().join(uuid::Uuid::new_v4().to_string());
-        tokio::fs::create_dir_all(&dir)
-            .await
-            .map_err(|e| AppError::Other(format!("edit cache: {e}")))?;
+        let dir = create_private_edit_dir(&edit_cache_dir())?;
+        let mut pending_cache = PendingCacheDir::new(dir.clone());
         let local_path = dir.join(&name);
 
         // Download.
         let mut reader = fs_remote.open_read(remote_path, 0).await?;
-        let mut file = tokio::fs::File::create(&local_path)
-            .await
-            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut file = create_private_cache_file(&local_path).await?;
         tokio::io::copy(&mut reader, &mut file)
             .await
             .map_err(|e| AppError::Transfer(format!("download for edit: {e}")))?;
-        file.flush().await.ok();
+        file.flush()
+            .await
+            .map_err(|e| AppError::Transfer(format!("download for edit: {e}")))?;
         drop(file);
-
-        // Open in the editor.
-        open_in_editor(&local_path, editor)?;
 
         // Watch and re-upload on change, debounced — editors fire several
         // events per save.
@@ -118,6 +255,10 @@ impl EditWatcher {
         watcher
             .watch(&watch_target, RecursiveMode::NonRecursive)
             .map_err(|e| AppError::Other(format!("watch {name}: {e}")))?;
+
+        // Open only after watcher setup succeeds. On an editor-launch error,
+        // the watcher is dropped before the cache cleanup guard runs.
+        open_in_editor(&local_path, editor)?;
 
         let (shutdown, mut shutdown_rx) = tokio::sync::watch::channel(false);
         let completion = Arc::new(TaskCompletion::default());
@@ -202,6 +343,8 @@ impl EditWatcher {
             },
         );
         drop(tokio::spawn(upload_loop));
+
+        pending_cache.keep();
 
         Ok(())
     }
@@ -391,7 +534,10 @@ mod tests {
 
     use tokio::io::AsyncWrite;
 
-    use super::{upload_back, upload_back_controlled};
+    use super::{
+        create_private_cache_file, create_private_edit_dir, upload_back, upload_back_controlled,
+        validate_edit_filename, PendingCacheDir,
+    };
     use crate::error::{AppError, AppResult};
     use crate::session::remote_fs::{BoxRead, BoxWrite, RemoteEntry, RemoteFs};
 
@@ -665,5 +811,96 @@ mod tests {
         let state = fs.state.lock().unwrap();
         assert_eq!(state.files.get("/dir/config.txt").unwrap(), b"old");
         assert_eq!(state.files.len(), 1, "staging object leaked");
+    }
+
+    #[test]
+    fn edit_cache_filename_rejects_portable_path_escapes() {
+        for unsafe_name in [
+            "",
+            ".",
+            "..",
+            "../secret",
+            r"..\secret",
+            r"C:\secret",
+            "name:stream",
+            "CON",
+            "aux.txt",
+            "COM1.log",
+            "LPT9",
+            "trailing.",
+            "trailing ",
+            "wild*card",
+            "line\nbreak",
+        ] {
+            assert!(
+                validate_edit_filename(unsafe_name).is_err(),
+                "accepted unsafe edit filename: {unsafe_name:?}"
+            );
+        }
+        for safe_name in ["config.yml", ".env", "résumé.txt"] {
+            validate_edit_filename(safe_name).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn edit_cache_uses_private_permissions_and_exclusive_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("cache");
+        let dir = create_private_edit_dir(&root).unwrap();
+        let path = dir.join("config.txt");
+        let file = create_private_cache_file(&path).await.unwrap();
+        drop(file);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&root).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+            assert_eq!(
+                std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+
+        std::fs::write(&path, b"keep me").unwrap();
+        assert!(create_private_cache_file(&path).await.is_err());
+        assert_eq!(std::fs::read(path).unwrap(), b"keep me");
+    }
+
+    #[test]
+    fn pending_cache_cleanup_removes_partial_plaintext() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("cache");
+        let dir = create_private_edit_dir(&root).unwrap();
+        std::fs::write(dir.join("partial.txt"), b"secret").unwrap();
+
+        drop(PendingCacheDir::new(dir.clone()));
+
+        assert!(!dir.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn edit_cache_refuses_a_symlinked_root() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("target");
+        let root = temp.path().join("cache");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).unwrap();
+        symlink(&target, &root).unwrap();
+
+        assert!(create_private_edit_dir(&root).is_err());
+        assert_eq!(
+            std::fs::metadata(target).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
     }
 }
