@@ -806,6 +806,7 @@ struct WriterInner {
     bucket: String,
     key: String,
     acl: Option<ObjectCannedAcl>,
+    abort: Arc<AbortSlot>,
     upload_id: Option<String>,
     parts: Vec<CompletedPart>,
     next_part: i32,
@@ -829,11 +830,12 @@ impl WriterInner {
                 .send()
                 .await
                 .map_err(|e| std::io::Error::other(sdk_err_msg(&e)))?;
-            self.upload_id = Some(
-                out.upload_id()
-                    .ok_or_else(|| std::io::Error::other("no upload id"))?
-                    .to_string(),
-            );
+            let upload_id = out
+                .upload_id()
+                .ok_or_else(|| std::io::Error::other("no upload id"))?
+                .to_string();
+            *self.abort.upload_id.lock().unwrap() = Some(upload_id.clone());
+            self.upload_id = Some(upload_id);
         }
         let body = std::mem::take(&mut self.buf);
         let part_number = self.next_part;
@@ -937,6 +939,7 @@ impl S3Writer {
                 bucket,
                 key,
                 acl,
+                abort: abort.clone(),
                 upload_id: None,
                 parts: Vec::new(),
                 next_part: 1,
