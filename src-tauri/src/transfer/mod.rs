@@ -17,6 +17,7 @@ pub mod tar_stream;
 
 use crate::error::{AppError, AppResult};
 use crate::events::TransferProgressEvent;
+use crate::runtime_context::RuntimeContext;
 use crate::session::remote_fs::{join_remote, RemoteFs};
 use crate::session::SessionOperation;
 use crate::vault::model::{ConflictPolicy, TransferSettings};
@@ -276,12 +277,12 @@ struct ServerQueue {
     policy_override: Mutex<Option<ConflictPolicy>>,
 }
 
-#[derive(Default)]
 pub struct TransferManager {
     items: Mutex<Vec<Arc<TransferItem>>>,
     queues: Mutex<HashMap<String, Arc<ServerQueue>>>,
     emitter_running: std::sync::atomic::AtomicBool,
     tasks: Mutex<TransferTasks>,
+    runtime_context: Arc<RuntimeContext>,
 }
 
 #[derive(Default)]
@@ -291,6 +292,16 @@ struct TransferTasks {
 }
 
 impl TransferManager {
+    pub fn new(runtime_context: Arc<RuntimeContext>) -> Self {
+        Self {
+            items: Mutex::new(Vec::new()),
+            queues: Mutex::new(HashMap::new()),
+            emitter_running: std::sync::atomic::AtomicBool::new(false),
+            tasks: Mutex::new(TransferTasks::default()),
+            runtime_context,
+        }
+    }
+
     fn queue_for(&self, session_id: &str, parallel: usize) -> Arc<ServerQueue> {
         self.queues
             .lock()
@@ -523,12 +534,18 @@ impl TransferManager {
                         item.speed_bps.store(speed, Ordering::Relaxed);
                     }
                 }
+                let context_epoch = manager.runtime_context.current_epoch();
                 let (items, summary) = manager.snapshot();
                 let active = summary.queued + summary.running;
-                app.emit(TransferProgressEvent {
-                    items,
-                    summary: summary.clone(),
-                });
+                if context_epoch.is_multiple_of(2)
+                    && manager.runtime_context.current_epoch() == context_epoch
+                {
+                    app.emit(TransferProgressEvent {
+                        context_epoch,
+                        items,
+                        summary: summary.clone(),
+                    });
+                }
                 if active == 0 {
                     idle_rounds += 1;
                     if idle_rounds > 8 {
@@ -1122,6 +1139,12 @@ impl TransferManager {
             }
         }
         Ok(())
+    }
+}
+
+impl Default for TransferManager {
+    fn default() -> Self {
+        Self::new(Arc::new(RuntimeContext::default()))
     }
 }
 

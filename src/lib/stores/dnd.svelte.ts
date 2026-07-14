@@ -71,6 +71,19 @@ class DndStore {
     this.treeRootHover = false;
     this.paneTarget = null;
   };
+
+  resetVaultContext() {
+    this.pending = null;
+    window.removeEventListener("pointermove", this.onMove);
+    window.removeEventListener("pointerup", this.onUp);
+    this.active = null;
+    this.label = "";
+    this.x = 0;
+    this.y = 0;
+    this.treeTarget = null;
+    this.treeRootHover = false;
+    this.paneTarget = null;
+  }
 }
 
 export const dnd = new DndStore();

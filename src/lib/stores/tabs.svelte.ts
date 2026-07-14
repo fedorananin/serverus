@@ -43,6 +43,7 @@ class TabsStore {
     if (this.listening) return;
     this.listening = true;
     await events.sessionStateEvent.listen((e) => {
+      if (e.payload.context_epoch !== vault.runtimeEpoch) return;
       if (e.payload.state === "connecting" && e.payload.message) {
         // The session id isn't known to the tab until connect returns —
         // match by connection instead (a same-server twin tab is harmless).
@@ -98,6 +99,7 @@ class TabsStore {
   async connect(tabId: string) {
     const tab = this.tabs.find((t) => t.id === tabId);
     if (!tab) return;
+    const contextEpoch = vault.requireRuntimeEpoch();
     const attempt = Symbol(tabId);
     this.connectAttempts.set(tabId, attempt);
     const isCurrent = () =>
@@ -106,9 +108,10 @@ class TabsStore {
     tab.error = null;
     tab.connectMessage = null;
     try {
-      const dto = await unwrap(commands.sessionConnect(tab.connectionId));
+      const dto = await unwrap(commands.sessionConnect(tab.connectionId, contextEpoch));
       if (!isCurrent()) {
-        // A closed tab or a newer retry cannot own this backend session.
+        // The tab was closed/reset, or a newer attempt superseded this one.
+        // Do not leak the stale backend session.
         await unwrap(commands.sessionDisconnect(dto.session_id)).catch(() => {});
         return;
       }
@@ -118,7 +121,7 @@ class TabsStore {
       tab.connectMessage = null;
       tab.reconnectAttempts = 0;
     } catch (e) {
-      // Errors and prompts also belong only to the latest live attempt.
+      // Any prompt/error belongs only to the latest request for this live tab.
       if (!isCurrent()) return;
       this.connectAttempts.delete(tabId);
       if (isApiError(e) && e.code === "host_key_prompt" && e.host_key) {
@@ -156,6 +159,14 @@ class TabsStore {
   activateIndex(i: number) {
     const tab = this.tabs[i];
     if (tab) this.activeId = tab.id;
+  }
+
+  /** Forget frontend tab/session state after the backend switched vaults.
+   *  Backend session cleanup belongs to vault_switch_path, not this method. */
+  resetVaultContext() {
+    this.tabs = [];
+    this.activeId = null;
+    this.connectAttempts.clear();
   }
 }
 

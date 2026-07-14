@@ -4,10 +4,28 @@ import { tabs, type Tab } from "./tabs.svelte";
 const apiMocks = vi.hoisted(() => ({
   sessionConnect: vi.fn(),
   sessionDisconnect: vi.fn(async () => ({ status: "ok", data: null })),
+  sessionStateListener: null as ((event: { payload: Record<string, unknown> }) => void) | null,
+  listenSessionState: vi.fn(
+    async (listener: (event: { payload: Record<string, unknown> }) => void) => {
+      apiMocks.sessionStateListener = listener;
+      return () => {
+        apiMocks.sessionStateListener = null;
+      };
+    },
+  ),
 }));
 
 const hostKeyMocks = vi.hoisted(() => ({
   ask: vi.fn(),
+}));
+
+const vaultMocks = vi.hoisted(() => ({
+  data: null,
+  runtimeEpoch: 2 as number | null,
+  requireRuntimeEpoch: vi.fn(() => {
+    if (vaultMocks.runtimeEpoch === null) throw new Error("Vault context is switching");
+    return vaultMocks.runtimeEpoch;
+  }),
 }));
 
 vi.mock("$lib/api", () => ({
@@ -16,7 +34,7 @@ vi.mock("$lib/api", () => ({
     sessionDisconnect: apiMocks.sessionDisconnect,
   },
   events: {
-    sessionStateEvent: { listen: vi.fn(async () => () => {}) },
+    sessionStateEvent: { listen: apiMocks.listenSessionState },
   },
   errorMessage: (error: unknown) =>
     typeof error === "object" && error !== null && "message" in error
@@ -36,7 +54,7 @@ vi.mock("./hostkey.svelte", () => ({
 }));
 
 vi.mock("./vault.svelte", () => ({
-  vault: { data: null },
+  vault: vaultMocks,
 }));
 
 function deferred<T>() {
@@ -68,6 +86,7 @@ describe("TabsStore connection attempts", () => {
     apiMocks.sessionConnect.mockReset();
     apiMocks.sessionDisconnect.mockClear();
     hostKeyMocks.ask.mockReset();
+    vaultMocks.runtimeEpoch = 2;
   });
 
   it("disconnects a session that finishes after its tab closes", async () => {
@@ -198,5 +217,54 @@ describe("TabsStore connection attempts", () => {
     await connecting;
 
     expect(hostKeyMocks.ask).not.toHaveBeenCalled();
+  });
+
+  it("ignores session events emitted by the previous vault epoch", async () => {
+    apiMocks.sessionConnect.mockReturnValue(new Promise(() => {}));
+    const tab = tabs.open("connection-a");
+    await vi.waitFor(() => expect(apiMocks.sessionStateListener).toBeTypeOf("function"));
+
+    apiMocks.sessionStateListener?.({
+      payload: {
+        context_epoch: 0,
+        session_id: "old-session",
+        connection_id: "connection-a",
+        state: "connecting",
+        message: "Old vault",
+      },
+    });
+    expect(tab.connectMessage).toBeNull();
+
+    apiMocks.sessionStateListener?.({
+      payload: {
+        context_epoch: 2,
+        session_id: "current-session",
+        connection_id: "connection-a",
+        state: "connecting",
+        message: "Current vault",
+      },
+    });
+    expect(tab.connectMessage).toBe("Current vault");
+  });
+
+  it("disconnects a session that finishes after all tabs are reset", async () => {
+    const pending = deferred<{
+      status: "ok";
+      data: { session_id: string; connection_id: string };
+    }>();
+    apiMocks.sessionConnect.mockReturnValue(pending.promise);
+    const tab = createTab();
+    tabs.tabs = [tab];
+
+    const connecting = tabs.connect(tab.id);
+    (tabs as typeof tabs & { resetVaultContext: () => void }).resetVaultContext?.();
+    pending.resolve({
+      status: "ok",
+      data: { session_id: "late-vault-a-session", connection_id: tab.connectionId },
+    });
+    await connecting;
+
+    expect(tabs.tabs).toHaveLength(0);
+    expect(apiMocks.sessionDisconnect).toHaveBeenCalledWith("late-vault-a-session");
   });
 });

@@ -207,9 +207,25 @@ impl Drop for PendingCacheDir {
     }
 }
 
-/// Best-effort cleanup of downloaded copies (SPEC §5.3).
+fn remove_cache_dir(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_dir_all(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        result => result,
+    }
+}
+
+fn cleanup_cache(path: &Path, remove: impl FnOnce(&Path) -> std::io::Result<()>) -> AppResult<()> {
+    remove(path).map_err(|error| {
+        AppError::Other(format!(
+            "failed to remove plaintext edit cache {}: {error}",
+            path.display()
+        ))
+    })
+}
+
+/// Best-effort cleanup of downloaded copies on application exit.
 pub fn cleanup_all() {
-    let _ = std::fs::remove_dir_all(edit_cache_dir());
+    let _ = remove_cache_dir(&edit_cache_dir());
 }
 
 impl EditWatcher {
@@ -240,6 +256,7 @@ impl EditWatcher {
     }
 
     /// Download `remote_path`, open it in the editor and auto-upload saves.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn open(
         self: &Arc<Self>,
         app: AppHandle,
@@ -248,6 +265,7 @@ impl EditWatcher {
         remote_path: &str,
         editor: &EditorSettings,
         operation: &SessionOperation,
+        context_epoch: u64,
     ) -> AppResult<()> {
         let name = remote_path.rsplit('/').next().unwrap_or("file").to_string();
         validate_edit_filename(&name)?;
@@ -336,6 +354,7 @@ impl EditWatcher {
                 match result {
                     Ok(()) => {
                         let _ = RemoteEditUploadedEvent {
+                            context_epoch,
                             name: display_name.clone(),
                             remote_path: remote_path.clone(),
                             error: None,
@@ -344,6 +363,7 @@ impl EditWatcher {
                     }
                     Err(e) => {
                         let _ = RemoteEditUploadedEvent {
+                            context_epoch,
                             name: display_name.clone(),
                             remote_path: remote_path.clone(),
                             error: Some(e.to_string()),
@@ -421,6 +441,19 @@ impl EditWatcher {
                 let _ = std::fs::remove_dir_all(dir);
             }
         }
+    }
+
+    /// Stop every remaining edit and require all plaintext cache data to be
+    /// deleted before another vault context can open.
+    pub async fn close_all(&self) -> AppResult<()> {
+        let watched: Vec<_> = self.files.lock().unwrap().drain().collect();
+        for (_, watched_file) in &watched {
+            let _ = watched_file.shutdown.send(true);
+        }
+        for (_, watched_file) in watched {
+            watched_file.completion.wait().await;
+        }
+        cleanup_cache(&edit_cache_dir(), remove_cache_dir)
     }
 }
 
@@ -584,12 +617,28 @@ mod tests {
     use tokio::io::AsyncWrite;
 
     use super::{
-        create_private_cache_file, create_private_edit_dir, upload_back, upload_back_controlled,
-        validate_edit_filename, EditWatcher, PendingCacheDir, TaskCompletion, WatchedFile,
+        cleanup_cache, create_private_cache_file, create_private_edit_dir, upload_back,
+        upload_back_controlled, validate_edit_filename, EditWatcher, PendingCacheDir,
+        TaskCompletion, WatchedFile,
     };
     use crate::error::{AppError, AppResult};
     use crate::session::lifecycle::LifecycleGate;
     use crate::session::remote_fs::{BoxRead, BoxWrite, RemoteEntry, RemoteFs};
+
+    #[test]
+    fn plaintext_cache_deletion_failure_is_reported() {
+        let path = std::path::Path::new("/simulated/edit-cache");
+        let error = cleanup_cache(path, |_| {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "simulated cleanup failure",
+            ))
+        })
+        .unwrap_err();
+
+        assert!(error.to_string().contains("simulated cleanup failure"));
+        assert!(error.to_string().contains("/simulated/edit-cache"));
+    }
 
     #[tokio::test]
     async fn late_remote_edit_is_rejected_without_spawning_its_upload_loop() {

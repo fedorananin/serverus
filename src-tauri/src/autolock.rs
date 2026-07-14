@@ -12,7 +12,9 @@ use tauri::Manager;
 use tauri_specta::Event;
 
 use crate::events::VaultLockedEvent;
+use crate::runtime_context::RuntimeContext;
 use crate::state::AppState;
+use crate::vault::VaultManager;
 
 pub struct ActivityTracker {
     pub last_activity: Mutex<Instant>,
@@ -32,6 +34,16 @@ impl ActivityTracker {
     }
 }
 
+async fn lock_vault_in_context(
+    context: &RuntimeContext,
+    vault: &Mutex<VaultManager>,
+    expected_epoch: u64,
+) -> Option<u64> {
+    let _switch = context.lock_expected(expected_epoch).await.ok()?;
+    vault.lock().unwrap().lock();
+    Some(expected_epoch)
+}
+
 pub fn spawn(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut prev_wall = SystemTime::now();
@@ -39,6 +51,10 @@ pub fn spawn(app: tauri::AppHandle) {
         loop {
             tokio::time::sleep(Duration::from_secs(10)).await;
             let state = app.state::<AppState>();
+            let context_epoch = state.runtime_context.current_epoch();
+            if !context_epoch.is_multiple_of(2) {
+                continue;
+            }
 
             let (unlocked, timeout_min, lock_on_sleep) = {
                 let mgr = state.vault.lock().unwrap();
@@ -69,8 +85,11 @@ pub fn spawn(app: tauri::AppHandle) {
             let idle_timeout =
                 timeout_min > 0 && idle >= Duration::from_secs(timeout_min as u64 * 60);
             if idle_timeout || (slept && lock_on_sleep) {
-                state.vault.lock().unwrap().lock();
-                let _ = VaultLockedEvent.emit(&app);
+                if let Some(context_epoch) =
+                    lock_vault_in_context(&state.runtime_context, &state.vault, context_epoch).await
+                {
+                    let _ = VaultLockedEvent { context_epoch }.emit(&app);
+                }
             }
         }
     });

@@ -43,7 +43,7 @@
         const home = await unwrap(commands.localHome());
         path = home + path.slice(1);
       }
-      await unwrap(commands.vaultSetPath(path));
+      await unwrap(commands.vaultSetPath(path, vault.requireRuntimeEpoch()));
       await vault.refreshInfo();
       newVaultPath = "";
       moveStatus = "Vault moved ✓";
@@ -69,7 +69,7 @@
     try {
       const home = await unwrap(commands.localHome());
       const path = `${home}/serverus-config-export.json`;
-      await unwrap(commands.vaultExportConfig(path));
+      await unwrap(commands.vaultExportConfig(path, vault.requireRuntimeEpoch()));
       exportStatus = `Saved to ${path} ✓`;
     } catch (e) {
       exportStatus = errorMessage(e);
@@ -111,7 +111,13 @@
   async function changePassword() {
     passwordStatus = null;
     try {
-      await unwrap(commands.vaultChangePassword(currentPassword, newPassword));
+      await unwrap(
+        commands.vaultChangePassword(
+          currentPassword,
+          newPassword,
+          vault.requireRuntimeEpoch(),
+        ),
+      );
       passwordStatus = "Master password changed ✓";
       currentPassword = newPassword = confirmPassword = "";
     } catch (e) {

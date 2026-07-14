@@ -8,9 +8,10 @@
   import HostKeyDialog from "$lib/components/HostKeyDialog.svelte";
   import TransferQueue from "$lib/components/TransferQueue.svelte";
   import ConflictDialog from "$lib/components/ConflictDialog.svelte";
-  import Toasts, { showToast } from "$lib/components/Toasts.svelte";
+  import Toasts from "$lib/components/Toasts.svelte";
   import DragGhost from "$lib/components/DragGhost.svelte";
   import { transfers } from "$lib/stores/transfers.svelte";
+  import { showToast } from "$lib/stores/toasts.svelte";
   import { commands, events, unwrap } from "$lib/api";
   import { isMod } from "$lib/platform";
 
@@ -51,9 +52,14 @@
   });
 
   $effect(() => {
+    if (!vault.data) showSettings = false;
+  });
+
+  $effect(() => {
     void transfers.init();
     // "Uploaded ✓" toast for remote-edit auto-uploads (SPEC §5.3).
     const unlisten = events.remoteEditUploadedEvent.listen((e) => {
+      if (e.payload.context_epoch !== vault.runtimeEpoch) return;
       if (e.payload.error) {
         showToast(`Upload of ${e.payload.name} failed: ${e.payload.error}`, true);
       } else {
@@ -68,6 +74,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    if (!vault.data) return;
     if (!isMod(e)) return;
     if (e.key === "w" && tabs.activeId) {
       e.preventDefault();
@@ -88,10 +95,14 @@
   // Throttled activity pings feed the auto-lock timer (SPEC §2.4).
   let lastActivityPing = 0;
   function reportActivity() {
+    if (!vault.data) return;
     const now = Date.now();
     if (now - lastActivityPing > 15_000) {
       lastActivityPing = now;
-      void unwrap(commands.vaultTouchActivity()).catch(() => {});
+      const contextEpoch = vault.runtimeEpoch;
+      if (contextEpoch !== null) {
+        void unwrap(commands.vaultTouchActivity(contextEpoch)).catch(() => {});
+      }
     }
   }
 </script>
@@ -104,7 +115,7 @@
   onresize={updateFades}
 />
 
-<div class="main">
+<div class="main" inert={!vault.data}>
   <Sidebar />
 
   <div class="content">
@@ -152,8 +163,9 @@
 
     <div class="tab-content">
       {#each tabs.tabs as tab (tab.id)}
+        {@const conn = connectionFor(tab.connectionId)}
         <div class="tab-pane" style:display={tab.id === tabs.activeId ? "flex" : "none"}>
-          <SessionView {tab} />
+          <SessionView {tab} connection={conn} />
         </div>
       {/each}
       {#if !tabs.active}

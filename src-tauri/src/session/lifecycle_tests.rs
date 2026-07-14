@@ -7,14 +7,42 @@ use tokio::io::AsyncReadExt;
 use super::lifecycle::SessionLifecycle;
 use super::{SessionEntry, SessionManager, TerminalEntry};
 use crate::error::AppError;
+use crate::runtime_context::RuntimeContext;
 use crate::session::s3::{S3Config, S3Fs};
 use crate::vault::model::{Protocol, S3UploadAcl};
+
+#[tokio::test]
+async fn session_ready_after_the_vault_context_closes_is_rejected() {
+    let context = Arc::new(RuntimeContext::default());
+    let manager = SessionManager::new(context.clone());
+    let switch = context.begin_or_resume_switch(0).unwrap();
+    let entry = Arc::new(SessionEntry {
+        id: "late-session".into(),
+        connection_id: "connection".into(),
+        context_epoch: 0,
+        protocol: Protocol::S3,
+        ssh: None,
+        sftp: tokio::sync::OnceCell::new(),
+        ftp: None,
+        s3: None,
+        tar_available: tokio::sync::OnceCell::new(),
+        lifecycle: Arc::new(SessionLifecycle::default()),
+        watchdog: std::sync::Mutex::new(None),
+    });
+
+    assert!(matches!(
+        manager.register_session(entry),
+        Err(AppError::VaultContextClosed)
+    ));
+    switch.finish();
+}
 
 async fn assert_late_registration_is_rejected() {
     let manager = Arc::new(SessionManager::default());
     let entry = Arc::new(SessionEntry {
         id: "session".into(),
         connection_id: "connection".into(),
+        context_epoch: 0,
         protocol: Protocol::S3,
         ssh: None,
         sftp: tokio::sync::OnceCell::new(),
@@ -179,6 +207,7 @@ async fn stalled_s3_operation_is_cancelled_by_session_close() {
         Arc::new(SessionEntry {
             id: "session".into(),
             connection_id: "connection".into(),
+            context_epoch: 0,
             protocol: Protocol::S3,
             ssh: None,
             sftp: tokio::sync::OnceCell::new(),

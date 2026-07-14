@@ -40,8 +40,11 @@
 
   async function setUploadMode(mode: S3UploadAcl) {
     try {
-      const updated = await unwrap(commands.s3SetUploadAcl(sessionId, mode, true));
-      if (updated) vault.data = updated;
+      const contextEpoch = vault.requireRuntimeEpoch();
+      const updated = await unwrap(
+        commands.s3SetUploadAcl(sessionId, mode, true, contextEpoch),
+      );
+      if (updated && vault.runtimeEpoch === contextEpoch) vault.data = updated;
     } catch (e) {
       transferError = errorMessage(e);
     }
@@ -57,7 +60,14 @@
     if (!choice) return false;
     try {
       // Applies to this session only — the stored mode stays "ask".
-      await unwrap(commands.s3SetUploadAcl(sessionId, choice, false));
+      await unwrap(
+        commands.s3SetUploadAcl(
+          sessionId,
+          choice,
+          false,
+          vault.requireRuntimeEpoch(),
+        ),
+      );
       return true;
     } catch (e) {
       transferError = errorMessage(e);

@@ -6,6 +6,7 @@ pub mod commands;
 pub mod error;
 pub mod events;
 pub mod local_fs;
+pub mod runtime_context;
 pub mod session;
 pub mod state;
 pub mod transfer;

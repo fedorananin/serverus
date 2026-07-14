@@ -1,18 +1,26 @@
 <script lang="ts">
+  import { untrack } from "svelte";
+  import type { PublicConnection } from "$lib/api";
   import type { Tab } from "$lib/stores/tabs.svelte";
   import { tabs } from "$lib/stores/tabs.svelte";
-  import { vault } from "$lib/stores/vault.svelte";
   import TerminalPanel from "./TerminalPanel.svelte";
   import FilesView from "./FilesView.svelte";
   import TunnelsView from "./TunnelsView.svelte";
 
   interface Props {
     tab: Tab;
+    connection: PublicConnection | null;
   }
 
-  let { tab }: Props = $props();
+  let { tab, connection: currentConnection }: Props = $props();
 
-  const connection = $derived(vault.data?.connections[tab.connectionId] ?? null);
+  // PublicConnection is secret-free. Retain the last unlocked snapshot so an
+  // ordinary lock cannot change the mounted session's capabilities or view.
+  // A vault switch remounts this component via App's contextEpoch key.
+  let connection = $state<PublicConnection | null>(untrack(() => currentConnection));
+  $effect(() => {
+    if (currentConnection) connection = currentConnection;
+  });
   // FTP and S3 sessions have no shell or tunnels — Files is the only view.
   const filesOnly = $derived(connection?.protocol === "ftp" || connection?.protocol === "s3");
   const terminalDisabled = $derived(connection?.disable_terminal ?? false);

@@ -35,6 +35,7 @@ vi.mock("$lib/api", () => ({
 vi.mock("$lib/stores/vault.svelte", () => ({
   vault: {
     data: { connections: {} },
+    requireRuntimeEpoch: () => 2,
     upsertConnection: vaultMocks.upsertConnection,
   },
 }));

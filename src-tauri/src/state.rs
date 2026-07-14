@@ -9,6 +9,7 @@ use crate::app_config;
 use crate::autolock::ActivityTracker;
 use crate::error::{AppError, AppResult};
 use crate::events::SessionStateEvent;
+use crate::runtime_context::RuntimeContext;
 use crate::session::SessionEntry;
 use crate::session::SessionManager;
 use crate::transfer::TransferManager;
@@ -24,6 +25,7 @@ pub struct AppState {
     pub sessions: Arc<SessionManager>,
     pub transfers: Arc<TransferManager>,
     pub edits: Arc<EditWatcher>,
+    pub runtime_context: Arc<RuntimeContext>,
     pub activity: Arc<ActivityTracker>,
     disconnects: Arc<SessionDisconnectCoordinator>,
 }
@@ -154,6 +156,28 @@ impl SessionDisconnectCoordinator {
         // same error on repeated requests is safer than pretending a removed
         // session finished releasing all of its resources.
     }
+
+    async fn disconnect_all(self: &Arc<Self>) -> AppResult<()> {
+        for session_id in self.sessions.session_ids() {
+            let _ = self.start(&session_id);
+        }
+        // Snapshot after starting every live session so remote-close races and
+        // already-running tab teardowns are included in the same barrier.
+        let completions: Vec<_> = self.in_flight.lock().unwrap().values().cloned().collect();
+        let results = futures::future::join_all(
+            completions
+                .into_iter()
+                .map(|completion| async move { completion.wait().await }),
+        )
+        .await;
+        let mut first_error = None;
+        for result in results {
+            if let Err(error) = result {
+                first_error.get_or_insert(error);
+            }
+        }
+        first_error.map_or(Ok(()), Err)
+    }
 }
 
 impl Default for AppState {
@@ -171,13 +195,15 @@ impl AppState {
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         let quick: Arc<dyn QuickUnlock> = Arc::new(crate::vault::quick_unlock::NoQuickUnlock);
 
+        let runtime_context = Arc::new(RuntimeContext::default());
         Self::with_parts(
             Arc::new(Mutex::new(VaultManager::new(app_config::vault_path()))),
             quick,
-            Arc::new(SessionManager::default()),
-            Arc::new(TransferManager::default()),
+            Arc::new(SessionManager::new(runtime_context.clone())),
+            Arc::new(TransferManager::new(runtime_context.clone())),
             Arc::new(EditWatcher::default()),
             Arc::new(ActivityTracker::default()),
+            runtime_context,
         )
     }
 
@@ -188,6 +214,7 @@ impl AppState {
         transfers: Arc<TransferManager>,
         edits: Arc<EditWatcher>,
         activity: Arc<ActivityTracker>,
+        runtime_context: Arc<RuntimeContext>,
     ) -> Self {
         let disconnects = Arc::new(SessionDisconnectCoordinator {
             sessions: sessions.clone(),
@@ -202,6 +229,7 @@ impl AppState {
             sessions,
             transfers,
             edits,
+            runtime_context,
             activity,
             disconnects,
         }
@@ -209,6 +237,10 @@ impl AppState {
 
     pub(crate) fn start_session_disconnect(&self, session_id: &str) -> Option<DisconnectStart> {
         self.disconnects.start(session_id)
+    }
+
+    pub(crate) async fn disconnect_all_sessions(&self) -> AppResult<()> {
+        self.disconnects.disconnect_all().await
     }
 
     pub(crate) async fn install_ssh_watchdog(
@@ -221,6 +253,7 @@ impl AppState {
         };
         let session_id = entry.id.clone();
         let connection_id = entry.connection_id.clone();
+        let context_epoch = entry.context_epoch;
         let disconnects = self.disconnects.clone();
         let (ready, ready_rx) = tokio::sync::oneshot::channel();
         let remote_closed = async move {
@@ -239,6 +272,7 @@ impl AppState {
             watchdog_session_id,
             move || {
                 let _ = SessionStateEvent {
+                    context_epoch,
                     session_id,
                     connection_id,
                     state: "disconnected".into(),

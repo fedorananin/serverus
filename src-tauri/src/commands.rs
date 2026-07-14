@@ -7,7 +7,7 @@ use tauri::State;
 use tauri_specta::Event;
 use zeroize::Zeroizing;
 
-use crate::error::{ApiResult, AppError, AppResult};
+use crate::error::{ApiError, ApiResult, AppError, AppResult};
 use crate::events::VaultLockedEvent;
 use crate::state::AppState;
 use crate::vault::format::KdfParams;
@@ -24,12 +24,33 @@ async fn blocking<T: Send + 'static>(
     }
 }
 
+async fn lock_expected_context(
+    state: &AppState,
+    context_epoch: u32,
+) -> ApiResult<tokio::sync::MutexGuard<'_, ()>> {
+    state
+        .runtime_context
+        .lock_expected(u64::from(context_epoch))
+        .await
+        .map_err(Into::into)
+}
+
+fn closed_context_error(error: impl std::fmt::Display) -> ApiError {
+    ApiError {
+        code: "vault_context_closed".into(),
+        message: error.to_string(),
+        host_key: None,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Vault
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct VaultInfo {
+    #[specta(type = specta_typescript::Number)]
+    pub context_epoch: u64,
     pub path: String,
     pub exists: bool,
     pub unlocked: bool,
@@ -74,12 +95,18 @@ pub async fn open_external(url: String) -> ApiResult<()> {
 #[tauri::command]
 #[specta::specta]
 pub async fn vault_get_info(state: State<'_, AppState>) -> ApiResult<VaultInfo> {
+    let runtime_context = state.runtime_context.clone();
+    // Status must remain available while a failed switch is intentionally
+    // fail-closed so the lock screen can explain and retry that transition.
+    let _switch = runtime_context.lock_switch().await;
+    let context_epoch = runtime_context.current_epoch();
     let vault = state.vault.clone();
     let quick = state.quick.clone();
     blocking(move || {
         let mgr = vault.lock().unwrap();
         let biometry = quick.is_available();
         Ok(VaultInfo {
+            context_epoch,
             path: mgr.path().to_string_lossy().into_owned(),
             exists: mgr.exists(),
             unlocked: mgr.is_unlocked(),
@@ -93,7 +120,12 @@ pub async fn vault_get_info(state: State<'_, AppState>) -> ApiResult<VaultInfo> 
 
 #[tauri::command]
 #[specta::specta]
-pub async fn vault_create(state: State<'_, AppState>, password: String) -> ApiResult<PublicVault> {
+pub async fn vault_create(
+    state: State<'_, AppState>,
+    password: String,
+    context_epoch: u32,
+) -> ApiResult<PublicVault> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     let quick = state.quick.clone();
     let activity = state.activity.clone();
@@ -117,7 +149,9 @@ pub async fn vault_create(state: State<'_, AppState>, password: String) -> ApiRe
 pub async fn vault_unlock_password(
     state: State<'_, AppState>,
     password: String,
+    context_epoch: u32,
 ) -> ApiResult<PublicVault> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     let quick = state.quick.clone();
     let activity = state.activity.clone();
@@ -139,7 +173,11 @@ pub async fn vault_unlock_password(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn vault_unlock_quick(state: State<'_, AppState>) -> ApiResult<PublicVault> {
+pub async fn vault_unlock_quick(
+    state: State<'_, AppState>,
+    context_epoch: u32,
+) -> ApiResult<PublicVault> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     let quick = state.quick.clone();
     let activity = state.activity.clone();
@@ -162,6 +200,7 @@ mod vault_unlock_activity_tests {
     use super::{vault_create, vault_unlock_password, vault_unlock_quick};
     use crate::autolock::ActivityTracker;
     use crate::error::AppResult;
+    use crate::runtime_context::RuntimeContext;
     use crate::session::SessionManager;
     use crate::state::AppState;
     use crate::transfer::TransferManager;
@@ -217,14 +256,16 @@ mod vault_unlock_activity_tests {
         quick: Arc<dyn QuickUnlock>,
         activity: Arc<ActivityTracker>,
     ) -> tauri::App<tauri::test::MockRuntime> {
+        let runtime_context = Arc::new(RuntimeContext::default());
         tauri::test::mock_builder()
             .manage(AppState::with_parts(
                 Arc::new(Mutex::new(vault)),
                 quick,
-                Arc::new(SessionManager::default()),
-                Arc::new(TransferManager::default()),
+                Arc::new(SessionManager::new(runtime_context.clone())),
+                Arc::new(TransferManager::new(runtime_context.clone())),
                 Arc::new(EditWatcher::default()),
                 activity,
+                runtime_context,
             ))
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap()
@@ -249,7 +290,7 @@ mod vault_unlock_activity_tests {
         );
         let command_started = Instant::now();
 
-        tauri::async_runtime::block_on(vault_create(app.state::<AppState>(), "password".into()))
+        tauri::async_runtime::block_on(vault_create(app.state::<AppState>(), "password".into(), 0))
             .unwrap();
 
         assert_idle_interval_was_restarted(&activity, command_started);
@@ -268,6 +309,7 @@ mod vault_unlock_activity_tests {
         tauri::async_runtime::block_on(vault_unlock_password(
             app.state::<AppState>(),
             "password".into(),
+            0,
         ))
         .unwrap();
 
@@ -285,7 +327,7 @@ mod vault_unlock_activity_tests {
         let app = test_app(vault, Arc::new(StoredQuickUnlock { dek }), activity.clone());
         let command_started = Instant::now();
 
-        tauri::async_runtime::block_on(vault_unlock_quick(app.state::<AppState>())).unwrap();
+        tauri::async_runtime::block_on(vault_unlock_quick(app.state::<AppState>(), 0)).unwrap();
 
         assert_idle_interval_was_restarted(&activity, command_started);
     }
@@ -293,14 +335,22 @@ mod vault_unlock_activity_tests {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn vault_lock(app: tauri::AppHandle, state: State<'_, AppState>) -> ApiResult<()> {
+pub async fn vault_lock(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    context_epoch: u32,
+) -> ApiResult<()> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     blocking(move || {
         vault.lock().unwrap().lock();
         Ok(())
     })
     .await?;
-    let _ = VaultLockedEvent.emit(&app);
+    let _ = VaultLockedEvent {
+        context_epoch: u64::from(context_epoch),
+    }
+    .emit(&app);
     Ok(())
 }
 
@@ -310,7 +360,9 @@ pub async fn vault_change_password(
     state: State<'_, AppState>,
     current_password: String,
     new_password: String,
+    context_epoch: u32,
 ) -> ApiResult<()> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     blocking(move || {
         let current = Zeroizing::new(current_password);
@@ -323,7 +375,12 @@ pub async fn vault_change_password(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn vault_set_touch_id(state: State<'_, AppState>, enabled: bool) -> ApiResult<()> {
+pub async fn vault_set_touch_id(
+    state: State<'_, AppState>,
+    enabled: bool,
+    context_epoch: u32,
+) -> ApiResult<()> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     let quick = state.quick.clone();
     blocking(move || {
@@ -358,7 +415,9 @@ pub async fn connection_upsert(
     id: Option<String>,
     input: ConnectionInput,
     parent_folder: Option<String>,
+    context_epoch: u32,
 ) -> ApiResult<PublicVault> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     blocking(move || {
         let mut mgr = vault.lock().unwrap();
@@ -395,7 +454,9 @@ pub async fn connection_upsert(
 pub async fn connection_duplicate(
     state: State<'_, AppState>,
     id: String,
+    context_epoch: u32,
 ) -> ApiResult<PublicVault> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     blocking(move || {
         let mut mgr = vault.lock().unwrap();
@@ -419,7 +480,12 @@ pub async fn connection_duplicate(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn connection_delete(state: State<'_, AppState>, id: String) -> ApiResult<PublicVault> {
+pub async fn connection_delete(
+    state: State<'_, AppState>,
+    id: String,
+    context_epoch: u32,
+) -> ApiResult<PublicVault> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     blocking(move || {
         let mut mgr = vault.lock().unwrap();
@@ -451,7 +517,9 @@ pub async fn folder_create(
     name: String,
     parent_folder: Option<String>,
     badge: Option<Badge>,
+    context_epoch: u32,
 ) -> ApiResult<PublicVault> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     blocking(move || {
         let mut mgr = vault.lock().unwrap();
@@ -479,7 +547,9 @@ pub async fn folder_update(
     id: String,
     name: String,
     badge: Option<Badge>,
+    context_epoch: u32,
 ) -> ApiResult<PublicVault> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     blocking(move || {
         let mut mgr = vault.lock().unwrap();
@@ -494,7 +564,12 @@ pub async fn folder_update(
 /// Delete a folder; its children are lifted to the parent level.
 #[tauri::command]
 #[specta::specta]
-pub async fn folder_delete(state: State<'_, AppState>, id: String) -> ApiResult<PublicVault> {
+pub async fn folder_delete(
+    state: State<'_, AppState>,
+    id: String,
+    context_epoch: u32,
+) -> ApiResult<PublicVault> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     blocking(move || {
         let mut mgr = vault.lock().unwrap();
@@ -517,7 +592,9 @@ pub async fn folder_delete(state: State<'_, AppState>, id: String) -> ApiResult<
 pub async fn tree_update(
     state: State<'_, AppState>,
     tree: Vec<TreeNode>,
+    context_epoch: u32,
 ) -> ApiResult<PublicVault> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     blocking(move || {
         let mut mgr = vault.lock().unwrap();
@@ -535,7 +612,9 @@ pub async fn tree_update(
 pub async fn settings_update(
     state: State<'_, AppState>,
     settings: Settings,
+    context_epoch: u32,
 ) -> ApiResult<PublicVault> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     let quick = state.quick.clone();
     blocking(move || {
@@ -563,7 +642,12 @@ pub async fn settings_update(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn known_host_remove(state: State<'_, AppState>, host: String) -> ApiResult<PublicVault> {
+pub async fn known_host_remove(
+    state: State<'_, AppState>,
+    host: String,
+    context_epoch: u32,
+) -> ApiResult<PublicVault> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     blocking(move || {
         let mut mgr = vault.lock().unwrap();
@@ -580,7 +664,12 @@ pub async fn known_host_remove(state: State<'_, AppState>, host: String) -> ApiR
 /// the old file stays as a manual backup.
 #[tauri::command]
 #[specta::specta]
-pub async fn vault_set_path(state: State<'_, AppState>, path: String) -> ApiResult<()> {
+pub async fn vault_set_path(
+    state: State<'_, AppState>,
+    path: String,
+    context_epoch: u32,
+) -> ApiResult<()> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     let quick = state.quick.clone();
     blocking(move || {
@@ -612,74 +701,114 @@ pub async fn vault_set_path(state: State<'_, AppState>, path: String) -> ApiResu
 /// An existing file gets the unlock form, a fresh path gets the create
 /// form. The current vault is locked (secrets zeroized) before switching;
 /// nothing is moved or rewritten on disk.
-fn switch_vault_manager(
-    current: &mut crate::vault::VaultManager,
+fn resolve_switch_target(
+    current: &crate::vault::VaultManager,
     mut target: std::path::PathBuf,
-    persist: impl FnOnce(&crate::app_config::AppConfig) -> std::io::Result<()>,
-) -> AppResult<()> {
+) -> std::path::PathBuf {
     // A folder means "the vault file inside it", keeping the file name.
     if target.is_dir() {
         if let Some(name) = current.path().file_name() {
             target = target.join(name);
         }
     }
-
-    let next = crate::vault::VaultManager::new(target);
-    // Keep the selected and unlocked runtime vault intact through the only
-    // fallible step. Replacing the manager is infallible after persistence.
-    persist(&crate::app_config::AppConfig {
-        vault_path: Some(next.vault_id()),
-    })?;
-    current.lock();
-    *current = next;
-    Ok(())
+    target
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn vault_switch_path(state: State<'_, AppState>, path: String) -> ApiResult<()> {
+pub async fn vault_switch_path(
+    state: State<'_, AppState>,
+    path: String,
+    context_epoch: u32,
+) -> ApiResult<()> {
+    let expected_epoch = u64::from(context_epoch);
+    let runtime_context = state.runtime_context.clone();
+    let switch_lock = runtime_context.lock_switch().await;
+    let current_epoch = runtime_context.current_epoch();
+    if current_epoch != expected_epoch && current_epoch != expected_epoch + 1 {
+        return Err(AppError::VaultContextClosed.into());
+    }
+
+    // Resolve the destination and fully write/fsync the replacement app
+    // config while context A is still open. A preflight failure must leave A
+    // selected, unlocked and usable.
     let vault = state.vault.clone();
-    blocking(move || {
-        let mut mgr = vault.lock().unwrap();
-        switch_vault_manager(&mut mgr, local_fs::expand(&path), crate::app_config::save)
+    let prepared = blocking(move || {
+        let mgr = vault.lock().unwrap();
+        let target = resolve_switch_target(&mgr, local_fs::expand(&path));
+        let next = crate::vault::VaultManager::new(target.clone());
+        let prepared = crate::app_config::prepare(&crate::app_config::AppConfig {
+            vault_path: Some(next.vault_id()),
+        })?;
+        Ok((target, prepared))
     })
-    .await
+    .await;
+    let (target, prepared_config) = match prepared {
+        Ok(prepared) => prepared,
+        Err(error) if current_epoch == expected_epoch + 1 => {
+            return Err(closed_context_error(error));
+        }
+        Err(error) => return Err(error),
+    };
+
+    let switch = runtime_context
+        .begin_or_resume_switch(expected_epoch)
+        .map_err(ApiError::from)?;
+    let vault = state.vault.clone();
+    let lock_result = blocking(move || {
+        vault.lock().unwrap().lock();
+        Ok(())
+    })
+    .await;
+    if let Err(error) = lock_result {
+        drop(switch_lock);
+        return Err(closed_context_error(error));
+    }
+    runtime_context.cancel_pending_connects().await;
+
+    // Every resource that can contain plaintext or authority from vault A is
+    // drained before the durable pointer or live manager can move to B.
+    let sessions_result = state.disconnect_all_sessions().await;
+    let edits_result = state.edits.close_all().await;
+    if let Err(error) = sessions_result.and(edits_result) {
+        drop(switch_lock);
+        return Err(closed_context_error(error));
+    }
+
+    let vault = state.vault.clone();
+    let commit_result = blocking(move || {
+        prepared_config.commit()?;
+        let mut current = vault.lock().unwrap();
+        current.lock();
+        *current = crate::vault::VaultManager::new(target);
+        Ok(())
+    })
+    .await;
+    if let Err(error) = commit_result {
+        drop(switch_lock);
+        return Err(closed_context_error(error));
+    }
+
+    switch.finish();
+    drop(switch_lock);
+    Ok(())
 }
 
 #[cfg(test)]
 mod vault_switch_path_tests {
-    use super::switch_vault_manager;
-    use crate::vault::format::KdfParams;
+    use super::resolve_switch_target;
     use crate::vault::VaultManager;
 
     #[test]
-    fn config_failure_preserves_the_selected_unlocked_vault() {
+    fn directory_destination_keeps_the_current_vault_file_name() {
         let directory = tempfile::tempdir().unwrap();
         let original = directory.path().join("original.serverus");
-        let target = directory.path().join("other.serverus");
-        let mut manager = VaultManager::new(original.clone());
-        manager
-            .create(
-                "password",
-                KdfParams {
-                    m_cost_kib: 8 * 1024,
-                    t_cost: 1,
-                    p_cost: 1,
-                },
-            )
-            .unwrap();
+        let manager = VaultManager::new(original);
 
-        let result = switch_vault_manager(&mut manager, target, |_| {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::StorageFull,
-                "simulated config failure",
-            ))
-        });
-
-        assert!(result.is_err());
-        assert_eq!(manager.path(), original);
-        assert!(manager.is_unlocked());
-        assert!(manager.payload().is_ok());
+        assert_eq!(
+            resolve_switch_target(&manager, directory.path().to_path_buf()),
+            directory.path().join("original.serverus")
+        );
     }
 }
 
@@ -702,66 +831,78 @@ pub async fn session_connect(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     connection_id: String,
+    context_epoch: u32,
 ) -> ApiResult<SessionDto> {
     let sessions = state.sessions.clone();
     let vault = state.vault.clone();
-    match sessions.connect(&app, &vault, &connection_id).await {
-        Ok(Ok(entry)) => {
-            state
-                .install_ssh_watchdog(app.clone(), &entry)
+    let runtime_context = state.runtime_context.clone();
+    runtime_context
+        .run_pending_connect(u64::from(context_epoch), async {
+            match sessions
+                .connect(&app, &vault, &connection_id, u64::from(context_epoch))
                 .await
-                .map_err(crate::error::ApiError::from)?;
-            // Autostart tunnels flagged in the connection config (SPEC §4.2).
-            if entry.ssh.is_some() {
-                let autostart: Vec<crate::vault::model::TunnelConfig> = vault
-                    .lock()
-                    .unwrap()
-                    .payload()
-                    .map(|p| {
-                        p.connections
-                            .get(&connection_id)
-                            .map(|c| c.tunnels.iter().filter(|t| t.autostart).cloned().collect())
-                            .unwrap_or_default()
+            {
+                Ok(Ok(entry)) => {
+                    state
+                        .install_ssh_watchdog(app.clone(), &entry)
+                        .await
+                        .map_err(crate::error::ApiError::from)?;
+                    // Keep setup registered as pending until every resource
+                    // derived from this vault has been installed.
+                    if entry.ssh.is_some() {
+                        let autostart: Vec<crate::vault::model::TunnelConfig> = vault
+                            .lock()
+                            .unwrap()
+                            .payload()
+                            .map(|p| {
+                                p.connections
+                                    .get(&connection_id)
+                                    .map(|c| {
+                                        c.tunnels.iter().filter(|t| t.autostart).cloned().collect()
+                                    })
+                                    .unwrap_or_default()
+                            })
+                            .unwrap_or_default();
+                        for t in autostart {
+                            let _ = sessions
+                                .tunnel_start(
+                                    &entry.id,
+                                    &t.name,
+                                    t.local_port,
+                                    &t.remote_host,
+                                    t.remote_port,
+                                )
+                                .await;
+                        }
+                    }
+                    Ok(SessionDto {
+                        session_id: entry.id.clone(),
+                        connection_id: entry.connection_id.clone(),
                     })
-                    .unwrap_or_default();
-                for t in autostart {
-                    let _ = sessions
-                        .tunnel_start(
-                            &entry.id,
-                            &t.name,
-                            t.local_port,
-                            &t.remote_host,
-                            t.remote_port,
-                        )
-                        .await;
                 }
+                Ok(Err(issue)) => Err(crate::error::ApiError {
+                    code: "host_key_prompt".into(),
+                    message: if issue.changed {
+                        format!(
+                            "HOST KEY CHANGED for {}:{} — possible man-in-the-middle attack",
+                            issue.host, issue.port
+                        )
+                    } else {
+                        format!("Unknown host {}:{}", issue.host, issue.port)
+                    },
+                    host_key: Some(crate::error::HostKeyPrompt {
+                        host: issue.host,
+                        port: issue.port,
+                        algorithm: issue.algorithm,
+                        fingerprint: issue.fingerprint,
+                        key_line: issue.key_line,
+                        changed: issue.changed,
+                    }),
+                }),
+                Err(error) => Err(error.into()),
             }
-            Ok(SessionDto {
-                session_id: entry.id.clone(),
-                connection_id: entry.connection_id.clone(),
-            })
-        }
-        Ok(Err(issue)) => Err(crate::error::ApiError {
-            code: "host_key_prompt".into(),
-            message: if issue.changed {
-                format!(
-                    "HOST KEY CHANGED for {}:{} — possible man-in-the-middle attack",
-                    issue.host, issue.port
-                )
-            } else {
-                format!("Unknown host {}:{}", issue.host, issue.port)
-            },
-            host_key: Some(crate::error::HostKeyPrompt {
-                host: issue.host,
-                port: issue.port,
-                algorithm: issue.algorithm,
-                fingerprint: issue.fingerprint,
-                key_line: issue.key_line,
-                changed: issue.changed,
-            }),
-        }),
-        Err(e) => Err(e.into()),
-    }
+        })
+        .await
 }
 
 /// Store an accepted host key in the vault (SPEC §4.1).
@@ -772,7 +913,9 @@ pub async fn host_key_accept(
     host: String,
     port: u16,
     key_line: String,
+    context_epoch: u32,
 ) -> ApiResult<()> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     blocking(move || {
         let mut mgr = vault.lock().unwrap();
@@ -1107,7 +1250,9 @@ pub async fn s3_set_upload_acl(
     session_id: String,
     mode: S3UploadAcl,
     persist: bool,
+    context_epoch: u32,
 ) -> ApiResult<Option<PublicVault>> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let (session, fs) = s3_of(&state, &session_id)?;
     if !persist {
         fs.set_upload_acl(mode);
@@ -1279,6 +1424,8 @@ pub async fn transfer_download(
 
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct TransferListDto {
+    #[specta(type = specta_typescript::Number)]
+    pub context_epoch: u64,
     pub items: Vec<TransferSnapshot>,
     pub summary: TransferSummary,
 }
@@ -1286,8 +1433,15 @@ pub struct TransferListDto {
 #[tauri::command]
 #[specta::specta]
 pub async fn transfer_list(state: State<'_, AppState>) -> ApiResult<TransferListDto> {
+    let runtime_context = state.runtime_context.clone();
+    let _context = runtime_context.lock_current().await?;
+    let context_epoch = runtime_context.current_epoch();
     let (items, summary) = state.transfers.snapshot();
-    Ok(TransferListDto { items, summary })
+    Ok(TransferListDto {
+        context_epoch,
+        items,
+        summary,
+    })
 }
 
 #[tauri::command]
@@ -1412,6 +1566,7 @@ pub async fn remote_edit_open(
                 &remote_path,
                 &editor,
                 session.operation(),
+                session.context_epoch,
             )
             .await
     };
@@ -1471,7 +1626,8 @@ pub async fn tunnel_list(
 /// Throttled user-activity ping for the auto-lock timer (SPEC §2.4).
 #[tauri::command]
 #[specta::specta]
-pub async fn vault_touch_activity(state: State<'_, AppState>) -> ApiResult<()> {
+pub async fn vault_touch_activity(state: State<'_, AppState>, context_epoch: u32) -> ApiResult<()> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     state.activity.touch();
     Ok(())
 }
@@ -1480,7 +1636,12 @@ pub async fn vault_touch_activity(state: State<'_, AppState>) -> ApiResult<()> {
 /// (SPEC §8) — passwords, passphrases and inline keys are omitted.
 #[tauri::command]
 #[specta::specta]
-pub async fn vault_export_config(state: State<'_, AppState>, path: String) -> ApiResult<()> {
+pub async fn vault_export_config(
+    state: State<'_, AppState>,
+    path: String,
+    context_epoch: u32,
+) -> ApiResult<()> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     blocking(move || {
         let mgr = vault.lock().unwrap();
@@ -1508,7 +1669,9 @@ pub struct ImportReport {
 pub async fn vault_import_config(
     state: State<'_, AppState>,
     path: String,
+    context_epoch: u32,
 ) -> ApiResult<ImportReport> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     blocking(move || {
         let json = std::fs::read_to_string(&path)?;
@@ -1528,7 +1691,12 @@ pub async fn vault_import_config(
 /// only PEM-looking files are returned.
 #[tauri::command]
 #[specta::specta]
-pub async fn ssh_key_read_file(path: String) -> ApiResult<String> {
+pub async fn ssh_key_read_file(
+    state: State<'_, AppState>,
+    path: String,
+    context_epoch: u32,
+) -> ApiResult<String> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     blocking(move || local_fs::read_private_key(&path)).await
 }
 
@@ -1547,7 +1715,9 @@ pub struct ConnectionSecrets {
 pub async fn connection_secrets(
     state: State<'_, AppState>,
     id: String,
+    context_epoch: u32,
 ) -> ApiResult<ConnectionSecrets> {
+    let _context = lock_expected_context(&state, context_epoch).await?;
     let vault = state.vault.clone();
     blocking(move || {
         let mgr = vault.lock().unwrap();

@@ -20,6 +20,8 @@ pub enum AppError {
     InvalidPassword,
     #[error("vault is locked")]
     VaultLocked,
+    #[error("vault context is closed")]
+    VaultContextClosed,
     #[error("vault file is corrupted: {0}")]
     Corrupted(String),
     #[error("unsupported vault format version {0}")]
@@ -57,6 +59,7 @@ impl AppError {
             AppError::VaultExists => "vault_exists",
             AppError::InvalidPassword => "invalid_password",
             AppError::VaultLocked => "vault_locked",
+            AppError::VaultContextClosed => "vault_context_closed",
             AppError::Corrupted(_) => "corrupted",
             AppError::UnsupportedVersion(_) => "unsupported_version",
             AppError::QuickUnlockUnavailable(_) => "quick_unlock_unavailable",

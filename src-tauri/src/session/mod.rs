@@ -24,6 +24,7 @@ use tauri_specta::Event;
 
 use crate::error::{AppError, AppResult};
 use crate::events::{SessionStateEvent, TerminalDataEvent, TerminalExitEvent};
+use crate::runtime_context::RuntimeContext;
 use crate::vault::model::Protocol;
 use crate::vault::VaultManager;
 use ssh::{ConnectOutcome, Hop, HostKeyIssue, SshSession};
@@ -33,6 +34,7 @@ pub(crate) use lifecycle::{LifecycleCleanup, SessionOperation};
 pub struct SessionEntry {
     pub id: String,
     pub connection_id: String,
+    pub context_epoch: u64,
     pub protocol: Protocol,
     /// Present for SSH sessions (terminals, SFTP and tunnels hang off it).
     pub ssh: Option<Arc<SshSession>>,
@@ -145,14 +147,33 @@ pub struct ClosingSession {
     entry: Arc<SessionEntry>,
 }
 
-#[derive(Default)]
 pub struct SessionManager {
     sessions: Mutex<HashMap<String, Arc<SessionEntry>>>,
     terminals: tokio::sync::Mutex<HashMap<String, TerminalEntry>>,
     pub tunnels: tunnel::TunnelManager,
+    runtime_context: Arc<RuntimeContext>,
+}
+
+impl Default for SessionManager {
+    fn default() -> Self {
+        Self::new(Arc::new(RuntimeContext::default()))
+    }
 }
 
 impl SessionManager {
+    pub fn new(runtime_context: Arc<RuntimeContext>) -> Self {
+        Self {
+            sessions: Mutex::new(HashMap::new()),
+            terminals: tokio::sync::Mutex::new(HashMap::new()),
+            tunnels: tunnel::TunnelManager::default(),
+            runtime_context,
+        }
+    }
+
+    pub(crate) fn session_ids(&self) -> Vec<String> {
+        self.sessions.lock().unwrap().keys().cloned().collect()
+    }
+
     #[cfg(test)]
     pub(crate) fn insert_test_session(&self, session_id: &str) -> Arc<lifecycle::LifecycleGate> {
         let lifecycle = Arc::new(lifecycle::LifecycleGate::default());
@@ -161,6 +182,7 @@ impl SessionManager {
             Arc::new(SessionEntry {
                 id: session_id.to_string(),
                 connection_id: "connection".into(),
+                context_epoch: 0,
                 protocol: Protocol::S3,
                 ssh: None,
                 sftp: tokio::sync::OnceCell::new(),
@@ -182,8 +204,24 @@ impl SessionManager {
             .get(session_id)
             .cloned()
             .ok_or(AppError::SessionNotFound)?;
+        if !entry.context_epoch.is_multiple_of(2)
+            || self.runtime_context.current_epoch() != entry.context_epoch
+        {
+            return Err(AppError::VaultContextClosed);
+        }
         let operation = entry.lifecycle.try_begin_operation()?;
         Ok(SessionLease { entry, operation })
+    }
+
+    fn register_session(&self, entry: Arc<SessionEntry>) -> AppResult<()> {
+        let mut sessions = self.sessions.lock().unwrap();
+        if !entry.context_epoch.is_multiple_of(2)
+            || self.runtime_context.current_epoch() != entry.context_epoch
+        {
+            return Err(AppError::VaultContextClosed);
+        }
+        sessions.insert(entry.id.clone(), entry);
+        Ok(())
     }
 
     /// Build the jump chain (target last) from vault data, with cycle guard.
@@ -225,6 +263,7 @@ impl SessionManager {
         app: &AppHandle,
         vault: &Arc<Mutex<VaultManager>>,
         connection_id: &str,
+        context_epoch: u64,
     ) -> AppResult<Result<Arc<SessionEntry>, Box<HostKeyIssue>>> {
         let (protocol, ftp_config, s3_config, max_parallel) = {
             let mgr = vault.lock().unwrap();
@@ -251,12 +290,16 @@ impl SessionManager {
             )
         };
         match protocol {
-            Protocol::Ssh => self.connect_ssh(app, vault, connection_id).await,
+            Protocol::Ssh => {
+                self.connect_ssh(app, vault, connection_id, context_epoch)
+                    .await
+            }
             // FTP and S3 share the probe-then-register shape.
             Protocol::Ftp | Protocol::S3 => {
                 let session_id = uuid::Uuid::new_v4().to_string();
                 let lifecycle = Arc::new(lifecycle::SessionLifecycle::default());
                 let _ = SessionStateEvent {
+                    context_epoch,
                     session_id: session_id.clone(),
                     connection_id: connection_id.to_string(),
                     state: "connecting".into(),
@@ -277,6 +320,7 @@ impl SessionManager {
                         let entry = Arc::new(SessionEntry {
                             id: session_id.clone(),
                             connection_id: connection_id.to_string(),
+                            context_epoch,
                             protocol,
                             ssh: None,
                             sftp: tokio::sync::OnceCell::new(),
@@ -286,11 +330,9 @@ impl SessionManager {
                             lifecycle,
                             watchdog: Mutex::new(None),
                         });
-                        self.sessions
-                            .lock()
-                            .unwrap()
-                            .insert(session_id.clone(), entry.clone());
+                        self.register_session(entry.clone())?;
                         let _ = SessionStateEvent {
+                            context_epoch,
                             session_id,
                             connection_id: connection_id.to_string(),
                             state: "connected".into(),
@@ -301,6 +343,7 @@ impl SessionManager {
                     }
                     Err(e) => {
                         let _ = SessionStateEvent {
+                            context_epoch,
                             session_id,
                             connection_id: connection_id.to_string(),
                             state: "error".into(),
@@ -321,6 +364,7 @@ impl SessionManager {
         app: &AppHandle,
         vault: &Arc<Mutex<VaultManager>>,
         connection_id: &str,
+        context_epoch: u64,
     ) -> AppResult<Result<Arc<SessionEntry>, Box<HostKeyIssue>>> {
         let chain = {
             let mgr = vault.lock().unwrap();
@@ -329,6 +373,7 @@ impl SessionManager {
 
         let session_id = uuid::Uuid::new_v4().to_string();
         let _ = SessionStateEvent {
+            context_epoch,
             session_id: session_id.clone(),
             connection_id: connection_id.to_string(),
             state: "connecting".into(),
@@ -344,6 +389,7 @@ impl SessionManager {
             let connection_id = connection_id.to_string();
             move |message: String| {
                 let _ = SessionStateEvent {
+                    context_epoch,
                     session_id: session_id.clone(),
                     connection_id: connection_id.clone(),
                     state: "connecting".into(),
@@ -357,6 +403,7 @@ impl SessionManager {
                 let entry = Arc::new(SessionEntry {
                     id: session_id.clone(),
                     connection_id: connection_id.to_string(),
+                    context_epoch,
                     protocol: Protocol::Ssh,
                     ssh: Some(Arc::new(SshSession::new(handle))),
                     sftp: tokio::sync::OnceCell::new(),
@@ -366,11 +413,14 @@ impl SessionManager {
                     lifecycle: Arc::new(lifecycle::SessionLifecycle::default()),
                     watchdog: Mutex::new(None),
                 });
-                self.sessions
-                    .lock()
-                    .unwrap()
-                    .insert(session_id.clone(), entry.clone());
+                if let Err(error) = self.register_session(entry.clone()) {
+                    if let Some(ssh) = &entry.ssh {
+                        let _ = ssh.disconnect_and_wait().await;
+                    }
+                    return Err(error);
+                }
                 let _ = SessionStateEvent {
+                    context_epoch,
                     session_id: session_id.clone(),
                     connection_id: connection_id.to_string(),
                     state: "connected".into(),
@@ -382,6 +432,7 @@ impl SessionManager {
             Ok(ConnectOutcome::HostKeyPrompt(issue)) => Ok(Err(issue)),
             Err(e) => {
                 let _ = SessionStateEvent {
+                    context_epoch,
                     session_id,
                     connection_id: connection_id.to_string(),
                     state: "error".into(),
@@ -524,6 +575,7 @@ impl SessionManager {
         rows: u16,
     ) -> AppResult<String> {
         let session = self.get(session_id)?;
+        let context_epoch = session.context_epoch;
         let ssh = session
             .ssh
             .clone()
@@ -563,6 +615,7 @@ impl SessionManager {
             let flush = |buf: &mut Vec<u8>| {
                 if !buf.is_empty() {
                     let _ = TerminalDataEvent {
+                        context_epoch,
                         term_id: id_for_task.clone(),
                         data: b64.encode(&buf),
                     }
@@ -588,6 +641,7 @@ impl SessionManager {
                         | None => {
                             flush(&mut buf);
                             let _ = TerminalExitEvent {
+                                context_epoch,
                                 term_id: id_for_task.clone(),
                             }
                             .emit(&app);
