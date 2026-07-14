@@ -39,6 +39,114 @@ const SNAPSHOT_LIMIT: usize = 200;
 /// before the item stays in Error for the user to retry manually.
 const AUTO_RETRIES: u32 = 2;
 
+/// Remote listing names are untrusted input, but a local destination name
+/// must be exactly one portable path component. Checking both separator
+/// styles keeps a name safe if the vault is later used on another OS.
+pub(crate) fn validate_local_component(name: &str) -> AppResult<()> {
+    let is_single_normal_component = {
+        let mut components = std::path::Path::new(name).components();
+        matches!(
+            (components.next(), components.next()),
+            (Some(std::path::Component::Normal(_)), None)
+        )
+    };
+    let windows_stem = name
+        .split('.')
+        .next()
+        .unwrap_or(name)
+        .trim_end_matches([' ', '.'])
+        .to_ascii_uppercase();
+    let is_windows_device = matches!(
+        windows_stem.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || windows_stem
+        .strip_prefix("COM")
+        .or_else(|| windows_stem.strip_prefix("LPT"))
+        .is_some_and(|suffix| suffix.len() == 1 && matches!(suffix.as_bytes()[0], b'1'..=b'9'));
+
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains(['/', '\\'])
+        || name.contains([':', '<', '>', '"', '|', '?', '*'])
+        || name.contains('\0')
+        || name.bytes().any(|byte| byte < 32)
+        || name.ends_with([' ', '.'])
+        || is_windows_device
+        || !is_single_normal_component
+    {
+        return Err(AppError::Transfer(
+            "remote entry has an unsafe local filename".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn open_download_root(path: &std::path::Path) -> AppResult<Arc<cap_std::fs::Dir>> {
+    cap_std::fs::Dir::open_ambient_dir(path, cap_std::ambient_authority())
+        .map(Arc::new)
+        .map_err(|e| AppError::Transfer(format!("{}: {e}", path.display())))
+}
+
+fn ensure_download_directory(root: &cap_std::fs::Dir, relative: &std::path::Path) -> AppResult<()> {
+    match root.create_dir(relative) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            let metadata = root
+                .symlink_metadata(relative)
+                .map_err(|e| AppError::Transfer(format!("{}: {e}", relative.display())))?;
+            if metadata.is_symlink() || !metadata.is_dir() {
+                return Err(AppError::Transfer(format!(
+                    "{}: local download directory is not a real directory",
+                    relative.display()
+                )));
+            }
+            Ok(())
+        }
+        Err(error) => Err(AppError::Transfer(format!(
+            "{}: {error}",
+            relative.display()
+        ))),
+    }
+}
+
+#[derive(Clone)]
+struct LocalDownloadTarget {
+    root: Arc<cap_std::fs::Dir>,
+    relative: PathBuf,
+}
+
+fn local_target_exists(target: &LocalDownloadTarget) -> bool {
+    target.root.symlink_metadata(&target.relative).is_ok()
+}
+
+fn open_local_download(target: &LocalDownloadTarget, offset: u64) -> AppResult<tokio::fs::File> {
+    match target.root.symlink_metadata(&target.relative) {
+        Ok(metadata) if metadata.is_symlink() || metadata.is_dir() => {
+            return Err(AppError::Transfer(format!(
+                "{}: refusing to write through a local link or directory",
+                target.relative.display()
+            )));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(AppError::Transfer(error.to_string())),
+    }
+
+    let mut options = cap_std::fs::OpenOptions::new();
+    options.write(true);
+    if offset > 0 {
+        options.append(true);
+    } else {
+        options.create(true).truncate(true);
+    }
+    let file = target
+        .root
+        .open_with(&target.relative, &options)
+        .map_err(|e| AppError::Transfer(e.to_string()))?;
+    Ok(tokio::fs::File::from_std(file.into_std()))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum TransferKind {
@@ -100,6 +208,9 @@ pub struct TransferItem {
     attempts: std::sync::atomic::AtomicU32,
     /// Directory streamed through tar instead of per-file copies (SPEC §6.2).
     tar: Option<tar_stream::TarJob>,
+    /// Capability-relative handle for ordinary downloads. Existing links
+    /// cannot redirect writes outside the directory selected by the user.
+    local_target: Option<LocalDownloadTarget>,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -406,6 +517,7 @@ impl TransferManager {
         total: u64,
         fs: Arc<dyn RemoteFs>,
         settings: TransferSettings,
+        local_target: Option<LocalDownloadTarget>,
         tar: Option<tar_stream::TarJob>,
     ) -> Arc<TransferItem> {
         let name = match kind {
@@ -440,6 +552,7 @@ impl TransferManager {
             resume: std::sync::atomic::AtomicBool::new(false),
             attempts: std::sync::atomic::AtomicU32::new(0),
             tar,
+            local_target,
         });
         self.items.lock().unwrap().push(item.clone());
         item
@@ -626,6 +739,7 @@ impl TransferManager {
                 fs,
                 settings,
                 None,
+                None,
             );
             self.spawn_worker(app, item);
             return Ok(());
@@ -643,6 +757,7 @@ impl TransferManager {
                     total,
                     fs,
                     settings,
+                    None,
                     Some(tar_stream::TarJob { ssh }),
                 );
                 self.spawn_worker(app, item);
@@ -682,6 +797,7 @@ impl TransferManager {
                         meta.len(),
                         fs.clone(),
                         settings.clone(),
+                        None,
                         None,
                     );
                     self.spawn_worker(app, item);
@@ -741,16 +857,24 @@ impl TransferManager {
     ) -> AppResult<()> {
         let entry = fs.stat(remote_path).await?;
         let local_base = crate::local_fs::expand(local_dir);
+        validate_local_component(&entry.name)?;
+        let destination_root = open_download_root(&local_base)?;
+        let top_relative = PathBuf::from(&entry.name);
 
         if !entry.is_dir {
+            let local_target = LocalDownloadTarget {
+                root: destination_root,
+                relative: top_relative.clone(),
+            };
             let item = self.add_item(
                 session_id,
                 TransferKind::Download,
-                local_base.join(&entry.name),
+                local_base.join(&top_relative),
                 remote_path.to_string(),
                 entry.size,
                 fs,
                 settings,
+                Some(local_target),
                 None,
             );
             self.spawn_worker(app, item);
@@ -769,6 +893,7 @@ impl TransferManager {
                     total,
                     fs,
                     settings,
+                    None,
                     Some(tar_stream::TarJob { ssh }),
                 );
                 self.spawn_worker(app, item);
@@ -778,28 +903,29 @@ impl TransferManager {
 
         // Directory: recursive remote listing — THE case that must always
         // work (SPEC §4.3), shared by SFTP and FTP through RemoteFs.
-        let local_root = local_base.join(&entry.name);
-        tokio::fs::create_dir_all(&local_root)
-            .await
-            .map_err(|e| AppError::Transfer(e.to_string()))?;
-        let mut pending = vec![(remote_path.to_string(), local_root)];
-        while let Some((remote_dir, local_dir)) = pending.pop() {
+        ensure_download_directory(&destination_root, &top_relative)?;
+        let mut pending = vec![(remote_path.to_string(), top_relative)];
+        while let Some((remote_dir, local_relative)) = pending.pop() {
             for child in fs.list(&remote_dir).await? {
-                let local_child = local_dir.join(&child.name);
-                if child.is_dir {
-                    tokio::fs::create_dir_all(&local_child)
-                        .await
-                        .map_err(|e| AppError::Transfer(e.to_string()))?;
+                validate_local_component(&child.name)?;
+                let local_child = local_relative.join(&child.name);
+                if child.is_dir && !child.is_symlink {
+                    ensure_download_directory(&destination_root, &local_child)?;
                     pending.push((child.path, local_child));
                 } else {
+                    let local_target = LocalDownloadTarget {
+                        root: destination_root.clone(),
+                        relative: local_child.clone(),
+                    };
                     let item = self.add_item(
                         session_id,
                         TransferKind::Download,
-                        local_child,
+                        local_base.join(&local_child),
                         child.path,
                         child.size,
                         fs.clone(),
                         settings.clone(),
+                        Some(local_target),
                         None,
                     );
                     self.spawn_worker(app, item);
@@ -825,6 +951,7 @@ async fn run_single(
 ) -> AppResult<TransferState> {
     let fs = item.fs.as_ref();
     let settings = &item.settings;
+    let mut local_target = item.local_target.clone();
     let resuming = item
         .resume
         .swap(false, std::sync::atomic::Ordering::Relaxed);
@@ -834,9 +961,11 @@ async fn run_single(
     if resuming {
         let total = item.total.load(Ordering::Relaxed);
         offset = match item.kind {
-            TransferKind::Download => tokio::fs::metadata(&item.local_path)
-                .await
-                .map(|m| m.len())
+            TransferKind::Download => local_target
+                .as_ref()
+                .and_then(|target| target.root.symlink_metadata(&target.relative).ok())
+                .filter(|metadata| metadata.is_file() && !metadata.is_symlink())
+                .map(|metadata| metadata.len())
                 .unwrap_or(0),
             // Backends without write-resume (S3) restart the upload instead.
             TransferKind::Upload if !fs.supports_write_resume() => 0,
@@ -855,7 +984,10 @@ async fn run_single(
     let target_exists = !resuming
         && match item.kind {
             TransferKind::Upload => fs.exists(&item.remote_path).await?,
-            TransferKind::Download => item.local_path.exists(),
+            TransferKind::Download => local_target
+                .as_ref()
+                .map(local_target_exists)
+                .unwrap_or_else(|| item.local_path.exists()),
         };
     let mut remote_path = item.remote_path.clone();
     let mut local_path = item.local_path.clone();
@@ -900,7 +1032,15 @@ async fn run_single(
                         TransferKind::Download => {
                             let candidate =
                                 local_path.with_file_name(renamed_variant(&item.name, attempt));
-                            if !candidate.exists() {
+                            let exists = if let Some(target) = &mut local_target {
+                                target.relative = target
+                                    .relative
+                                    .with_file_name(renamed_variant(&item.name, attempt));
+                                local_target_exists(target)
+                            } else {
+                                candidate.exists()
+                            };
+                            if !exists {
                                 local_path = candidate;
                                 break;
                             }
@@ -952,20 +1092,13 @@ async fn run_single(
             let entry = fs.stat(&remote_path).await?;
             mtime = entry.mtime;
             let mut src = fs.open_read(&remote_path, offset).await?;
-            let mut dst = if offset > 0 {
-                tokio::fs::OpenOptions::new()
-                    .append(true)
-                    .open(&local_path)
-                    .await
-                    .map_err(|e| AppError::Transfer(e.to_string()))?
-            } else {
-                tokio::fs::File::create(&local_path)
-                    .await
-                    .map_err(|e| AppError::Transfer(e.to_string()))?
-            };
+            let target = local_target.as_ref().ok_or_else(|| {
+                AppError::Transfer("download is missing its local capability".into())
+            })?;
+            let mut dst = open_local_download(target, offset)?;
             if copy_loop(item, &mut ctrl, &mut src, &mut dst).await? {
                 drop(dst);
-                let _ = tokio::fs::remove_file(&local_path).await;
+                let _ = target.root.remove_file(&target.relative);
                 return Ok(TransferState::Cancelled);
             }
             dst.flush()
@@ -973,9 +1106,11 @@ async fn run_single(
                 .map_err(|e| AppError::Transfer(format!("finalize: {e}")))?;
             if settings.preserve_mtime {
                 if let Some(t) = mtime {
-                    let _ = filetime::set_file_mtime(
-                        &local_path,
-                        filetime::FileTime::from_unix_time(t, 0),
+                    let std_file = dst.into_std().await;
+                    let _ = filetime::set_file_handle_times(
+                        &std_file,
+                        None,
+                        Some(filetime::FileTime::from_unix_time(t, 0)),
                     );
                 }
             }

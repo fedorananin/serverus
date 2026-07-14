@@ -5402,6 +5402,7 @@ dependencies = [
  "aws-sdk-s3",
  "base64 0.22.1",
  "block2",
+ "cap-std",
  "chrono",
  "core-foundation",
  "dirs",

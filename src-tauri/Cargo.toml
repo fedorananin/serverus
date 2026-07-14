@@ -49,6 +49,8 @@ notify = "8"
 # Transfer helpers
 tar = "0.4"
 filetime = "0.2"
+# Capability-relative local download writes cannot escape through symlinks.
+cap-std = "4"
 
 # Misc
 uuid = { version = "1", features = ["v4", "serde"] }
