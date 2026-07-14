@@ -877,7 +877,31 @@ pub async fn s3_set_acl(
 
 /// Switch the ACL applied to subsequent uploads: the pane toggle and the
 /// "ask" dialog resolve here. Persists the choice in the connection config
-/// and applies it to every live session of that connection.
+/// and applies it to the selected live session.
+fn persist_s3_upload_acl(
+    vault: &std::sync::Mutex<crate::vault::VaultManager>,
+    connection_id: &str,
+    mode: S3UploadAcl,
+    apply_live: impl FnOnce(S3UploadAcl),
+) -> AppResult<Option<PublicVault>> {
+    let mut mgr = vault.lock().unwrap();
+    let updated = mgr.with_payload(|payload| {
+        let connection = payload
+            .connections
+            .get_mut(connection_id)
+            .ok_or(AppError::ConnectionNotFound)?;
+        connection
+            .s3
+            .get_or_insert_with(Default::default)
+            .upload_acl = mode;
+        Ok(Some(payload.to_public()))
+    })?;
+    // Keep the vault mutex through the live update. Concurrent persisted
+    // changes therefore commit and take effect in one consistent order.
+    apply_live(mode);
+    Ok(updated)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn s3_set_upload_acl(
@@ -887,24 +911,84 @@ pub async fn s3_set_upload_acl(
     persist: bool,
 ) -> ApiResult<Option<PublicVault>> {
     let fs = s3_of(&state, &session_id)?;
-    fs.set_upload_acl(mode);
     if !persist {
+        fs.set_upload_acl(mode);
         return Ok(None);
     }
     let connection_id = state.sessions.get(&session_id)?.connection_id.clone();
     let vault = state.vault.clone();
     blocking(move || {
-        let mut mgr = vault.lock().unwrap();
-        mgr.with_payload(|p| {
-            let conn = p
-                .connections
-                .get_mut(&connection_id)
-                .ok_or(AppError::ConnectionNotFound)?;
-            conn.s3.get_or_insert_with(Default::default).upload_acl = mode;
-            Ok(Some(p.to_public()))
+        persist_s3_upload_acl(vault.as_ref(), &connection_id, mode, |committed| {
+            fs.set_upload_acl(committed);
         })
     })
     .await
+}
+
+#[cfg(test)]
+mod s3_upload_acl_tests {
+    use super::persist_s3_upload_acl;
+    use crate::vault::format::KdfParams;
+    use crate::vault::model::{Connection, S3UploadAcl};
+    use crate::vault::VaultManager;
+    use std::sync::{Arc, Mutex, TryLockError};
+
+    #[test]
+    fn persisted_and_live_s3_modes_share_one_serialized_section() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut manager = VaultManager::new(directory.path().join("test.serverus"));
+        manager
+            .create(
+                "password",
+                KdfParams {
+                    m_cost_kib: 8 * 1024,
+                    t_cost: 1,
+                    p_cost: 1,
+                },
+            )
+            .unwrap();
+        let connection: Connection = serde_json::from_value(serde_json::json!({
+            "name": "Object storage",
+            "protocol": "s3",
+            "host": "s3.example.com",
+            "port": 443,
+            "auth": {
+                "method": "password",
+                "username": "access-key",
+                "password": "secret-key"
+            }
+        }))
+        .unwrap();
+        manager
+            .with_payload(|payload| {
+                payload.connections.insert("connection".into(), connection);
+                Ok(())
+            })
+            .unwrap();
+
+        let vault = Arc::new(Mutex::new(manager));
+        let live = Arc::new(Mutex::new(S3UploadAcl::Private));
+        for mode in [S3UploadAcl::PublicRead, S3UploadAcl::Ask] {
+            let vault_during_apply = vault.clone();
+            let live_during_apply = live.clone();
+            persist_s3_upload_acl(vault.as_ref(), "connection", mode, move |committed| {
+                assert!(matches!(
+                    vault_during_apply.try_lock(),
+                    Err(TryLockError::WouldBlock)
+                ));
+                *live_during_apply.lock().unwrap() = committed;
+            })
+            .unwrap();
+        }
+
+        let persisted = vault.lock().unwrap().payload().unwrap().connections["connection"]
+            .s3
+            .as_ref()
+            .unwrap()
+            .upload_acl;
+        assert_eq!(persisted, S3UploadAcl::Ask);
+        assert_eq!(*live.lock().unwrap(), persisted);
+    }
 }
 
 // ---------------------------------------------------------------------------
