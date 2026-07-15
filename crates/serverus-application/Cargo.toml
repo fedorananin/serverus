@@ -1,0 +1,20 @@
+[package]
+name = "serverus-application"
+version.workspace = true
+description = "Use cases and inward-facing ports for Serverus"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+futures.workspace = true
+serverus-domain.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

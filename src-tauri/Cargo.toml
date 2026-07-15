@@ -1,26 +1,43 @@
 [package]
 name = "serverus"
-version = "1.1.2"
+version.workspace = true
 description = "SSH/SFTP/FTP/S3 connection manager"
-authors = ["Fedor Ananin <i@fedorananin.me>"]
-license = "MIT"
-repository = "https://github.com/fedorananin/serverus"
-edition = "2021"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+default-run = "serverus"
 
 [lib]
 name = "serverus_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+bindings-generator = []
+scenario-tests = [
+    "dep:tauri-plugin-wdio",
+    "dep:tauri-plugin-wdio-webdriver",
+]
+
+[[bin]]
+name = "generate-bindings"
+path = "src/bin/generate-bindings.rs"
+required-features = ["bindings-generator"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+serverus-application.workspace = true
+serverus-domain.workspace = true
+serverus-runtime.workspace = true
+serverus-adapters.workspace = true
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
-futures = "0.3"
+futures.workspace = true
 
 # Vault crypto — audited crates only (see SPEC §2.2)
 argon2 = "0.5"
@@ -70,6 +87,8 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring"]
 tokio-util = { version = "0.7.18", features = ["io", "io-util"] }
 tauri-plugin-drag = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-wdio = { version = "=1.2.0", optional = true }
+tauri-plugin-wdio-webdriver = { version = "=1.2.0", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3", features = ["OSX_10_15"] }
@@ -93,6 +112,7 @@ hkdf = "0.12"
 sha2 = "0.10"
 
 [dev-dependencies]
+serverus-e2e-fixtures = { path = "../crates/serverus-e2e-fixtures" }
 tauri = { version = "2", features = ["test"] }
 libunftp = "0.23.0"
 tempfile = "3"
@@ -102,8 +122,3 @@ s3s = "0.14"
 s3s-fs = "0.14"
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio", "server", "http1"] }
-
-[profile.release]
-lto = true
-codegen-units = 1
-strip = true

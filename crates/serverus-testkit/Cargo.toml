@@ -1,0 +1,19 @@
+[package]
+name = "serverus-testkit"
+version.workspace = true
+description = "Reusable deterministic fakes and contract suites for Serverus"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+serverus-application.workspace = true
+serverus-domain.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "serverus-adapters"
+version.workspace = true
+description = "Infrastructure adapters for Serverus application ports"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]
+serverus-application.workspace = true
+serverus-domain.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

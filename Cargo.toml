@@ -1,0 +1,39 @@
+[workspace]
+members = [
+    "crates/serverus-domain",
+    "crates/serverus-application",
+    "crates/serverus-runtime",
+    "crates/serverus-adapters",
+    "crates/serverus-e2e-fixtures",
+    "crates/serverus-testkit",
+    "src-tauri",
+]
+resolver = "2"
+
+[workspace.package]
+version = "1.1.2"
+authors = ["Fedor Ananin <i@fedorananin.me>"]
+license = "MIT"
+repository = "https://github.com/fedorananin/serverus"
+edition = "2021"
+
+[workspace.dependencies]
+serverus-domain = { path = "crates/serverus-domain" }
+serverus-application = { path = "crates/serverus-application" }
+serverus-runtime = { path = "crates/serverus-runtime" }
+serverus-adapters = { path = "crates/serverus-adapters" }
+serverus-testkit = { path = "crates/serverus-testkit" }
+async-trait = "0.1.89"
+futures = "0.3"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+tokio-util = { version = "0.7.18", features = ["rt"] }
+uuid = { version = "1", features = ["v4"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

@@ -1,0 +1,25 @@
+[package]
+name = "serverus-e2e-fixtures"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow = "1"
+async-trait.workspace = true
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "http1"] }
+libunftp = "0.23.0"
+s3s = "0.14"
+s3s-fs = "0.14"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
+unftp-sbe-fs = "0.4.0"
+unftp-core = "0.1.0"
+
+[lints]
+workspace = true
