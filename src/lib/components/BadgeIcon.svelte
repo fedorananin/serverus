@@ -35,6 +35,7 @@
     width: 9px;
     height: 9px;
     border-radius: 50%;
+    box-shadow: 0 0 0 1px var(--badge-outline);
     display: inline-block;
     margin: 0 3.5px;
     flex-shrink: 0;

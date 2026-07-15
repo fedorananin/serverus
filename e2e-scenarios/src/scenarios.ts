@@ -16,6 +16,7 @@ export const ACCEPTANCE_IDS = [
   "AC-015",
   "AC-016",
   "AC-017",
+  "AC-018",
 ] as const;
 
 export type AcceptanceId = (typeof ACCEPTANCE_IDS)[number];
@@ -41,6 +42,15 @@ export const SCENARIOS = [
     title: "Create, lock, reject a wrong password, and unlock a real encrypted vault",
     fixture: null,
     acceptanceIds: ["AC-001"],
+    platforms: ALL_PLATFORMS,
+    inputFidelity: "real-input",
+    timeoutMs: 180_000,
+  },
+  {
+    id: "appearance-theme",
+    title: "Apply and persist a readable light appearance",
+    fixture: null,
+    acceptanceIds: ["AC-018"],
     platforms: ALL_PLATFORMS,
     inputFidelity: "real-input",
     timeoutMs: 180_000,

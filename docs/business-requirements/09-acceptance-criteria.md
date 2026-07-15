@@ -174,3 +174,16 @@ logical action,
 
 **and** a selected file exposes the same visible actions menu through
 `Shift+F10` and a native right-click.
+
+## AC-018: System-aware appearance
+
+**Given** an unlocked vault and the Appearance setting,
+
+**when** the operator selects Light, Dark, or System,
+
+**then** the application applies the resolved palette immediately, persists
+the preference through Save, and keeps controls and saved badge colors
+discernible against the active surfaces.
+
+System mode must continue following operating-system appearance changes without
+an application restart or a theme-transition animation.

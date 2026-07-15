@@ -26,6 +26,7 @@
   --danger: #e5484d;
   --danger-subtle: rgba(229, 72, 77, 0.15);
   --warning: #d29922;
+  --badge-outline: transparent;
 
   /* Overlays and elevation */
   --overlay: rgba(0, 0, 0, 0.55);
@@ -62,6 +63,7 @@
   --danger: #cf222e;
   --danger-subtle: rgba(207, 34, 46, 0.1);
   --warning: #9a6700;
+  --badge-outline: #8c959f;
   --overlay: rgba(31, 35, 40, 0.28);
   --overlay-soft: rgba(31, 35, 40, 0.24);
   --overlay-strong: rgba(31, 35, 40, 0.32);
@@ -90,6 +92,7 @@
     --danger: #cf222e;
     --danger-subtle: rgba(207, 34, 46, 0.1);
     --warning: #9a6700;
+    --badge-outline: #8c959f;
     --overlay: rgba(31, 35, 40, 0.28);
     --overlay-soft: rgba(31, 35, 40, 0.24);
     --overlay-strong: rgba(31, 35, 40, 0.32);

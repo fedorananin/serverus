@@ -101,6 +101,7 @@
     height: 22px;
     border-radius: 50%;
     border: 2px solid transparent;
+    box-shadow: 0 0 0 1px var(--badge-outline);
     padding: 0;
     flex-shrink: 0;
   }
