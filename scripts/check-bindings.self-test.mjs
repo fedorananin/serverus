@@ -31,6 +31,18 @@ test("accepts deterministic generation", async () => {
   assert.equal(await readFile(path, "utf8"), "current\n");
 });
 
+test("accepts generated bindings with platform-native line endings", async () => {
+  const { root, path } = await fixture("export const current = true;\r\n");
+
+  const result = verifyBindings(root, () => {
+    writeFileSync(path, "export const current = true;\n");
+    return { status: 0 };
+  });
+
+  assert.equal(result.current, true);
+  assert.equal(await readFile(path, "utf8"), "export const current = true;\r\n");
+});
+
 test("reports stale bindings and restores the original working file", async () => {
   const { root, path } = await fixture();
 

@@ -5,6 +5,10 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+function normalizeLineEndings(contents) {
+  return contents.toString("utf8").replaceAll("\r\n", "\n");
+}
+
 export function verifyBindings(root, generate = () => runGenerator(root)) {
   const bindingsPath = join(root, "src", "lib", "api", "bindings.ts");
   const original = readFileSync(bindingsPath);
@@ -25,7 +29,7 @@ export function verifyBindings(root, generate = () => runGenerator(root)) {
   }
 
   return {
-    current: generated.equals(original),
+    current: normalizeLineEndings(generated) === normalizeLineEndings(original),
     generation,
   };
 }
