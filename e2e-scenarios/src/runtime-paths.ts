@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 
 type SupportedPlatform = "darwin" | "linux" | "win32";
 
@@ -36,7 +36,8 @@ function debugBinaryPath(
   platform: SupportedPlatform,
 ): string {
   const suffix = platform === "win32" ? ".exe" : "";
-  return `${targetDirectory}/debug/${name}${suffix}`;
+  const path = platform === "win32" ? win32 : posix;
+  return path.join(targetDirectory, "debug", `${name}${suffix}`);
 }
 
 export function appBinaryPath(targetDirectory: string, platform: SupportedPlatform): string {

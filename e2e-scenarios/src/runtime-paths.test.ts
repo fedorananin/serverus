@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { join, win32 } from "node:path";
 import { describe, it } from "node:test";
 
 import {
@@ -16,7 +17,7 @@ describe("runtime paths", () => {
     assert.equal(cargoTargetDirectory(metadata), "/tmp/serverus-target");
     assert.equal(
       scenarioTargetDirectory("/tmp/serverus-target"),
-      "/tmp/serverus-target/scenario-tests",
+      join("/tmp/serverus-target", "scenario-tests"),
     );
     assert.equal(appBinaryPath("/tmp/serverus-target", "darwin"), "/tmp/serverus-target/debug/serverus");
     assert.equal(
@@ -28,18 +29,18 @@ describe("runtime paths", () => {
   it("adds the executable suffix on Windows", () => {
     assert.equal(
       appBinaryPath("C:\\target", "win32"),
-      "C:\\target/debug/serverus.exe",
+      win32.join("C:\\target", "debug", "serverus.exe"),
     );
     assert.equal(
       fixtureBinaryPath("C:\\target", "win32"),
-      "C:\\target/debug/serverus-e2e-fixtures.exe",
+      win32.join("C:\\target", "debug", "serverus-e2e-fixtures.exe"),
     );
   });
 
   it("isolates result accounting between concurrent scenario runners", () => {
     assert.equal(
       scenarioResultFile("/tmp/scenario-artifacts", 4321),
-      "/tmp/scenario-artifacts/results-4321.jsonl",
+      join("/tmp/scenario-artifacts", "results-4321.jsonl"),
     );
   });
 
