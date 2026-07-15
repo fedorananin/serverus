@@ -52,16 +52,39 @@ export function formatEta(bytesLeft: number, bps: number): string {
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 }
 
-/** Parent of a path, both `/a/b` and `C:`-less local unix paths. */
+/** Parent of a local Windows/Unix path or a POSIX remote path. */
 export function parentPath(path: string): string {
-  const trimmed = path.replace(/\/+$/, "");
-  const idx = trimmed.lastIndexOf("/");
+  if (path.startsWith("\\\\")) {
+    const parts = path
+      .replace(/\//g, "\\")
+      .replace(/\\+$/, "")
+      .slice(2)
+      .split("\\")
+      .filter(Boolean);
+    if (parts.length <= 2) return `\\\\${parts.join("\\")}`;
+    return `\\\\${parts.slice(0, -1).join("\\")}`;
+  }
+
+  const driveRoot = path.match(/^([A-Za-z]:)([\\/])?$/);
+  if (driveRoot) return `${driveRoot[1]}${driveRoot[2] ?? "\\"}`;
+
+  const windows = /^[A-Za-z]:[\\/]/.test(path);
+  const trimmed = windows ? path.replace(/[\\/]+$/, "") : path.replace(/\/+$/, "");
+  const idx = windows
+    ? Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"))
+    : trimmed.lastIndexOf("/");
+  if (/^[A-Za-z]:/.test(trimmed) && idx === 2) {
+    return `${trimmed.slice(0, 2)}${trimmed[2]}`;
+  }
   if (idx <= 0) return "/";
   return trimmed.slice(0, idx);
 }
 
 export function joinPath(dir: string, name: string): string {
-  return dir.endsWith("/") ? dir + name : `${dir}/${name}`;
+  const windows = /^[A-Za-z]:[\\/]/.test(dir) || dir.startsWith("\\\\");
+  if (dir.endsWith("/") || (windows && dir.endsWith("\\"))) return dir + name;
+  const separator = windows && dir.includes("\\") ? "\\" : "/";
+  return `${dir}${separator}${name}`;
 }
 
 /**
