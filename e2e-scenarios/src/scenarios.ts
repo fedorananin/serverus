@@ -17,6 +17,7 @@ export const ACCEPTANCE_IDS = [
   "AC-016",
   "AC-017",
   "AC-018",
+  "AC-019",
 ] as const;
 
 export type AcceptanceId = (typeof ACCEPTANCE_IDS)[number];
@@ -135,6 +136,15 @@ export const SCENARIOS = [
     platforms: ALL_PLATFORMS,
     inputFidelity: "real-input",
     timeoutMs: 240_000,
+  },
+  {
+    id: "directory-comparison",
+    title: "Compare open local and remote folders without modifying either side",
+    fixture: "ftp",
+    acceptanceIds: ["AC-019"],
+    platforms: ALL_PLATFORMS,
+    inputFidelity: "real-input",
+    timeoutMs: 180_000,
   },
 ] as const satisfies readonly ScenarioDefinition[];
 

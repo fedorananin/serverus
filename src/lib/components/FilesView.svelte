@@ -5,10 +5,12 @@
   import { commands, errorMessage, unwrap } from "$lib/api";
   import { s3PublicUrl } from "$lib/format";
   import { useAppModel } from "$lib/app/model.svelte";
+  import { compareDirectoryEntries } from "$lib/directory-comparison";
   import { PaneController } from "$lib/stores/pane.svelte";
   import { isMod } from "$lib/platform";
   import { vault } from "$lib/stores/vault.svelte";
   import FilePane from "./FilePane.svelte";
+  import DirectoryComparisonBar from "./DirectoryComparisonBar.svelte";
   import UploadAclDialog from "./UploadAclDialog.svelte";
 
   import type { Tab } from "$lib/stores/tabs.svelte";
@@ -31,6 +33,26 @@
   const remote = new PaneController("remote", sessionId, showHidden, isS3);
 
   let transferError = $state<string | null>(null);
+  let comparisonActive = $state(false);
+  let differencesOnly = $state(false);
+  const emptyComparison = compareDirectoryEntries([], []);
+  const comparison = $derived.by(() =>
+    comparisonActive
+      ? compareDirectoryEntries(local.entries, remote.entries)
+      : emptyComparison,
+  );
+
+  $effect(() => {
+    local.comparisonStatuses = comparisonActive ? comparison.localStatuses : null;
+    remote.comparisonStatuses = comparisonActive ? comparison.remoteStatuses : null;
+    local.comparisonDifferencesOnly = comparisonActive && differencesOnly;
+    remote.comparisonDifferencesOnly = comparisonActive && differencesOnly;
+  });
+
+  function toggleComparison() {
+    comparisonActive = !comparisonActive;
+    if (!comparisonActive) differencesOnly = false;
+  }
 
   // -- S3 upload ACL (SPEC §4.4): pane switch + the "ask" dialog --
 
@@ -184,17 +206,26 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="files" bind:this={root}>
-  <FilePane pane={local} title="Local" ontransfer={uploadSelection} />
-  <FilePane
-    pane={remote}
-    title={connection?.name ?? "Remote"}
-    ontransfer={downloadSelection}
-    onopenfile={(entry) => void openForEdit(entry)}
-    publicUrl={isS3 && connection ? (entry) => s3PublicUrl(connection, entry.path) : undefined}
-    {uploadMode}
-    onuploadmode={(mode) => void setUploadMode(mode)}
+<div class="files-view" bind:this={root}>
+  <DirectoryComparisonBar
+    active={comparisonActive}
+    summary={comparison.summary}
+    {differencesOnly}
+    ontoggle={toggleComparison}
+    onfilterchange={(checked) => (differencesOnly = checked)}
   />
+  <div class="files">
+    <FilePane pane={local} title="Local" ontransfer={uploadSelection} />
+    <FilePane
+      pane={remote}
+      title={connection?.name ?? "Remote"}
+      ontransfer={downloadSelection}
+      onopenfile={(entry) => void openForEdit(entry)}
+      publicUrl={isS3 && connection ? (entry) => s3PublicUrl(connection, entry.path) : undefined}
+      {uploadMode}
+      onuploadmode={(mode) => void setUploadMode(mode)}
+    />
+  </div>
 </div>
 
 {#if askUpload}
@@ -209,10 +240,17 @@
 {/if}
 
 <style>
+  .files-view {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+
   .files {
     display: flex;
+    flex: 1;
     gap: 8px;
-    height: 100%;
     min-height: 0;
     padding: 8px;
   }

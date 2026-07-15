@@ -28,6 +28,14 @@
   --warning: #d29922;
   --badge-outline: transparent;
 
+  /* Directory comparison signals */
+  --compare-local: #3fb950;
+  --compare-local-subtle: rgba(63, 185, 80, 0.14);
+  --compare-remote: #58a6ff;
+  --compare-remote-subtle: rgba(88, 166, 255, 0.14);
+  --compare-different: #d29922;
+  --compare-different-subtle: rgba(210, 153, 34, 0.14);
+
   /* Overlays and elevation */
   --overlay: rgba(0, 0, 0, 0.55);
   --overlay-soft: rgba(0, 0, 0, 0.5);
@@ -64,6 +72,12 @@
   --danger-subtle: rgba(207, 34, 46, 0.1);
   --warning: #9a6700;
   --badge-outline: #8c959f;
+  --compare-local: #116329;
+  --compare-local-subtle: rgba(26, 127, 55, 0.12);
+  --compare-remote: #0550ae;
+  --compare-remote-subtle: rgba(9, 105, 218, 0.12);
+  --compare-different: #6f4700;
+  --compare-different-subtle: rgba(154, 103, 0, 0.12);
   --overlay: rgba(31, 35, 40, 0.28);
   --overlay-soft: rgba(31, 35, 40, 0.24);
   --overlay-strong: rgba(31, 35, 40, 0.32);
@@ -93,6 +107,12 @@
     --danger-subtle: rgba(207, 34, 46, 0.1);
     --warning: #9a6700;
     --badge-outline: #8c959f;
+    --compare-local: #116329;
+    --compare-local-subtle: rgba(26, 127, 55, 0.12);
+    --compare-remote: #0550ae;
+    --compare-remote-subtle: rgba(9, 105, 218, 0.12);
+    --compare-different: #6f4700;
+    --compare-different-subtle: rgba(154, 103, 0, 0.12);
     --overlay: rgba(31, 35, 40, 0.28);
     --overlay-soft: rgba(31, 35, 40, 0.24);
     --overlay-strong: rgba(31, 35, 40, 0.32);

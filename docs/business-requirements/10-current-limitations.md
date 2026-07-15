@@ -40,7 +40,9 @@ features that a connection manager might otherwise imply.
   dynamic SOCKS proxy are not supported.
 - Server-to-server file transfer is not supported; transfers always have the
   local machine as one endpoint.
-- There is no two-way directory synchronization or directory-diff workflow.
+- There is no two-way or automatic directory synchronization. Folder comparison
+  is limited to the current loaded level and metadata; it does not recursively
+  scan trees or hash file contents.
 
 ## Transfer persistence and protocol differences
 

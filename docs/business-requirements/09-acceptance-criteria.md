@@ -187,3 +187,15 @@ discernible against the active surfaces.
 
 System mode must continue following operating-system appearance changes without
 an application restart or a theme-transition animation.
+
+## AC-019: Read-only directory comparison
+
+**Given** local and remote folders open in the Files view,
+
+**when** the operator enables Compare,
+
+**then** each current-level name is classified as Local Only, Remote Only,
+Different, or Matching from its type, size, and available modification time,
+
+**and** the summary and Differences Only filter expose the result without
+creating, deleting, renaming, or transferring any entry.

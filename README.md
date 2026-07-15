@@ -172,6 +172,9 @@ Plus:
   below.)
 - Operations: new folder / new file, rename (`F2`/`Enter`), recursive delete
   with confirmation, refresh, copy path, and chmod.
+- **Read-only folder comparison** marks Local Only, Remote Only, Different and
+  Same Metadata entries in the two open folders, summarizes the result, and
+  can hide matches. It compares the loaded level only and never synchronizes.
 - **chmod dialog**: rwx × owner/group/others checkboxes synced with an octal
   field, plus recursive apply (files / dirs / both). Works over SFTP and FTP
   (`SITE CHMOD`).
@@ -450,7 +453,7 @@ real Tauri window and its native platform WebView (WKWebView on macOS,
 WebKitGTK on Linux and WebView2 on Windows), so each action crosses the Svelte
 UI, generated Tauri invokes and Rust backend before reaching the local protocol
 fixtures.
-Its ten scenarios own 15 acceptance criteria: 14 are fully automated and
+Its twelve scenarios own 17 acceptance criteria: 16 are fully automated and
 AC-017 is explicitly mixed because several native input paths remain manual.
 Touch ID/Windows Hello and the native-picker config round trip own the remaining
 two criteria as manual-native checks. The same catalog runs on macOS, Windows
@@ -483,11 +486,11 @@ normal production builds. See
 fixture contract and authoring rules.
 
 `npm run scenarios:check` keeps the typed catalog in exact sync with the
-documented AC-001...AC-017 headings and parses each tagged suite to reject
+documented AC-001...AC-019 headings and parses each tagged suite to reject
 comment-only, empty or detached tests. A purpose-built secret-free reporter
 then requires exactly one expected pass/skip per selected scenario; it uses
 process-isolated artifacts, no raw spec/JUnit output and no in-place spec
-retries. The check also prints per-OS coverage: Windows currently has 9/17
+retries. The check also prints per-OS coverage: Windows currently has 11/19
 fully automated criteria, mixed AC-017, and five explicitly expected SSH-only
 skips, instead of allowing the green matrix to hide them.
 
@@ -534,7 +537,7 @@ apply immediately to the app chrome, dialogs, file panes, and live terminals.
 
 Deliberately out of scope for v1, to keep it from sprawling:
 
-- Server‑to‑server transfers, two‑way directory sync, diff
+- Server‑to‑server transfers and two‑way directory sync
 - Remote / dynamic (SOCKS) forwarding
 - Import from `~/.ssh/config`, electerm, Cyberduck
 - WebDAV, UI localization, custom image icons for entries

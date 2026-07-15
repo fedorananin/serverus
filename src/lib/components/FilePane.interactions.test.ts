@@ -70,6 +70,23 @@ describe("FilePane interactions", () => {
     expect(screen.getByText("1 items, 1 selected")).toBeInTheDocument();
   });
 
+  it("labels comparison results without relying on color alone", () => {
+    const pane = remotePane();
+    pane.comparisonStatuses = new Map([
+      [alpha.name, "remote-only"],
+      [beta.name, "matching"],
+    ]);
+    render(FilePane, { pane, title: "Remote", ontransfer: vi.fn() });
+
+    const remoteOnly = screen.getByRole("option", { name: alpha.name });
+    expect(remoteOnly).toHaveAttribute("data-comparison-status", "remote-only");
+    expect(remoteOnly).toHaveAccessibleDescription("Remote Only");
+    expect(screen.getByTitle("Remote Only")).toHaveTextContent("R");
+    expect(screen.getByRole("option", { name: beta.name })).toHaveAccessibleDescription(
+      "Same Metadata",
+    );
+  });
+
   it("keeps path editing and toolbar actions connected to the pane", async () => {
     const pane = remotePane();
     const navigate = vi.spyOn(pane, "navigate").mockResolvedValue();

@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use serde::Serialize;
@@ -57,6 +58,7 @@ impl FixtureWorkspace {
         seed_session_cleanup(&paths.ssh_root)?;
         seed_transfer_resilience(&paths.local_source, &paths.ftp_root)?;
         seed_remote_edit(&paths.ftp_root)?;
+        seed_directory_comparison(&paths.local_source, &paths.ftp_root)?;
 
         Ok(Self { _root: root, paths })
     }
@@ -151,5 +153,51 @@ fn seed_remote_edit(ftp_root: &Path) -> Result<()> {
         ftp_root.join("edit-failure.txt"),
         "remote failure original\n",
     )?;
+    Ok(())
+}
+
+/// Seed a self-contained matrix so comparison tests never depend on another scenario.
+fn seed_directory_comparison(local_root: &Path, ftp_root: &Path) -> Result<()> {
+    let local = local_root.join("directory-comparison");
+    let remote = ftp_root.join("directory-comparison");
+    fs::create_dir_all(local.join("shared-folder"))?;
+    fs::create_dir_all(remote.join("shared-folder"))?;
+    fs::create_dir_all(remote.join("type-changed"))?;
+
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    // LIST preserves minutes only for entries in the current UTC year. Keep the
+    // matching pair at the current minute so New Year's Day cannot erase its time.
+    let recent = UNIX_EPOCH + Duration::from_secs(now - (now % 60));
+    let older = recent - Duration::from_secs(2 * 60 * 60);
+
+    write_at(&local.join("identical.txt"), "identical fixture\n", recent)?;
+    write_at(&remote.join("identical.txt"), "identical fixture\n", recent)?;
+    fs::write(local.join("different-size.txt"), "short\n")?;
+    fs::write(
+        remote.join("different-size.txt"),
+        "a deliberately longer remote fixture\n",
+    )?;
+    write_at(
+        &local.join("different-date.txt"),
+        "same-size fixture\n",
+        recent,
+    )?;
+    write_at(
+        &remote.join("different-date.txt"),
+        "same-size fixture\n",
+        older,
+    )?;
+    fs::write(local.join("type-changed"), "local file\n")?;
+    fs::write(local.join("only-local.txt"), "local only\n")?;
+    fs::write(remote.join("only-remote.txt"), "remote only\n")?;
+    Ok(())
+}
+
+fn write_at(path: &Path, content: &str, modified: SystemTime) -> Result<()> {
+    fs::write(path, content)?;
+    fs::File::options()
+        .write(true)
+        .open(path)?
+        .set_modified(modified)?;
     Ok(())
 }

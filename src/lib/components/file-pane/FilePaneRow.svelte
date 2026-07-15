@@ -1,12 +1,16 @@
 <script lang="ts">
   import type { RemoteEntry, S3AclStatus, SizeFormat } from "$lib/api";
+  import type { DirectoryComparisonStatus } from "$lib/directory-comparison";
   import { formatMtime, formatPermissions, formatSize } from "$lib/format";
+  import FileComparisonMarker from "../FileComparisonMarker.svelte";
 
   interface Props {
     entry: RemoteEntry;
     selected: boolean;
     s3: boolean;
     aclStatus?: S3AclStatus;
+    comparisonStatus?: DirectoryComparisonStatus;
+    comparisonDescriptionId?: string;
     sizeFormat: SizeFormat;
     onclick: (event: MouseEvent) => void;
     ondoubleclick: () => void;
@@ -19,6 +23,8 @@
     selected,
     s3,
     aclStatus,
+    comparisonStatus,
+    comparisonDescriptionId,
     sizeFormat,
     onclick,
     ondoubleclick,
@@ -46,7 +52,9 @@
   role="option"
   aria-label={entry.name}
   aria-selected={selected}
+  aria-describedby={comparisonStatus ? comparisonDescriptionId : undefined}
   data-access={s3 && !entry.is_dir ? formatAcl(aclStatus) : undefined}
+  data-comparison-status={comparisonStatus}
   tabindex="-1"
   {onclick}
   ondblclick={ondoubleclick}
@@ -56,6 +64,7 @@
 >
   <span class="cell name">
     <span class="icon">{entry.is_dir ? "📁" : "📄"}</span>
+    <FileComparisonMarker id={comparisonDescriptionId} status={comparisonStatus} />
     {entry.name}{entry.is_symlink ? " →" : ""}
   </span>
   <span class="cell size">{entry.is_dir ? "—" : formatSize(entry.size, sizeFormat)}</span>

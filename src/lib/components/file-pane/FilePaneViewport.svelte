@@ -19,6 +19,7 @@
   }
 
   let { pane, title, sizeFormat, ontransfer, onopenfile, onmenu, ondialog }: Props = $props();
+  const comparisonId = $props.id();
   let scroller: HTMLDivElement | undefined = $state();
   let scrollTop = $state(0);
   let viewportHeight = $state(400);
@@ -118,12 +119,14 @@
   {:else}
     <div style:height="{total * FILE_ROW_HEIGHT}px" class="spacer">
       <div style:transform="translateY({first * FILE_ROW_HEIGHT}px)">
-        {#each windowEntries as entry (entry.path)}
+        {#each windowEntries as entry, index (entry.path)}
           <FilePaneRow
             {entry}
             selected={pane.selected.has(entry.name)}
             s3={pane.s3}
             aclStatus={pane.acl[entry.path]}
+            comparisonStatus={pane.comparisonStatuses?.get(entry.name)}
+            comparisonDescriptionId={`${comparisonId}-comparison-${first + index}`}
             {sizeFormat}
             onclick={(event) => {
               scroller?.focus();

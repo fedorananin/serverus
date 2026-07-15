@@ -3,6 +3,7 @@
 
 import { commands, errorMessage, unwrap } from "$lib/api";
 import type { RemoteEntry, S3AclStatus } from "$lib/api";
+import type { DirectoryComparisonStatus } from "$lib/directory-comparison";
 import { joinPath, parentPath } from "$lib/format";
 import { isMod } from "$lib/platform";
 
@@ -31,6 +32,8 @@ export class PaneController {
   anchor = $state<string | null>(null);
   /** Lazily loaded public/private badge per entry path (S3 only). */
   acl = $state<Record<string, S3AclStatus>>({});
+  comparisonStatuses = $state<Map<string, DirectoryComparisonStatus> | null>(null);
+  comparisonDifferencesOnly = $state(false);
   /** Invalidates in-flight ACL fetches when the listing changes. */
   private aclGeneration = 0;
 
@@ -43,8 +46,11 @@ export class PaneController {
 
   readonly visible = $derived.by(() => {
     const q = this.filter.trim().toLowerCase();
-    let list = this.entries.filter((e) => this.showHidden || !e.name.startsWith("."));
+    let list = this.entries.filter((entry) => this.showHidden || !entry.name.startsWith("."));
     if (q) list = list.filter((e) => e.name.toLowerCase().includes(q));
+    if (this.comparisonStatuses && this.comparisonDifferencesOnly) {
+      list = list.filter((entry) => this.comparisonStatuses?.get(entry.name) !== "matching");
+    }
     const dir = this.sortAsc ? 1 : -1;
     const key = this.sortKey;
     return [...list].sort((a, b) => {

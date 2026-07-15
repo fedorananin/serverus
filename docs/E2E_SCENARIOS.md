@@ -48,6 +48,7 @@ override.
 | ID | Acceptance | Platforms | Input fidelity | Contract |
 | --- | --- | --- | --- | --- |
 | `vault-lifecycle` | AC-001 | macOS, Linux, Windows | `real-input` | Create a real encrypted vault, lock it, reject a wrong password and unlock it. |
+| `appearance-theme` | AC-018 | macOS, Linux, Windows | `real-input` | Apply and persist the Light appearance, then verify pale saved badges remain visible on its surfaces. |
 | `ssh-terminal` | AC-003 | macOS, Linux | `real-input` | Show the unknown-host identity, accept and persist it, execute a command, then detect and reject a changed host key. |
 | `session-lifecycle` | AC-005, AC-013, AC-014, AC-016 | macOS, Linux | `real-input` | Keep multiple terminals, a tunnel and a live session isolated through auto-lock and deterministic tab cleanup. |
 | `ftp-tab-isolation` | AC-004 | macOS, Linux, Windows | `real-input` | Open one saved FTP connection twice, isolate both tabs' navigation state, then close one and keep using the sibling session. |
@@ -57,6 +58,7 @@ override.
 | `s3-buckets` | AC-010 | macOS, Linux, Windows | `real-input` | List and create buckets against an in-process S3-compatible server. |
 | `s3-sharing` | AC-011, AC-012 | macOS, Linux, Windows | `real-input` | Exercise Ask/private/public upload ACLs, publish an object and copy its custom public URL. |
 | `platform-shortcuts` | AC-017 | macOS, Linux, Windows | `real-input` | Exercise `T`, `W`, `1`, `2`, comma and `A` with the platform's real modifier key, then open selected-file actions through the visible **Actions** button. |
+| `directory-comparison` | AC-019 | macOS, Linux, Windows | `real-input` | Compare isolated local and FTP folders, verify every classification and the Differences Only filter, then prove both fixture trees retain their content and metadata. |
 
 `real-input` means WebDriver clicks, types and presses keys through visible,
 accessible WebView controls. This includes the SSH scenarios: WebKit WebDriver
@@ -98,7 +100,7 @@ through both the visible status and remote bytes.
 
 The authoritative typed catalogs are `e2e-scenarios/src/scenarios.ts` and
 `e2e-scenarios/src/scenario-supplements.ts`. `npm run scenarios:check` parses the
-`AC-001`...`AC-017` headings in
+`AC-001`...`AC-019` headings in
 `docs/business-requirements/09-acceptance-criteria.md` and compares them with
 the typed IDs. Every acceptance criterion must have exactly one automated or
 manual-native owner; missing, duplicate and unknown IDs fail the gate. Every
@@ -254,9 +256,9 @@ dialogs, biometrics, installed editors, display stacks or hardware diversity
 have been validated on representative physical machines.
 
 `scenarios:check` prints coverage per operating system instead of hiding those
-declared gaps. macOS has 14/17 fully automated criteria, mixed AC-017, and two
-manual-native owners. Linux has the same 14 fully automated plus mixed AC-017,
-with AC-015 manual-native and AC-002 not applicable. Windows has 9/17 fully
+declared gaps. macOS has 16/19 fully automated criteria, mixed AC-017, and two
+manual-native owners. Linux has the same 16 fully automated plus mixed AC-017,
+with AC-015 manual-native and AC-002 not applicable. Windows has 11/19 fully
 automated plus mixed AC-017, reports AC-003/005/013/014/016 as five expected SSH
 skips, and reports AC-002/015 as manual-native owners. An additional Windows
 SSH fixture is still needed before those five criteria can become Windows

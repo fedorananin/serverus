@@ -13,6 +13,16 @@
 | FR-FM-007 | Listings with at least 10,000 entries must remain usable through virtualized rendering. |
 | FR-FM-008 | File sizes must be displayable using either decimal KB units or binary KiB units. |
 
+## Directory comparison
+
+| ID | Requirement |
+| --- | --- |
+| FR-FM-038 | The operator must be able to compare the currently open local and remote folders without starting a transfer or changing either file system. |
+| FR-FM-039 | Comparison must classify each current-level name as Local Only, Remote Only, Different, or Matching in linear time relative to the two loaded listings. |
+| FR-FM-040 | Two files match when their entry types, symbolic-link flags, sizes, and all available modification times match. A missing modification time must not make otherwise equal file metadata different. |
+| FR-FM-041 | Two directories with the same name and entry type match at the current level; comparison must not infer equality from directory size or modification time and must not recursively scan their contents. |
+| FR-FM-042 | The Files view must show comparison totals, mark non-matching rows in both panes, and offer a Differences Only filter that uses the already-loaded listings. |
+
 ## Selection and navigation
 
 | ID | Requirement |
