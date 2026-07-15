@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true,
+    "types": ["node", "mocha", "@wdio/globals/types"]
+  },
+  "include": ["../wdio.scenarios.conf.ts", "src/**/*.ts", "scenarios/**/*.ts"]
+}

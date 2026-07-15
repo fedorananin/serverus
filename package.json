@@ -11,6 +11,15 @@
     "preview": "vite preview",
     "test": "vitest run",
     "check": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'state_referenced_locally:ignore' && tsc --noEmit -p tsconfig.node.json",
+    "bindings:generate": "cargo run --locked --quiet --manifest-path src-tauri/Cargo.toml --features bindings-generator --bin generate-bindings",
+    "bindings:check": "node --test scripts/check-bindings.self-test.mjs && node scripts/check-bindings.mjs",
+    "architecture:check": "node --test scripts/check-architecture.self-test.mjs && node scripts/check-architecture.mjs",
+    "scenarios:test": "node --import tsx --test e2e-scenarios/src/*.test.ts",
+    "scenarios:typecheck": "tsc --noEmit -p e2e-scenarios/tsconfig.json",
+    "scenarios:layout": "tsx e2e-scenarios/src/check-scenario-layout.ts",
+    "scenarios:check": "npm run scenarios:test && npm run scenarios:typecheck && npm run scenarios:layout",
+    "test:scenarios": "tsx e2e-scenarios/src/run-scenarios.ts",
+    "verify": "npm run architecture:check && npm run bindings:check && npm run scenarios:check && npm run check && npm run test && npm run build && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
     "tauri": "node scripts/with-signing-env.mjs"
   },
   "dependencies": {
@@ -28,12 +37,26 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/svelte": "^5.4.2",
     "@tsconfig/svelte": "^5.0.4",
+    "@types/mocha": "10.0.10",
     "@types/node": "^26.1.1",
+    "@wdio/cli": "9.29.1",
+    "@wdio/globals": "9.29.1",
+    "@wdio/local-runner": "9.29.1",
+    "@wdio/mocha-framework": "9.29.1",
+    "@wdio/reporter": "9.29.1",
+    "@wdio/tauri-plugin": "1.2.0",
+    "@wdio/tauri-service": "1.2.0",
     "jsdom": "^29.1.1",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
+    "tsx": "^4.23.1",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "webdriverio": "9.29.1"
+  },
+  "overrides": {
+    "@wdio/native-utils": "2.5.0",
+    "serialize-javascript": "7.0.7"
   }
 }
