@@ -101,6 +101,10 @@ AuthorizedKeysFile {authorized}
 AllowUsers {user}
 Subsystem sftp {sftp}
 AcceptEnv LANG LC_*
+# Interactive-shell tests must not source the host user's dotfiles. Those can
+# perform arbitrary slow or stateful setup and make the SSH transport fixture
+# nondeterministic.
+SetEnv HOME={base} ZDOTDIR={base}
 LogLevel ERROR
 "#,
                 port = port,
@@ -108,6 +112,7 @@ LogLevel ERROR
                 authorized = authorized.display(),
                 user = user,
                 sftp = find_sftp_server(),
+                base = base.display(),
             ),
         )
         .unwrap();

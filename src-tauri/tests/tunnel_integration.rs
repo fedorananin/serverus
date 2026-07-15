@@ -87,8 +87,6 @@ async fn local_forwarding_roundtrip() {
     let mut reply = vec![0u8; 15];
     client.read_exact(&mut reply).await.unwrap();
     assert_eq!(reply, b"SERVERUS TUNNEL");
-    drop(client);
-
     // Traffic counters moved.
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let listed = manager.list(Some("session-1"));
@@ -102,4 +100,13 @@ async fn local_forwarding_roundtrip() {
     assert!(tokio::net::TcpStream::connect(("127.0.0.1", local_port))
         .await
         .is_err());
+    let mut byte = [0u8; 1];
+    let live_connection_closed =
+        tokio::time::timeout(std::time::Duration::from_secs(1), client.read(&mut byte))
+            .await
+            .expect("stopping the tunnel left its live connection open");
+    assert!(
+        matches!(live_connection_closed, Ok(0) | Err(_)),
+        "stopping the tunnel returned unexpected bytes on its live connection"
+    );
 }

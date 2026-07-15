@@ -36,13 +36,13 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::known_host_remove,
             commands::vault_set_path,
             commands::vault_switch_path,
-            commands::session_connect,
-            commands::session_disconnect,
-            commands::host_key_accept,
-            commands::term_open,
-            commands::term_write,
-            commands::term_resize,
-            commands::term_close,
+            commands::sessions::connect::session_connect,
+            commands::sessions::lifecycle::session_disconnect,
+            commands::sessions::host_key::host_key_accept,
+            commands::sessions::terminal::term_open,
+            commands::sessions::terminal::term_write,
+            commands::sessions::terminal::term_resize,
+            commands::sessions::terminal::term_close,
             commands::local_list,
             commands::local_home,
             commands::local_mkdir,
@@ -75,6 +75,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::transfer_resolve,
             commands::transfer_retry,
             commands::remote_edit_open,
+            commands::remote_edit_notifications,
             commands::tunnel_start,
             commands::tunnel_stop,
             commands::tunnel_list,
@@ -87,25 +88,32 @@ fn specta_builder() -> Builder<tauri::Wry> {
         .events(collect_events![
             events::VaultLockedEvent,
             events::SessionStateEvent,
-            events::TerminalDataEvent,
-            events::TerminalExitEvent,
             events::TransferProgressEvent,
             events::RemoteEditUploadedEvent,
         ])
 }
 
+/// Generate the TypeScript IPC bindings at their single committed location.
+///
+/// This is intentionally called only by the dedicated `generate-bindings`
+/// binary. App startup and ordinary tests must not mutate tracked sources.
+pub fn generate_typescript_bindings() -> Result<(), String> {
+    let output = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/api/bindings.ts");
+    specta_builder()
+        .export(specta_typescript::Typescript::default(), output)
+        .map_err(|error| format!("failed to generate TypeScript bindings: {error}"))
+}
+
 pub fn run() {
     let builder = specta_builder();
+    let tauri_builder = tauri::Builder::default();
 
-    #[cfg(debug_assertions)]
-    builder
-        .export(
-            specta_typescript::Typescript::default(),
-            "../src/lib/api/bindings.ts",
-        )
-        .expect("failed to export typescript bindings");
+    #[cfg(feature = "scenario-tests")]
+    let tauri_builder = tauri_builder
+        .plugin(tauri_plugin_wdio::init())
+        .plugin(tauri_plugin_wdio_webdriver::init());
 
-    tauri::Builder::default()
+    tauri_builder
         .plugin(tauri_plugin_drag::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(state::AppState::new())
@@ -124,19 +132,4 @@ pub fn run() {
                 watcher::cleanup_all();
             }
         });
-}
-
-#[cfg(test)]
-mod tests {
-    /// Regenerates TS bindings without launching the app:
-    /// `cargo test export_bindings`.
-    #[test]
-    fn export_bindings() {
-        super::specta_builder()
-            .export(
-                specta_typescript::Typescript::default(),
-                "../src/lib/api/bindings.ts",
-            )
-            .expect("failed to export typescript bindings");
-    }
 }

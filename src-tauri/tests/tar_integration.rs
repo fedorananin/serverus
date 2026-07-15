@@ -2,6 +2,8 @@
 //! SPEC §6.2) against a real sshd — the remote `tar` is the system binary.
 
 mod support;
+#[path = "support/transfer_context.rs"]
+mod transfer_context;
 
 use std::fs;
 use std::sync::Arc;
@@ -10,7 +12,9 @@ use std::time::Duration;
 use serverus_lib::session::remote_fs::{join_remote, RemoteFs};
 use serverus_lib::session::sftp::SftpFs;
 use serverus_lib::session::ssh::{connect_chain, ConnectOutcome, SshSession};
-use serverus_lib::transfer::{ProgressSink, TransferManager, TransferState};
+use serverus_lib::transfer::{
+    DownloadRequest, ProgressSink, TransferManager, TransferState, UploadRequest,
+};
 use serverus_lib::vault::model::{ConflictPolicy, TransferSettings};
 use support::TestSshd;
 
@@ -94,16 +98,20 @@ async fn tar_roundtrip_many_small_files() {
     fs_remote.mkdir(&remote_base).await.unwrap();
 
     let manager = Arc::new(TransferManager::default());
+    let context_id = transfer_context::activate(&manager);
     let sink: Arc<dyn ProgressSink> = Arc::new(NullSink);
 
     manager
         .enqueue_upload_accelerated(
+            context_id,
             &sink,
-            fs_remote.clone(),
-            "s",
-            tree.to_str().unwrap(),
-            &remote_base,
-            settings(),
+            UploadRequest::new(
+                fs_remote.clone(),
+                "s",
+                tree.to_str().unwrap(),
+                &remote_base,
+                settings(),
+            ),
             Some(ssh.clone()),
         )
         .await
@@ -118,7 +126,7 @@ async fn tar_roundtrip_many_small_files() {
             "{:#?}",
             items[0]
         );
-        manager.clear_finished();
+        assert!(manager.clear_finished(context_id));
     }
 
     // Spot-check on the remote side.
@@ -132,12 +140,15 @@ async fn tar_roundtrip_many_small_files() {
     let dst_root = tempfile::tempdir().unwrap();
     manager
         .enqueue_download_accelerated(
+            context_id,
             &sink,
-            fs_remote.clone(),
-            "s",
-            &join_remote(&remote_base, "many"),
-            dst_root.path().to_str().unwrap(),
-            settings(),
+            DownloadRequest::new(
+                fs_remote.clone(),
+                "s",
+                &join_remote(&remote_base, "many"),
+                dst_root.path().to_str().unwrap(),
+                settings(),
+            ),
             Some(ssh.clone()),
         )
         .await

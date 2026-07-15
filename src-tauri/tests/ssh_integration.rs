@@ -74,6 +74,7 @@ async fn bad_key_fails_auth() {
 #[tokio::test]
 async fn shell_echo_roundtrip() {
     let sshd = TestSshd::spawn();
+    let isolated_home = sshd.dir.path().to_string_lossy().into_owned();
     let issue = match connect_chain(&[sshd.hop(None)]).await.unwrap() {
         ConnectOutcome::HostKeyPrompt(issue) => issue,
         _ => panic!(),
@@ -94,18 +95,21 @@ async fn shell_echo_roundtrip() {
     channel.request_shell(true).await.unwrap();
 
     let (mut read, write) = channel.split();
-    write.data(&b"echo serverus-$((6*7))\n"[..]).await.unwrap();
+    write
+        .data(&b"printf '\nSERVERUS_HOME=%s\nSERVERUS_MARKER=%s\n' \"$HOME\" \"$((6*7))\"\n"[..])
+        .await
+        .unwrap();
 
     let mut collected = String::new();
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
         let msg = tokio::time::timeout_at(deadline, read.wait())
             .await
-            .expect("shell answered in time");
+            .unwrap_or_else(|_| panic!("shell answered in time; output: {collected:?}"));
         match msg {
             Some(russh::ChannelMsg::Data { data }) => {
                 collected.push_str(&String::from_utf8_lossy(&data));
-                if collected.contains("serverus-42") {
+                if collected.contains("SERVERUS_MARKER=42") {
                     break;
                 }
             }
@@ -113,6 +117,10 @@ async fn shell_echo_roundtrip() {
             None => panic!("channel closed before marker; output: {collected}"),
         }
     }
+    assert!(
+        collected.contains(&format!("SERVERUS_HOME={isolated_home}")),
+        "shell inherited host HOME instead of the isolated fixture: {collected:?}"
+    );
 
     let _ = handle
         .disconnect(russh::Disconnect::ByApplication, "", "en")

@@ -10,6 +10,7 @@ use serde::Serialize;
 use specta::Type;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::error::{AppError, AppResult};
@@ -25,11 +26,13 @@ pub struct ActiveTunnel {
     bytes_up: Arc<AtomicU64>,
     bytes_down: Arc<AtomicU64>,
     connections: Arc<AtomicU32>,
+    shutdown: watch::Sender<bool>,
     listener_task: JoinHandle<()>,
 }
 
 impl Drop for ActiveTunnel {
     fn drop(&mut self) {
+        let _ = self.shutdown.send(true);
         self.listener_task.abort();
     }
 }
@@ -86,11 +89,15 @@ impl TunnelManager {
         let task_up = bytes_up.clone();
         let task_down = bytes_down.clone();
         let task_conns = connections.clone();
+        let (shutdown, mut listener_shutdown) = watch::channel(false);
+        let connection_shutdown = shutdown.clone();
         let listener_task = tokio::spawn(async move {
             loop {
-                let Ok((socket, peer)) = listener.accept().await else {
-                    break;
+                let accepted = tokio::select! {
+                    result = listener.accept() => result,
+                    _ = listener_shutdown.changed() => break,
                 };
+                let Ok((socket, peer)) = accepted else { break };
                 let channel = {
                     let handle = task_ssh.handle.lock().await;
                     handle
@@ -108,6 +115,7 @@ impl TunnelManager {
                 let up = task_up.clone();
                 let down = task_down.clone();
                 let conns = task_conns.clone();
+                let mut shutdown = connection_shutdown.subscribe();
                 conns.fetch_add(1, Ordering::Relaxed);
                 tokio::spawn(async move {
                     let (mut sock_r, mut sock_w) = socket.into_split();
@@ -137,7 +145,10 @@ impl TunnelManager {
                         }
                         sock_w.shutdown().await
                     };
-                    let _: std::io::Result<((), ())> = tokio::try_join!(upload, download);
+                    tokio::select! {
+                        _ = shutdown.changed() => {}
+                        _ = async { tokio::try_join!(upload, download) } => {}
+                    }
                     conns.fetch_sub(1, Ordering::Relaxed);
                 });
             }
@@ -153,6 +164,7 @@ impl TunnelManager {
             bytes_up,
             bytes_down,
             connections,
+            shutdown,
             listener_task,
         };
         let status = status_of(&tunnel);
@@ -164,7 +176,7 @@ impl TunnelManager {
     }
 
     pub fn stop(&self, tunnel_id: &str) {
-        // Drop aborts the listener; live connection tasks finish on their own.
+        // Drop stops the listener and closes every live forwarding task.
         self.tunnels.lock().unwrap().remove(tunnel_id);
     }
 

@@ -2,6 +2,9 @@
 //! data connections): a failed item requeues itself with backoff up to two
 //! times before staying in Error for a manual retry.
 
+#[path = "support/transfer_context.rs"]
+mod transfer_context;
+
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -9,7 +12,7 @@ use std::time::Duration;
 
 use serverus_lib::error::{AppError, AppResult};
 use serverus_lib::session::remote_fs::{BoxRead, BoxWrite, RemoteEntry, RemoteFs};
-use serverus_lib::transfer::{ProgressSink, TransferManager, TransferState};
+use serverus_lib::transfer::{ProgressSink, TransferManager, TransferState, UploadRequest};
 use serverus_lib::vault::model::{ConflictPolicy, TransferSettings};
 
 struct NullSink;
@@ -115,12 +118,22 @@ fn settings() -> TransferSettings {
     }
 }
 
-async fn upload_one(manager: &Arc<TransferManager>, fs: Arc<FlakyFs>, src: &std::path::Path) {
+async fn upload_one(
+    manager: &Arc<TransferManager>,
+    fs: Arc<FlakyFs>,
+    src: &std::path::Path,
+) -> serverus_domain::runtime_context::RuntimeContextId {
     let sink: Arc<dyn ProgressSink> = Arc::new(NullSink);
+    let context_id = transfer_context::activate(manager);
     manager
-        .enqueue_upload(&sink, fs, "session", src.to_str().unwrap(), "/", settings())
+        .enqueue_upload(
+            context_id,
+            &sink,
+            UploadRequest::new(fs, "session", src.to_str().unwrap(), "/", settings()),
+        )
         .await
         .unwrap();
+    context_id
 }
 
 /// Poll until the single item reaches `state` (retries include 1 s + 2 s
@@ -146,7 +159,7 @@ async fn transient_failures_are_retried_automatically() {
     // Two failures then success — exactly the auto-retry budget.
     let fs = FlakyFs::new(remote.path().to_path_buf(), 2);
     let manager = Arc::new(TransferManager::default());
-    upload_one(&manager, fs.clone(), &local.path().join("photo.jpg")).await;
+    let _context_id = upload_one(&manager, fs.clone(), &local.path().join("photo.jpg")).await;
 
     wait_for_state(&manager, TransferState::Done).await;
     assert_eq!(fs.open_write_calls.load(Ordering::SeqCst), 3);
@@ -164,7 +177,7 @@ async fn persistent_failures_stop_after_the_retry_budget() {
 
     let fs = FlakyFs::new(remote.path().to_path_buf(), u32::MAX);
     let manager = Arc::new(TransferManager::default());
-    upload_one(&manager, fs.clone(), &local.path().join("photo.jpg")).await;
+    let context_id = upload_one(&manager, fs.clone(), &local.path().join("photo.jpg")).await;
 
     wait_for_state(&manager, TransferState::Error).await;
     // Give any (wrongly) scheduled further retries time to fire, then make
@@ -176,7 +189,10 @@ async fn persistent_failures_stop_after_the_retry_budget() {
 
     // A manual retry re-arms the automatic budget: 3 more runs.
     let sink: Arc<dyn ProgressSink> = Arc::new(NullSink);
-    manager.retry(&sink, &items[0].id).await.unwrap();
+    manager
+        .retry(context_id, &sink, &items[0].id)
+        .await
+        .unwrap();
     tokio::time::sleep(Duration::from_secs(5)).await;
     assert_eq!(fs.open_write_calls.load(Ordering::SeqCst), 6);
 }

@@ -2,6 +2,9 @@
 //! operations must always work. Runs against a real in-process FTP server
 //! (libunftp with a filesystem backend).
 
+#[path = "support/transfer_context.rs"]
+mod transfer_context;
+
 use std::fs;
 use std::net::TcpListener;
 use std::path::Path;
@@ -10,7 +13,9 @@ use std::time::Duration;
 
 use serverus_lib::session::ftp::{FtpConfig, FtpPool};
 use serverus_lib::session::remote_fs::{delete_recursive, RemoteFs};
-use serverus_lib::transfer::{ProgressSink, TransferManager, TransferState};
+use serverus_lib::transfer::{
+    DownloadRequest, ProgressSink, TransferManager, TransferState, UploadRequest,
+};
 use serverus_lib::vault::model::{ConflictPolicy, FtpTlsMode, TransferSettings};
 use unftp_sbe_fs::Filesystem;
 use zeroize::Zeroizing;
@@ -161,23 +166,27 @@ async fn ftp_recursive_directory_roundtrip() {
     fs::write(tree.join("assets/img/icons/empty.txt"), b"").unwrap();
 
     let manager = Arc::new(TransferManager::default());
+    let context_id = transfer_context::activate(&manager);
     let sink: Arc<dyn ProgressSink> = Arc::new(NullSink);
 
     // Recursive upload.
     manager
         .enqueue_upload(
+            context_id,
             &sink,
-            pool.clone(),
-            "ftp-1",
-            tree.to_str().unwrap(),
-            "/",
-            settings(),
+            UploadRequest::new(
+                pool.clone(),
+                "ftp-1",
+                tree.to_str().unwrap(),
+                "/",
+                settings(),
+            ),
         )
         .await
         .unwrap();
     wait_for_drain(&manager).await;
     assert_all_done(&manager);
-    manager.clear_finished();
+    assert!(manager.clear_finished(context_id));
 
     // Verify structure server-side (through the backend's own listing).
     let icons = pool.list("/site/assets/img/icons").await.unwrap();
@@ -190,12 +199,15 @@ async fn ftp_recursive_directory_roundtrip() {
     let dst_root = tempfile::tempdir().unwrap();
     manager
         .enqueue_download(
+            context_id,
             &sink,
-            pool.clone(),
-            "ftp-1",
-            "/site",
-            dst_root.path().to_str().unwrap(),
-            settings(),
+            DownloadRequest::new(
+                pool.clone(),
+                "ftp-1",
+                "/site",
+                dst_root.path().to_str().unwrap(),
+                settings(),
+            ),
         )
         .await
         .unwrap();

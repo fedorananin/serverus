@@ -8,6 +8,9 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "scenario-tests")]
+use std::ffi::OsString;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -17,9 +20,23 @@ pub struct AppConfig {
 }
 
 pub fn config_dir() -> PathBuf {
+    #[cfg(feature = "scenario-tests")]
+    {
+        required_scenario_config_dir(std::env::var_os("SERVERUS_SCENARIO_CONFIG_DIR"))
+    }
+
+    #[cfg(not(feature = "scenario-tests"))]
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("Serverus")
+}
+
+#[cfg(feature = "scenario-tests")]
+fn required_scenario_config_dir(value: Option<OsString>) -> PathBuf {
+    let value = value
+        .filter(|path| !path.is_empty())
+        .unwrap_or_else(|| panic!("SERVERUS_SCENARIO_CONFIG_DIR must be set and non-empty"));
+    PathBuf::from(value)
 }
 
 fn config_file() -> PathBuf {
@@ -115,29 +132,4 @@ pub fn vault_path() -> PathBuf {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{save_to_with, AppConfig};
-
-    #[test]
-    fn failed_atomic_replace_preserves_the_previous_config() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("config.json");
-        std::fs::write(&path, b"previous config").unwrap();
-        let config = AppConfig {
-            vault_path: Some("/new/vault.serverus".into()),
-        };
-
-        let result = save_to_with(&path, &config, |temp, target| {
-            assert!(temp.is_file());
-            assert_eq!(target, path);
-            Err(std::io::Error::new(
-                std::io::ErrorKind::StorageFull,
-                "simulated replace failure",
-            ))
-        });
-
-        assert!(result.is_err());
-        assert_eq!(std::fs::read(&path).unwrap(), b"previous config");
-        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
-    }
-}
+mod tests;

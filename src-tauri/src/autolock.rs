@@ -32,12 +32,36 @@ impl ActivityTracker {
     }
 }
 
+#[cfg(not(feature = "scenario-tests"))]
+fn poll_interval() -> Duration {
+    Duration::from_secs(10)
+}
+
+#[cfg(feature = "scenario-tests")]
+fn poll_interval() -> Duration {
+    Duration::from_millis(200)
+}
+
+#[cfg(not(feature = "scenario-tests"))]
+fn idle_timeout(timeout_min: u32) -> Duration {
+    Duration::from_secs(timeout_min as u64 * 60)
+}
+
+#[cfg(feature = "scenario-tests")]
+fn idle_timeout(timeout_min: u32) -> Duration {
+    if timeout_min == 1 {
+        Duration::from_secs(4)
+    } else {
+        Duration::from_secs(timeout_min as u64 * 60)
+    }
+}
+
 pub fn spawn(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut prev_wall = SystemTime::now();
         let mut prev_mono = Instant::now();
         loop {
-            tokio::time::sleep(Duration::from_secs(10)).await;
+            tokio::time::sleep(poll_interval()).await;
             let state = app.state::<AppState>();
 
             let (unlocked, timeout_min, lock_on_sleep) = {
@@ -66,12 +90,15 @@ pub fn spawn(app: tauri::AppHandle) {
             }
 
             let idle = state.activity.last_activity.lock().unwrap().elapsed();
-            let idle_timeout =
-                timeout_min > 0 && idle >= Duration::from_secs(timeout_min as u64 * 60);
-            if idle_timeout || (slept && lock_on_sleep) {
-                state.vault.lock().unwrap().lock();
+            let idle_timeout_reached = timeout_min > 0 && idle >= idle_timeout(timeout_min);
+            if (idle_timeout_reached || (slept && lock_on_sleep))
+                && state.application.lock_selected_vault().await.is_ok()
+            {
                 let _ = VaultLockedEvent.emit(&app);
             }
         }
     });
 }
+
+#[cfg(test)]
+mod tests;

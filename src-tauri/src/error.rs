@@ -44,6 +44,12 @@ pub enum AppError {
     Transfer(String),
     #[error("tunnel failed: {0}")]
     Tunnel(String),
+    #[error("operation belongs to a retired or different runtime context")]
+    WrongRuntimeContext,
+    #[error("runtime context switch is in progress")]
+    RuntimeContextSwitching,
+    #[error("runtime context cleanup failed")]
+    RuntimeCleanupFailed,
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]
@@ -69,8 +75,27 @@ impl AppError {
             AppError::RemoteFs(_) => "remote_fs",
             AppError::Transfer(_) => "transfer",
             AppError::Tunnel(_) => "tunnel",
+            AppError::WrongRuntimeContext => "wrong_runtime_context",
+            AppError::RuntimeContextSwitching => "runtime_context_switching",
+            AppError::RuntimeCleanupFailed => "runtime_cleanup_failed",
             AppError::Io(_) => "io",
             AppError::Other(_) => "other",
+        }
+    }
+}
+
+impl From<serverus_runtime::RuntimeError> for AppError {
+    fn from(error: serverus_runtime::RuntimeError) -> Self {
+        match error {
+            serverus_runtime::RuntimeError::NoActiveContext
+            | serverus_runtime::RuntimeError::VaultLocked => AppError::VaultLocked,
+            serverus_runtime::RuntimeError::StaleContext
+            | serverus_runtime::RuntimeError::DifferentVaultActive
+            | serverus_runtime::RuntimeError::VaultAccessEpochExhausted => {
+                AppError::WrongRuntimeContext
+            }
+            serverus_runtime::RuntimeError::SwitchInProgress => AppError::RuntimeContextSwitching,
+            serverus_runtime::RuntimeError::Cleanup(_) => AppError::RuntimeCleanupFailed,
         }
     }
 }
@@ -79,6 +104,11 @@ impl AppError {
 /// the UI shows the fingerprint dialog and reconnects on acceptance.
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct HostKeyPrompt {
+    /// Opaque generation that issued this decision. The UI must return it
+    /// unchanged so a prompt from a retired Vault cannot mutate the current one.
+    pub runtime_context_id: String,
+    /// Exact unlock epoch that authorized the connection attempt.
+    pub vault_access_epoch: String,
     pub host: String,
     pub port: u16,
     pub algorithm: String,
@@ -93,7 +123,7 @@ pub struct HostKeyPrompt {
 pub struct ApiError {
     pub code: String,
     pub message: String,
-    pub host_key: Option<HostKeyPrompt>,
+    pub host_key: Option<Box<HostKeyPrompt>>,
 }
 
 impl From<AppError> for ApiError {
@@ -114,3 +144,7 @@ impl std::fmt::Display for ApiError {
 
 pub type AppResult<T> = Result<T, AppError>;
 pub type ApiResult<T> = Result<T, ApiError>;
+
+#[cfg(test)]
+#[path = "error/tests.rs"]
+mod runtime_error_mapping_tests;
