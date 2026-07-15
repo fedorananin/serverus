@@ -239,6 +239,14 @@ _Coming soon._
 
 ---
 
+## Product documentation
+
+- [Business requirements](docs/business-requirements/README.md) — the
+  implemented v1.1.0 product scope, user-facing behavior, business rules,
+  acceptance criteria, and current limitations.
+
+---
+
 ## Install
 
 The primary platform is **macOS 12+ on Apple Silicon**. **Windows 10+ and
@@ -246,8 +254,9 @@ Linux builds are experimental** — the code is cross‑platform and CI builds
 all three, but only macOS gets day‑to‑day use.
 
 ### Download
-Releases are built by GitHub Actions for every `v*` tag — nothing is compiled
-on a developer machine. Grab the artifact for your OS from the releases page:
+Releases are built by GitHub Actions for every `v*` tag after the same macOS,
+Linux and Windows scenario gate used by CI — nothing is compiled on a developer
+machine. Grab the artifact for your OS from the releases page:
 
 | OS | Artifact |
 |---|---|
@@ -320,6 +329,11 @@ Handy shortcuts: `⌘T` new tab · `⌘W` close tab · `⌘1..9` switch tabs ·
 
 ## Architecture
 
+The current behavior and module map are summarized below. The accepted target
+architecture, context boundaries, dependency rules, and incremental migration
+gates live in [ARCHITECTURE.md](ARCHITECTURE.md), with canonical terminology in
+[CONTEXT-MAP.md](CONTEXT-MAP.md) and decisions in [docs/adr](docs/adr/).
+
 | Layer | Tech |
 |---|---|
 | Shell | Tauri 2 |
@@ -337,26 +351,33 @@ The Rust backend keeps every connection and transfer off the UI thread; the
 binary is ~18 MB.
 
 ```
-src-tauri/src/
-├── vault/       # file format, Argon2id/AES‑GCM crypto, atomic writes, Keychain/Touch ID
-├── session/     # session registry, reconnect, keep‑alive
-│   ├── ssh.rs   #   russh: auth, jump chains, PTY, channels
-│   ├── sftp.rs  #   file ops over SSH
-│   ├── ftp.rs   #   suppaftp: connection pool, recursive ops
-│   ├── s3.rs    #   aws-sdk-s3: prefixes‑as‑folders, multipart, ACLs
-│   └── tunnel.rs#   local port forwarding
-├── transfer/    # queue, concurrency, tar acceleration, resume, progress events
-├── watcher/     # remote edit: temp files + FSEvents + auto‑upload
-├── autolock.rs  # inactivity / sleep locking
-├── local_fs.rs  # the local pane
-└── commands.rs  # thin Tauri command layer: parse → call module → return
+Cargo.toml                    # shared Rust workspace
+crates/
+├── serverus-domain/         # pure state machines and invariants
+├── serverus-application/    # use cases and inward-facing ports
+├── serverus-runtime/        # extracted RuntimeContext lifecycle; supervisors migrate here
+├── serverus-adapters/       # extracted port implementations (currently context IDs)
+└── serverus-testkit/        # deterministic context fakes; contracts grow by slice
+
+src-tauri/                   # desktop composition root + legacy adapters
+└── src/
+    ├── vault/               # encrypted persistence and quick unlock (legacy location)
+    ├── session/             # SSH/SFTP/FTP/S3 sessions (legacy location)
+    ├── transfer/            # runtime worker integration for the extracted state machine
+    ├── watcher/             # remote-edit watcher integration
+    └── commands.rs          # transitional IPC layer; orchestration is being extracted
 
 src/  (frontend)
-├── lib/api/         # generated, type‑safe wrappers over invoke() + events
-├── lib/stores/      # Svelte 5 runes: vault, tabs, transfers, dnd, pane, hostkey
+├── lib/app/         # injectable AppApi, AppEventSource and app-scoped model
+├── lib/api/         # generated, type‑safe Tauri bindings
+├── lib/stores/      # feature models; Transfers is app-scoped, others migrate incrementally
 ├── lib/components/  # Sidebar, FilePane, TransferQueue, TerminalView, dialogs…
 └── routes/          # Unlock screen → Main screen
 ```
+
+New slices keep Tauri commands mapping-only. The legacy command module still
+coordinates some managers and protocol details; that code is migrated one
+bounded context at a time rather than copied into new features.
 
 **Design principles**
 
@@ -370,8 +391,10 @@ src/  (frontend)
 - **One source of truth for types.** TypeScript bindings
   (`src/lib/api/bindings.ts`) are generated from the Rust commands via
   `tauri-specta` — never hand‑written.
-- **macOS specifics isolated.** Keychain, Touch ID and FSEvents sit behind
-  traits so a future Linux/Windows port doesn't require rewrites.
+- **Platform specifics isolated.** Keychain, Touch ID, Windows Hello, local
+  permissions and native openers stay behind traits or focused `cfg` gates.
+  Windows and Linux ports already ship as experimental builds; platform code
+  is kept separate so they can mature without forking shared behavior.
 
 > **Gotcha worth knowing:** HTML5 drag‑and‑drop doesn't work inside the Tauri
 > WKWebView (the native file‑drop handler intercepts it). In‑app dragging is
@@ -384,20 +407,27 @@ src/  (frontend)
 ## Development
 
 ```bash
+npm run verify         # canonical full local gate
 npm run tauri dev      # run the app in dev mode
 npm run tauri build    # release build → ~/.cache/serverus-target/release/bundle/
 npm run check          # svelte-check + tsc
+npm run bindings:check # regenerate TS bindings and fail if they are stale
+npm run scenarios:check # fast scenario catalog, layout and TS contracts
+npm run test:scenarios  # real desktop app + local SSH/FTP/S3 fixtures
 
-cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test  --manifest-path src-tauri/Cargo.toml
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
 ```
 
 After adding or changing a `#[tauri::command]` or `#[derive(Type)]`,
-regenerate the TS bindings (this also happens on every `tauri dev`):
+regenerate the committed TS bindings explicitly:
 
 ```bash
-cargo test export_bindings --manifest-path src-tauri/Cargo.toml --lib
+npm run bindings:generate
 ```
+
+Ordinary app startup and Rust tests never rewrite tracked frontend sources.
+CI runs `npm run bindings:check` and fails when generation leaves a diff.
 
 ### Testing
 
@@ -412,23 +442,73 @@ locally, with no Docker**:
   file ops, transfers and public/private ACLs.
 
 ```bash
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo test --workspace
 ```
+
+The scenario suite adds a full desktop layer on top: WebdriverIO drives the
+real Tauri window and its native platform WebView (WKWebView on macOS,
+WebKitGTK on Linux and WebView2 on Windows), so each action crosses the Svelte
+UI, generated Tauri invokes and Rust backend before reaching the local protocol
+fixtures.
+Its ten scenarios own 15 acceptance criteria; Touch ID/Windows Hello and the
+native-picker config round trip own the remaining two as explicit manual-native
+checks. The same catalog runs on macOS, Windows and Linux (the two SSH-backed
+scenarios are skipped on Windows, where the project has no `sshd` fixture yet;
+FTP tab isolation still covers multiple independent sessions there):
+
+```bash
+npm run test:scenarios
+E2E_SCENARIOS=vault-lifecycle,ftp-recursive-transfer npm run test:scenarios
+E2E_SCENARIO_SHARD_INDEX=1 E2E_SCENARIO_SHARDS_TOTAL=2 npm run test:scenarios
+```
+
+Scenario builds are explicitly feature-gated and use a temporary config/vault
+directory with Quick Unlock disabled. Even fresh-vault path selection goes
+through a visible field. File operations use the visible pane **Actions** menu;
+the Windows input scenario also verifies a real right-click in WebView2.
+Shortcuts use `Command` on macOS versus `Control` on Linux/Windows for tab,
+Settings and file-selection actions. Terminal probes are entered in the visible
+Terminal **Paste…** field and sent through the multiline confirmation, rather
+than writing into xterm or dispatching DOM events. Builds
+default to one Cargo job to keep peak RAM predictable, with an explicit local
+override when needed. The WDIO plugins and global Tauri API are not present in
+normal production builds. See
+[`docs/E2E_SCENARIOS.md`](docs/E2E_SCENARIOS.md) for the catalog, safety model,
+fixture contract and authoring rules.
+
+`npm run scenarios:check` keeps the typed catalog in exact sync with the
+documented AC-001...AC-017 headings and parses each tagged suite to reject
+comment-only, empty or detached tests. A purpose-built secret-free reporter
+then requires exactly one expected pass/skip per selected scenario; it uses
+process-isolated artifacts, no raw spec/JUnit output and no in-place spec
+retries. The check also prints per-OS coverage: Windows currently automates
+10/17 criteria and explicitly reports the five SSH-only criteria as expected skips,
+instead of allowing the green matrix to hide them.
+
+AC-017 remains owned by the automated shortcut scenario, but its
+`Cmd/Ctrl+Left` and `Cmd/Ctrl+Right` file-transfer chords are listed separately
+as a typed manual-native supplement. The pinned embedded driver 1.2.0 does not
+retain modifier flags when sending Arrow keys, so the suite does not replace
+that unverified input path with a synthetic event or claim a false pass.
 
 > The integration tests spawn a real sftp‑server that performs `chmod`/`rename`.
 > The macOS seatbelt sandbox blocks those syscalls, so **run the tests with the
 > sandbox disabled** (symptom otherwise: "Permission denied" on chmod/rename).
 
-**CI** (GitHub Actions) runs `npm run check`, `rustfmt`, `clippy -D warnings`,
-the test suite and a bundle‑less release build on **macOS, Linux and Windows**
-on every push and PR (Windows runs unit tests only — the integration fixtures
-need a Unix sshd).
+**CI** (GitHub Actions) checks architecture boundaries, generated bindings and
+the scenario catalog, runs `npm run check`, `rustfmt`, `clippy -D warnings`, the
+workspace test suite, a bundle-less release build and the real desktop
+scenarios on **macOS, Linux and Windows** for every pull request and every push
+to `main`. Windows runs `cargo test --workspace --lib` rather than the Unix-only
+Rust integration-test binaries, but still runs every supported non-SSH desktop
+scenario in WebView2.
 
 ### Releases
 
-Releases are fully automated: push a tag and GitHub Actions builds and
-uploads installers for all three OSes to a **draft** GitHub Release
-(`.github/workflows/release.yml`):
+Releases are fully automated: push a tag and GitHub Actions first runs the
+scenario contract and desktop suite on macOS, Linux and Windows. Only after
+that matrix succeeds does it build and upload installers for all three OSes to
+a **draft** GitHub Release (`.github/workflows/release.yml`):
 
 ```bash
 git tag v1.1.2 && git push origin v1.1.2

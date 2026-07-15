@@ -56,13 +56,24 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
 ## Code style
 
 - English everywhere: identifiers, comments, commit messages, UI strings.
+- Handwritten source and test files must normally stay at or below **300
+  physical lines**. Split larger units by responsibility before adding more
+  behavior. A rare exception needs a concrete rationale documented beside the
+  architecture check; generated files are exempt.
+- Keep contracts and data shapes separate from orchestration: shared domain
+  types, DTOs, and state records belong in focused `types`, `model`, or
+  `contracts` modules, not mixed into worker/command implementations.
+- Keep tests out of production implementation files. Use sibling `tests.rs`,
+  a `tests/` module tree, or top-level integration tests; do not grow inline
+  `#[cfg(test)] mod tests` blocks next to working code.
 - Rust: rustfmt defaults, clippy clean with `-D warnings`.
 - TypeScript: strict mode; Tauri command types generated via `tauri-specta`
   (never hand-duplicate types between Rust and TS).
 - Svelte components small and focused; shared state lives in `src/lib/stores/`.
 - New Tauri command slices are mapping-only: parse DTO → call the application
-  handle → map the result. Legacy `commands.rs` still contains orchestration
-  and is migrated incrementally; do not copy that orchestration into new code.
+  handle → map the result. Extracted legacy groups under `commands/` still
+  contain transitional orchestration and are migrated incrementally; do not
+  copy that orchestration into new code.
 
 ## Architecture map (where things live)
 
@@ -120,12 +131,7 @@ upload-ACL mode switch (private/public/ask), and "Copy public URL".
 v1.1.0: config import (`vault/import.rs`, format documented in
 `docs/CONFIG_FORMAT.md`), SSH key-file → vault-text import, native pickers for
 the vault path and config import, folder badges applied at creation, and the
-folder item count shown only while collapsed. v1.1.2: the sidebar is
-drag-resizable (200–380 px, default 230, double-click the edge to reset) —
-the width lives in `PanelSettings::sidebar_width`, clamped both in the drag
-handler and in `Settings::clamp` on write; folders persist their disclosure
-state in `TreeNode::Folder::collapsed` (`serde(default)` = expanded, so old
-vaults and imports open as before). Also v1.1.0: cross-platform
+folder item count shown only while collapsed. Also v1.1.0: cross-platform
 support — Windows Hello quick unlock (`quick_unlock.rs::windows_hello`,
 KeePassXC scheme: Hello-gated deterministic RSA signature → HKDF → AES-GCM
 wrapped DEK blob in the config dir), cfg-gated unix permissions / openers /
