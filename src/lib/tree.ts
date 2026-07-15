@@ -27,6 +27,20 @@ export function extractNode(tree: TreeNode[], id: string): TreeNode | null {
   return null;
 }
 
+/** The folder node `folderId`, at any depth — returned for mutation in place. */
+export function findFolder(
+  tree: TreeNode[],
+  folderId: string,
+): Extract<TreeNode, { type: "folder" }> | null {
+  for (const node of tree) {
+    if (node.type !== "folder") continue;
+    if (node.id === folderId) return node;
+    const found = findFolder(node.children ?? [], folderId);
+    if (found) return found;
+  }
+  return null;
+}
+
 /** True if `maybeChild` is inside the folder `folderId` (or is it). */
 export function containsNode(node: TreeNode, id: string): boolean {
   if (nodeId(node) === id) return true;

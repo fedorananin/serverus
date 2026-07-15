@@ -41,6 +41,10 @@ pub enum TreeNode {
         badge: Option<Badge>,
         #[serde(default)]
         children: Vec<TreeNode>,
+        /// Sidebar disclosure state. Expanded is the default, so `false` is
+        /// also the right value for vaults written before this existed.
+        #[serde(default)]
+        collapsed: bool,
     },
     Connection {
         id: String,
@@ -305,11 +309,26 @@ pub enum SizeFormat {
     Kib,
 }
 
+/// Sidebar width bounds, in CSS pixels. The floor keeps connection names
+/// readable; the ceiling keeps the file panes and terminal usable at the
+/// minimum window width (940, see `tauri.conf.json`).
+pub const SIDEBAR_WIDTH_MIN: u16 = 200;
+pub const SIDEBAR_WIDTH_MAX: u16 = 380;
+pub const SIDEBAR_WIDTH_DEFAULT: u16 = 230;
+
+fn default_sidebar_width() -> u16 {
+    SIDEBAR_WIDTH_DEFAULT
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct PanelSettings {
     pub show_hidden: bool,
     pub size_format: SizeFormat,
     pub default_local_dir: Option<String>,
+    /// Sidebar width in CSS pixels, always within
+    /// [`SIDEBAR_WIDTH_MIN`]..=[`SIDEBAR_WIDTH_MAX`].
+    #[serde(default = "default_sidebar_width")]
+    pub sidebar_width: u16,
 }
 
 impl Default for PanelSettings {
@@ -318,6 +337,7 @@ impl Default for PanelSettings {
             show_hidden: false,
             size_format: SizeFormat::Kib,
             default_local_dir: None,
+            sidebar_width: SIDEBAR_WIDTH_DEFAULT,
         }
     }
 }
@@ -329,6 +349,18 @@ pub struct Settings {
     pub editor: EditorSettings,
     pub terminal: TerminalSettings,
     pub panels: PanelSettings,
+}
+
+impl Settings {
+    /// Force values that would wedge the UI back into range. The frontend
+    /// clamps while dragging, but a hand-edited vault must not be able to
+    /// leave the sidebar unusably wide or narrow.
+    pub fn clamp(&mut self) {
+        self.panels.sidebar_width = self
+            .panels
+            .sidebar_width
+            .clamp(SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -519,5 +551,44 @@ impl ConnectionInput {
             disable_terminal: self.disable_terminal,
             notes: self.notes,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sidebar_width_defaults_when_absent() {
+        // Vaults written before the sidebar was resizable have no field.
+        let panels: PanelSettings =
+            serde_json::from_str(r#"{"show_hidden":false,"size_format":"kib","default_local_dir":null}"#)
+                .unwrap();
+        assert_eq!(panels.sidebar_width, SIDEBAR_WIDTH_DEFAULT);
+    }
+
+    #[test]
+    fn folders_from_older_vaults_are_expanded() {
+        // Vaults written before folders remembered their disclosure state.
+        let node: TreeNode =
+            serde_json::from_str(r#"{"type":"folder","id":"f1","name":"Prod"}"#).unwrap();
+        assert!(matches!(node, TreeNode::Folder { collapsed: false, .. }));
+    }
+
+    #[test]
+    fn clamp_forces_sidebar_width_into_range() {
+        let mut s = Settings::default();
+
+        s.panels.sidebar_width = 5000;
+        s.clamp();
+        assert_eq!(s.panels.sidebar_width, SIDEBAR_WIDTH_MAX);
+
+        s.panels.sidebar_width = 0;
+        s.clamp();
+        assert_eq!(s.panels.sidebar_width, SIDEBAR_WIDTH_MIN);
+
+        s.panels.sidebar_width = 300;
+        s.clamp();
+        assert_eq!(s.panels.sidebar_width, 300);
     }
 }

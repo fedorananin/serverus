@@ -113,7 +113,12 @@ upload-ACL mode switch (private/public/ask), and "Copy public URL".
 v1.1.0: config import (`vault/import.rs`, format documented in
 `docs/CONFIG_FORMAT.md`), SSH key-file → vault-text import, native pickers for
 the vault path and config import, folder badges applied at creation, and the
-folder item count shown only while collapsed. Also v1.1.0: cross-platform
+folder item count shown only while collapsed. v1.1.2: the sidebar is
+drag-resizable (200–380 px, default 230, double-click the edge to reset) —
+the width lives in `PanelSettings::sidebar_width`, clamped both in the drag
+handler and in `Settings::clamp` on write; folders persist their disclosure
+state in `TreeNode::Folder::collapsed` (`serde(default)` = expanded, so old
+vaults and imports open as before). Also v1.1.0: cross-platform
 support — Windows Hello quick unlock (`quick_unlock.rs::windows_hello`,
 KeePassXC scheme: Hello-gated deterministic RSA signature → HKDF → AES-GCM
 wrapped DEK blob in the config dir), cfg-gated unix permissions / openers /

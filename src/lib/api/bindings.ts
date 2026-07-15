@@ -256,6 +256,11 @@ export type PanelSettings = {
 	show_hidden: boolean,
 	size_format: SizeFormat,
 	default_local_dir: string | null,
+	/**
+	 *  Sidebar width in CSS pixels, always within
+	 *  [`SIDEBAR_WIDTH_MIN`]..=[`SIDEBAR_WIDTH_MAX`].
+	 */
+	sidebar_width?: number,
 };
 
 export type Protocol = 
@@ -473,7 +478,12 @@ export type TransferSummary = {
  *  Sidebar tree node. Folders nest arbitrarily; connection nodes are
  *  references into [`VaultPayload::connections`].
  */
-export type TreeNode = { type: "folder"; id: string; name: string; badge?: Badge | null; children?: TreeNode[] } | { type: "connection"; id: string };
+export type TreeNode = { type: "folder"; id: string; name: string; badge?: Badge | null; children?: TreeNode[]; 
+/**
+ *  Sidebar disclosure state. Expanded is the default, so `false` is
+ *  also the right value for vaults written before this existed.
+ */
+collapsed?: boolean } | { type: "connection"; id: string };
 
 export type TunnelConfig = {
 	name: string,

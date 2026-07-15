@@ -13,7 +13,7 @@ A native macOS connection manager. Built with Tauri 2, a Rust backend and a Svel
 ![Built with Rust](https://img.shields.io/badge/backend-Rust-orange)
 ![Built with Tauri](https://img.shields.io/badge/shell-Tauri%202-24C8DB)
 ![Frontend Svelte](https://img.shields.io/badge/frontend-Svelte%205-FF3E00)
-![Version](https://img.shields.io/badge/version-1.1.1-brightgreen)
+![Version](https://img.shields.io/badge/version-1.1.2-brightgreen)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
@@ -133,6 +133,15 @@ suite runs against **real** SSH/FTP/S3 servers, not mocks.
   invalidates the entry — Serverus just asks for the master password again.
 - Linux: master password only for now (a Secret Service backend is on the
   roadmap).
+
+### 🌲 Connection sidebar
+- **Folders nest arbitrarily**, each folder and connection carrying an emoji or
+  color badge. Drag and drop rearranges the tree at any depth.
+- Folders **remember whether you left them open or closed**, and a closed one
+  shows its item count so you can tell whether it is worth opening.
+- **Live search** over name and host flattens the tree to matches as you type.
+- **Resizable width** — drag the right edge (200–380 px), double‑click it to
+  reset. Like the folder state, it is stored in the vault and survives restarts.
 
 ### 🖥️ SSH sessions do triple duty
 One SSH connection is multiplexed into three roles over a single TCP session:
@@ -422,7 +431,7 @@ uploads installers for all three OSes to a **draft** GitHub Release
 (`.github/workflows/release.yml`):
 
 ```bash
-git tag v1.1.1 && git push origin v1.1.1
+git tag v1.1.2 && git push origin v1.1.2
 ```
 
 Review the draft on the Releases page, then publish. No local builds needed.

@@ -464,6 +464,7 @@ pub async fn folder_create(
                     name,
                     badge,
                     children: vec![],
+                    collapsed: false,
                 },
             )?;
             Ok(p.to_public())
@@ -534,8 +535,9 @@ pub async fn tree_update(
 #[specta::specta]
 pub async fn settings_update(
     state: State<'_, AppState>,
-    settings: Settings,
+    mut settings: Settings,
 ) -> ApiResult<PublicVault> {
+    settings.clamp();
     let vault = state.vault.clone();
     let quick = state.quick.clone();
     blocking(move || {

@@ -8,8 +8,6 @@
   interface Props {
     node: TreeNode;
     depth: number;
-    /** Folder ids the user has explicitly collapsed (expanded is default). */
-    collapsed: Set<string>;
     selectedId: string | null;
     ontoggle: (folderId: string) => void;
     onselect: (nodeId: string) => void;
@@ -21,7 +19,6 @@
   let {
     node,
     depth,
-    collapsed,
     selectedId,
     ontoggle,
     onselect,
@@ -32,7 +29,7 @@
 
   const isFolder = $derived(node.type === "folder");
   const id = $derived(node.type === "folder" ? node.id : node.id);
-  const isOpen = $derived(isFolder && !collapsed.has(id));
+  const isOpen = $derived(node.type === "folder" && !node.collapsed);
   const connection = $derived(
     node.type === "connection" ? (vault.data?.connections[node.id] ?? null) : null,
   );
@@ -147,7 +144,6 @@
     <SidebarNode
       node={child}
       depth={depth + 1}
-      {collapsed}
       {selectedId}
       {ontoggle}
       {onselect}

@@ -171,6 +171,7 @@ fn update_folder_walk(
             name,
             badge,
             children,
+            ..
         } = node
         {
             if id == folder_id {
@@ -222,6 +223,7 @@ mod tests {
                 value: "📁".into(),
             }),
             children,
+            collapsed: false,
         }
     }
 

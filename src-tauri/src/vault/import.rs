@@ -177,6 +177,7 @@ fn convert_tree(
                     name,
                     badge,
                     children: convert_tree(children, known, conn_refs, folder_ids),
+                    collapsed: false,
                 })
             }
             ImportTreeNode::Connection { id } => {
