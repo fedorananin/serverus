@@ -1,8 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { Key } from "webdriverio";
-
 import { createFreshVault, lockVault, unlockVault, waitForMainScreen } from "../../support/app";
 import { createConnection, openConnection, waitForConnected } from "../../support/connections";
 import {
@@ -14,9 +12,8 @@ import {
   waitForCompletedTransfers,
 } from "../../support/files";
 import { fixtures, S3_TEST_ACCESS_KEY, S3_TEST_SECRET_KEY } from "../../support/fixtures";
+import { pressPrimaryShortcut } from "../../support/keyboard";
 import { readSystemClipboard } from "../../support/system-clipboard";
-
-const primaryModifier = process.platform === "darwin" ? Key.Command : Key.Control;
 
 async function waitForAccess(name: string, access: "private" | "public"): Promise<void> {
   const row = await fileOption("remote", name);
@@ -76,7 +73,7 @@ describe("@s3-sharing", () => {
     await localObject.waitForDisplayed();
     await secondLocalObject.waitForDisplayed();
     await localObject.click();
-    await browser.keys([primaryModifier, "a"]);
+    await pressPrimaryShortcut("a");
     await secondLocalObject.waitUntil(
       async () => (await secondLocalObject.getAttribute("aria-selected")) === "true",
       { timeoutMsg: "The visible two-file upload batch was not selected." },

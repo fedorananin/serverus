@@ -119,7 +119,7 @@ export const SCENARIOS = [
   },
   {
     id: "platform-shortcuts",
-    title: "Use host shortcuts and open file actions from the keyboard",
+    title: "Use host shortcuts and selected-file actions through visible controls",
     fixture: "ftp",
     acceptanceIds: ["AC-017"],
     platforms: ALL_PLATFORMS,

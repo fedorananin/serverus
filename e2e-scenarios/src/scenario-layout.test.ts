@@ -180,6 +180,7 @@ describe("validateScenarioLayout", () => {
     );
 
     assert.deepEqual(validateScenarioLayout(root, ["vault-lifecycle"]), [
+      "vault-lifecycle/vault-lifecycle.e2e.spec.ts:3: browser alias is forbidden in real-input scenarios",
       "vault-lifecycle/vault-lifecycle.e2e.spec.ts:4: execute() is forbidden in real-input scenarios",
       "vault-lifecycle/vault-lifecycle.e2e.spec.ts:5: executeAsync() is forbidden in real-input scenarios",
       "vault-lifecycle/vault-lifecycle.e2e.spec.ts:6: execute reference is forbidden in real-input scenarios",

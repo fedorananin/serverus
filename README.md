@@ -450,9 +450,11 @@ real Tauri window and its native platform WebView (WKWebView on macOS,
 WebKitGTK on Linux and WebView2 on Windows), so each action crosses the Svelte
 UI, generated Tauri invokes and Rust backend before reaching the local protocol
 fixtures.
-Its ten scenarios own 15 acceptance criteria; Touch ID/Windows Hello and the
-native-picker config round trip own the remaining two as explicit manual-native
-checks. The same catalog runs on macOS, Windows and Linux (the two SSH-backed
+Its ten scenarios own 15 acceptance criteria: 14 are fully automated and
+AC-017 is explicitly mixed because several native input paths remain manual.
+Touch ID/Windows Hello and the native-picker config round trip own the remaining
+two criteria as manual-native checks. The same catalog runs on macOS, Windows
+and Linux (the two SSH-backed
 scenarios are skipped on Windows, where the project has no `sshd` fixture yet;
 FTP tab isolation still covers multiple independent sessions there):
 
@@ -465,10 +467,11 @@ E2E_SCENARIO_SHARD_INDEX=1 E2E_SCENARIO_SHARDS_TOTAL=2 npm run test:scenarios
 Scenario builds are explicitly feature-gated and use a temporary config/vault
 directory with Quick Unlock disabled. Even fresh-vault path selection goes
 through a visible field. File operations use the visible pane **Actions** menu;
-the platform-input scenario also opens the selected file's actions through
-`Shift+F10` on every WebView. Native right-click remains an explicit
-manual-native supplement because the pinned embedded driver 1.2.0 does not
-emit `contextmenu` for its secondary-button action on any platform.
+the platform-input scenario opens the selected file's actions through that
+visible control. Native `Shift+F10` and right-click remain explicit
+manual-native supplements because the pinned embedded driver 1.2.0 drops held
+modifiers for special keys and does not emit `contextmenu` for its
+secondary-button action.
 Shortcuts use `Command` on macOS versus `Control` on Linux/Windows for tab,
 Settings and file-selection actions. Terminal probes are entered in the visible
 Terminal **Paste…** field and sent through the multiline confirmation, rather
@@ -484,15 +487,17 @@ documented AC-001...AC-017 headings and parses each tagged suite to reject
 comment-only, empty or detached tests. A purpose-built secret-free reporter
 then requires exactly one expected pass/skip per selected scenario; it uses
 process-isolated artifacts, no raw spec/JUnit output and no in-place spec
-retries. The check also prints per-OS coverage: Windows currently automates
-10/17 criteria and explicitly reports the five SSH-only criteria as expected skips,
-instead of allowing the green matrix to hide them.
+retries. The check also prints per-OS coverage: Windows currently has 9/17
+fully automated criteria, mixed AC-017, and five explicitly expected SSH-only
+skips, instead of allowing the green matrix to hide them.
 
 AC-017 remains owned by the automated shortcut scenario, but its
-`Cmd/Ctrl+Left` and `Cmd/Ctrl+Right` file-transfer chords and native pointer
-right-click are listed separately as typed manual-native supplements. The
-pinned embedded driver 1.2.0 cannot prove those input paths, so the suite does
-not replace them with synthetic events or claim a false pass.
+`Cmd/Ctrl+Left` and `Cmd/Ctrl+Right` file-transfer chords, `Shift+F10`, and
+native pointer right-click are listed separately as typed manual-native
+supplements. A focused component test protects the `Shift+F10` renderer
+handler, but the pinned embedded driver 1.2.0 cannot prove those native input
+paths, so the suite does not replace them with synthetic events or claim a
+false pass.
 
 > The integration tests spawn a real sftp‑server that performs `chmod`/`rename`.
 > The macOS seatbelt sandbox blocks those syscalls, so **run the tests with the

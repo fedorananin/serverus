@@ -11,6 +11,7 @@ export interface ManualNativeAcceptanceSupplement {
   automatedOwnerId: string;
   platforms: readonly ScenarioPlatform[];
   inputFidelity: "manual-native";
+  coverageImpact: "required-path" | "additional-variant";
   manualAction: string;
   reason: string;
 }
@@ -23,10 +24,24 @@ export const MANUAL_NATIVE_SUPPLEMENTS = [
     automatedOwnerId: "platform-shortcuts",
     platforms: ALL_PLATFORMS,
     inputFidelity: "manual-native",
+    coverageImpact: "required-path",
     manualAction:
       "Select a local file and press Command/Control+Right, then select a remote file and press Command/Control+Left; verify both transfers complete with identical bytes.",
     reason:
       "tauri-plugin-wdio-webdriver 1.2.0 sends Arrow keys without retaining active modifier flags, so WebDriver cannot prove either native chord.",
+  },
+  {
+    id: "platform-keyboard-context-menu-native",
+    title: "Open file actions with the native keyboard context-menu chord",
+    acceptanceId: "AC-017",
+    automatedOwnerId: "platform-shortcuts",
+    platforms: ALL_PLATFORMS,
+    inputFidelity: "manual-native",
+    coverageImpact: "required-path",
+    manualAction:
+      "Select a visible local and remote file row, press Shift+F10, and verify the actions menu opens for that selection and its enabled action works.",
+    reason:
+      "tauri-plugin-wdio-webdriver 1.2.0 dispatches F10 without the held Shift modifier, so WebDriver cannot prove the native keyboard context-menu chord.",
   },
   {
     id: "platform-context-menu-native",
@@ -35,6 +50,7 @@ export const MANUAL_NATIVE_SUPPLEMENTS = [
     automatedOwnerId: "platform-shortcuts",
     platforms: ALL_PLATFORMS,
     inputFidelity: "manual-native",
+    coverageImpact: "required-path",
     manualAction:
       "Right-click a visible local and remote file row; verify the actions menu opens at the pointer and its enabled action works.",
     reason:
@@ -47,6 +63,7 @@ export const MANUAL_NATIVE_SUPPLEMENTS = [
     automatedOwnerId: "remote-edit-safety",
     platforms: ALL_PLATFORMS,
     inputFidelity: "manual-native",
+    coverageImpact: "additional-variant",
     manualAction:
       "Configure an installed editor, open a remote file, save a unique change, and verify both the visible upload result and remote bytes.",
     reason:
@@ -85,6 +102,14 @@ export function validateManualNativeSupplements(
     }
     if (new Set(supplement.platforms).size !== supplement.platforms.length) {
       errors.push(`${supplement.id}: platforms must not contain duplicates`);
+    }
+    if (
+      supplement.coverageImpact !== "required-path" &&
+      supplement.coverageImpact !== "additional-variant"
+    ) {
+      errors.push(
+        `${supplement.id}: coverageImpact must be required-path or additional-variant`,
+      );
     }
 
     const owner = automatedOwners.find(({ id }) => id === supplement.automatedOwnerId);

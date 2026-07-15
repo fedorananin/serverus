@@ -3,18 +3,7 @@ import { Key } from "webdriverio";
 import { createFreshVault } from "../../support/app";
 import { createConnection, openConnection, waitForConnected } from "../../support/connections";
 import { fixtures } from "../../support/fixtures";
-
-const primaryModifier = process.platform === "darwin" ? Key.Command : Key.Control;
-
-async function pressShortcut(key: string): Promise<void> {
-  await browser
-    .action("key")
-    .down(primaryModifier)
-    .down(key)
-    .up(key)
-    .up(primaryModifier)
-    .perform();
-}
+import { pressPrimaryShortcut } from "../../support/keyboard";
 
 async function activeTabIndex(): Promise<number> {
   const sessionTabs = await $$("[role='tab']").getElements();
@@ -72,21 +61,15 @@ describe("@platform-shortcuts", () => {
     const localOptions = await $$("[data-pane='local'] [role='option']").getElements();
     if (localOptions.length === 0) throw new Error("The local fixture tree is empty.");
     await localOptions[0].click();
-    await browser
-      .action("key")
-      .down(Key.Shift)
-      .down(Key.F10)
-      .up(Key.F10)
-      .up(Key.Shift)
-      .perform();
+    await $("aria/Local pane actions").click();
     const uploadAction = await $("aria/Upload →");
     await uploadAction.waitForDisplayed({
-      timeoutMsg: "Shift+F10 did not open the selected file's actions menu.",
+      timeoutMsg: "The visible Actions button did not open the selected file's menu.",
     });
     await browser.keys(Key.Escape);
     await uploadAction.waitForDisplayed({ reverse: true });
 
-    await pressShortcut("a");
+    await pressPrimaryShortcut("a");
     await browser.waitUntil(
       async () => {
         for (const option of localOptions) {
@@ -97,25 +80,25 @@ describe("@platform-shortcuts", () => {
       { timeoutMsg: "The primary-modifier Select all shortcut did not select every local file." },
     );
 
-    await pressShortcut("t");
+    await pressPrimaryShortcut("t");
     await waitForTabCount(2);
     await waitForActiveTab(1);
     await waitForVisibleConnectionState("connected");
 
-    await pressShortcut("1");
+    await pressPrimaryShortcut("1");
     await waitForActiveTab(0);
     await waitForVisibleConnectionState("connected");
 
-    await pressShortcut("2");
+    await pressPrimaryShortcut("2");
     await waitForActiveTab(1);
 
-    await pressShortcut(",");
+    await pressPrimaryShortcut(",");
     const settings = await $("[role='dialog'][aria-label='Settings']");
     await settings.waitForDisplayed();
     await browser.keys(Key.Escape);
     await settings.waitForDisplayed({ reverse: true });
 
-    await pressShortcut("w");
+    await pressPrimaryShortcut("w");
     await waitForTabCount(1);
     await waitForActiveTab(0);
     await waitForVisibleConnectionState("connected");

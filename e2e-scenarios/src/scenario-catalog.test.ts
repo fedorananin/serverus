@@ -132,6 +132,18 @@ describe("scenario catalog", () => {
     assert.match(supplement.reason, /tauri-plugin-wdio-webdriver 1\.2\.0/);
   });
 
+  it("keeps Shift+F10 coverage manual while the embedded driver drops modifiers", () => {
+    const supplement = MANUAL_NATIVE_SUPPLEMENTS.find(
+      ({ id }) => id === "platform-keyboard-context-menu-native",
+    );
+
+    assert.ok(supplement);
+    assert.deepEqual(supplement.platforms, ALL_PLATFORMS);
+    assert.equal(supplement.coverageImpact, "required-path");
+    assert.match(supplement.manualAction, /Shift\+F10/);
+    assert.match(supplement.reason, /modifier/i);
+  });
+
   it("rejects incomplete or detached manual-native supplements", () => {
     assert.deepEqual(
       validateManualNativeSupplements(
@@ -143,6 +155,7 @@ describe("scenario catalog", () => {
             automatedOwnerId: "platform-shortcuts",
             platforms: [],
             inputFidelity: "manual-native",
+            coverageImpact: "invalid" as never,
             manualAction: "",
             reason: "",
           },
@@ -154,6 +167,7 @@ describe("scenario catalog", () => {
         "platform-shortcuts: conflicts with an acceptance owner id",
         "platform-shortcuts: title must not be empty",
         "platform-shortcuts: platforms must not be empty",
+        "platform-shortcuts: coverageImpact must be required-path or additional-variant",
         "platform-shortcuts: AC-001 is not owned by automated scenario platform-shortcuts",
         "platform-shortcuts: manualAction must not be empty",
         "platform-shortcuts: reason must not be empty",
@@ -169,6 +183,7 @@ describe("scenario catalog", () => {
       automatedOwnerId: "shortcut-owner",
       platforms: ["darwin", "darwin"] as const,
       inputFidelity: "manual-native" as const,
+      coverageImpact: "required-path" as const,
       manualAction: "Press the native shortcut.",
       reason: "The driver cannot preserve the modifier.",
     };

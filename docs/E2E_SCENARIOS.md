@@ -56,7 +56,7 @@ override.
 | `remote-edit-safety` | AC-009 | macOS, Linux, Windows | `real-input` | Edit through an external fixture process, publish a successful save, and preserve the original remote file when promotion fails. |
 | `s3-buckets` | AC-010 | macOS, Linux, Windows | `real-input` | List and create buckets against an in-process S3-compatible server. |
 | `s3-sharing` | AC-011, AC-012 | macOS, Linux, Windows | `real-input` | Exercise Ask/private/public upload ACLs, publish an object and copy its custom public URL. |
-| `platform-shortcuts` | AC-017 | macOS, Linux, Windows | `real-input` | Exercise `T`, `W`, `1`, `2`, comma and `A` with the platform's real modifier key, then open selected-file actions with `Shift+F10`. |
+| `platform-shortcuts` | AC-017 | macOS, Linux, Windows | `real-input` | Exercise `T`, `W`, `1`, `2`, comma and `A` with the platform's real modifier key, then open selected-file actions through the visible **Actions** button. |
 
 `real-input` means WebDriver clicks, types and presses keys through visible,
 accessible WebView controls. This includes the SSH scenarios: WebKit WebDriver
@@ -75,13 +75,17 @@ Two criteria deliberately have manual-native owners:
 
 Manual-native supplements record a user-input subpath that the automated owner
 cannot honestly exercise. They are not acceptance owners and therefore do not
-change exact ownership or turn an automated criterion into a second owner:
+change exact ownership or turn an automated criterion into a second owner.
+A `required-path` supplement makes that criterion mixed rather than fully
+automated; an `additional-variant` records useful native breadth beyond the
+automated acceptance contract without downgrading it:
 
-| ID | Automated owner | Acceptance | Platforms | Manual action | Why automation does not claim it |
-| --- | --- | --- | --- | --- | --- |
-| `platform-shortcuts-arrow-transfer-native` | `platform-shortcuts` | AC-017 | macOS, Linux, Windows | Select a local file and press `Cmd/Ctrl+Right`; select a remote file and press `Cmd/Ctrl+Left`; verify both transfers complete with identical bytes. | `tauri-plugin-wdio-webdriver` 1.2.0 sends Arrow keys without retaining the active modifier flags. |
-| `platform-context-menu-native` | `platform-shortcuts` | AC-017 | macOS, Linux, Windows | Right-click a visible local and remote file row; verify the actions menu opens at the pointer and its enabled action works. | `tauri-plugin-wdio-webdriver` 1.2.0 emits secondary-button down/up events without a `contextmenu` event, so no embedded platform driver can prove the native right-button path. |
-| `remote-edit-native-editor` | `remote-edit-safety` | AC-009 | macOS, Linux, Windows | Configure an installed editor, open a remote file, save a unique change, and verify the visible upload result and remote bytes. | WebDriver cannot control arbitrary native editor windows or OS launchers; automation uses a deterministic external editor process. |
+| ID | Automated owner | Acceptance | Impact | Platforms | Manual action | Why automation does not claim it |
+| --- | --- | --- | --- | --- | --- | --- |
+| `platform-shortcuts-arrow-transfer-native` | `platform-shortcuts` | AC-017 | `required-path` | macOS, Linux, Windows | Select a local file and press `Cmd/Ctrl+Right`; select a remote file and press `Cmd/Ctrl+Left`; verify both transfers complete with identical bytes. | `tauri-plugin-wdio-webdriver` 1.2.0 sends Arrow keys without retaining the active modifier flags. |
+| `platform-keyboard-context-menu-native` | `platform-shortcuts` | AC-017 | `required-path` | macOS, Linux, Windows | Select a visible local and remote file row, press `Shift+F10`, and verify the actions menu opens for that selection and its enabled action works. | `tauri-plugin-wdio-webdriver` 1.2.0 dispatches F10 without the held Shift modifier. |
+| `platform-context-menu-native` | `platform-shortcuts` | AC-017 | `required-path` | macOS, Linux, Windows | Right-click a visible local and remote file row; verify the actions menu opens at the pointer and its enabled action works. | `tauri-plugin-wdio-webdriver` 1.2.0 emits secondary-button down/up events without a `contextmenu` event, so no embedded platform driver can prove the native right-button path. |
+| `remote-edit-native-editor` | `remote-edit-safety` | AC-009 | `additional-variant` | macOS, Linux, Windows | Configure an installed editor, open a remote file, save a unique change, and verify the visible upload result and remote bytes. | WebDriver cannot control arbitrary native editor windows or OS launchers; automation uses a deterministic external editor process. |
 
 The deterministic editor executable makes AC-009 repeatable: it is launched
 as a real external process, edits the downloaded temp file, and lets the real
@@ -161,28 +165,33 @@ generic error that cannot echo clipboard contents.
 7. Keep `maxInstances: 1` until fixture and embedded-driver isolation have been
    proven under parallel application processes.
 
-Controls are exercised through their real accessible input paths. File actions
-use the visible pane **Actions** button, and the platform scenario opens the
-selected file's menu with the keyboard-accessible `Shift+F10` path on every OS.
+Controls are exercised through their real accessible input paths. File actions,
+including the platform scenario's selected-file check, use the visible pane
+**Actions** button. The renderer's `Shift+F10` handler has a focused component
+test, while the native chord remains an explicit all-platform supplement.
 Selects, forms and menu items are not changed by assigning DOM values,
 dispatching synthetic events, calling `requestSubmit()` or invoking
 `element.click()` in page JavaScript. The AST gate also rejects aliased/global
-`execute` calls, Mocha retry overrides and right-button automation that pinned
-embedded driver 1.2.0 cannot deliver faithfully. Shortcuts use `Command` on
-macOS and `Control` on both Linux and Windows. The automated AC-017 scenario
-presses T, W, 1, 2, comma and A through the real host modifier. It deliberately
-does not claim pane transfer with
+`execute` calls, Mocha retry overrides, right-button automation and raw
+WebDriver keyboard-action construction. Automated primary-modifier chords go
+through one runtime-guarded helper whose type and allowlist contain only A, T,
+W, 1, 2 and comma; WebDriver special keys are rejected before reaching the
+browser. Shortcuts use `Command` on macOS and `Control` on both Linux and
+Windows. The automated AC-017 scenario presses T, W, 1, 2, comma and A through
+the real host modifier. It deliberately does not claim pane transfer with
 `Command`/`Control`+Left/Right: driver 1.2.0 loses the held modifier when it
 maps an Arrow key. Those two native chords remain the typed manual supplement
 above until the driver can deliver them faithfully. Windows never inherits a
 WebKit-only compatibility shim.
 
-The keyboard menu check proves focus, selection and the visible actions menu,
-but it is not evidence for pointer hit-testing. The embedded driver 1.2.0 sends
-secondary-button down/up events without the `contextmenu` event that the app
-receives from a native right-click. The all-platform typed context-menu
-supplement keeps that native pointer check explicit rather than replacing it
-with a synthetic DOM event or allowing a false automated claim.
+The component check proves that a renderer event with `key="F10"` and
+`shiftKey=true` opens the selected file's menu; it does not claim that a native
+keyboard event reached the WebView. Driver 1.2.0 omits modifier flags when it
+dispatches special keys, so `Shift+F10` stays manual-native. The same driver
+sends secondary-button down/up without the `contextmenu` event that the app
+receives from a native right-click. Separate all-platform supplements keep both
+native paths explicit rather than replacing them with synthetic DOM events or
+allowing false automated claims.
 
 Native OS dialogs, biometric prompts, Finder drag-out and other
 out-of-WebView surfaces remain manual-native. Automated scenarios do not
@@ -245,11 +254,13 @@ dialogs, biometrics, installed editors, display stacks or hardware diversity
 have been validated on representative physical machines.
 
 `scenarios:check` prints coverage per operating system instead of hiding those
-declared gaps. macOS automates 15/17 criteria; Linux automates 15/17 (AC-002 is
-not applicable because Linux has no quick unlock); Windows automates 10/17,
-reports AC-003/005/013/014/016 as five expected SSH skips, and reports
-AC-002/015 as manual-native. An additional Windows SSH fixture is still needed
-before those five criteria can become Windows regression gates.
+declared gaps. macOS has 14/17 fully automated criteria, mixed AC-017, and two
+manual-native owners. Linux has the same 14 fully automated plus mixed AC-017,
+with AC-015 manual-native and AC-002 not applicable. Windows has 9/17 fully
+automated plus mixed AC-017, reports AC-003/005/013/014/016 as five expected SSH
+skips, and reports AC-002/015 as manual-native owners. An additional Windows
+SSH fixture is still needed before those five criteria can become Windows
+regression gates.
 
 Normal CI runs for every pull request and every push to `main`; the `v*` tag
 release workflow has its own equivalent `scenarios:check` and desktop-scenario

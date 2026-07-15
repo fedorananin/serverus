@@ -53,6 +53,16 @@ const errors = [
   ...validateScenarioLayout(root, SCENARIO_IDS),
 ];
 
+function mixedAcceptanceIds(platform?: (typeof ALL_PLATFORMS)[number]): string[] {
+  const mixed = new Set<string>(
+    MANUAL_NATIVE_SUPPLEMENTS.filter(
+      ({ coverageImpact, platforms }) =>
+        coverageImpact === "required-path" && (!platform || platforms.includes(platform)),
+    ).map(({ acceptanceId }) => acceptanceId),
+  );
+  return ACCEPTANCE_IDS.filter((id) => mixed.has(id));
+}
+
 if (errors.length > 0) {
   console.error(errors.map((error) => `- ${error}`).join("\n"));
   process.exitCode = 1;
@@ -62,10 +72,13 @@ if (errors.length > 0) {
     SCENARIOS,
     MANUAL_NATIVE_ACCEPTANCE,
   );
+  const mixed = mixedAcceptanceIds();
+  const fullyAutomated = coverage.automated.filter((id) => !mixed.includes(id));
   console.log(
     `Scenario catalog is valid (${SCENARIO_IDS.length} automated scenarios; ` +
-      `${coverage.automated.length}/${ACCEPTANCE_IDS.length} acceptance criteria automated; ` +
-      `${coverage.manualNative.length}/${ACCEPTANCE_IDS.length} manual-native: ` +
+      `${fullyAutomated.length}/${ACCEPTANCE_IDS.length} fully automated; ` +
+      `${mixed.length}/${ACCEPTANCE_IDS.length} mixed automated/manual-native: ${mixed.join(", ")}; ` +
+      `${coverage.manualNative.length}/${ACCEPTANCE_IDS.length} manual-native owners: ` +
       `${coverage.manualNative.join(", ")}).`,
   );
   console.log(
@@ -84,11 +97,19 @@ if (errors.length > 0) {
       NOT_APPLICABLE_ACCEPTANCE,
       platform,
     );
+    const platformMixed = mixedAcceptanceIds(platform).filter((id) =>
+      platformCoverage.automated.includes(id),
+    );
+    const platformFullyAutomated = platformCoverage.automated.filter(
+      (id) => !platformMixed.includes(id),
+    );
     console.log(
-      `${platform}: ${platformCoverage.automated.length}/${ACCEPTANCE_IDS.length} automated; ` +
+      `${platform}: ${platformFullyAutomated.length}/${ACCEPTANCE_IDS.length} fully automated; ` +
+        `mixed ${platformMixed.length}` +
+        `${platformMixed.length > 0 ? ` (${platformMixed.join(", ")})` : ""}; ` +
         `expected skips ${platformCoverage.expectedSkipped.length}` +
         `${platformCoverage.expectedSkipped.length > 0 ? ` (${platformCoverage.expectedSkipped.join(", ")})` : ""}; ` +
-        `manual-native ${platformCoverage.manualNative.length}` +
+        `manual-native owners ${platformCoverage.manualNative.length}` +
         `${platformCoverage.manualNative.length > 0 ? ` (${platformCoverage.manualNative.join(", ")})` : ""}; ` +
         `not-applicable ${platformCoverage.notApplicable.length}` +
         `${platformCoverage.notApplicable.length > 0 ? ` (${platformCoverage.notApplicable.join(", ")})` : ""}.`,

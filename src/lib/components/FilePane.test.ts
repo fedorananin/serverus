@@ -86,3 +86,29 @@ describe("S3 public URL clipboard feedback", () => {
     );
   });
 });
+
+describe("file actions keyboard access", () => {
+  beforeEach(() => {
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+  });
+
+  it("opens the selected file actions when the renderer receives Shift+F10", async () => {
+    render(FilePane, {
+      pane: pane(),
+      title: "Remote",
+      ontransfer: vi.fn(),
+    });
+
+    await fireEvent.click(screen.getByRole("option", { name: object.name }));
+    await fireEvent.keyDown(screen.getByRole("listbox", { name: "Remote files" }), {
+      key: "F10",
+      shiftKey: true,
+    });
+
+    expect(screen.getByRole("menuitem", { name: "← Download" })).toBeInTheDocument();
+  });
+});

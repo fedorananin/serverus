@@ -2,6 +2,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import ts from "typescript";
 
+import { forbiddenRawKeyboardAction } from "./scenario-keyboard-action-gate";
+
 const ASSIGNMENT_OPERATORS = new Set<ts.SyntaxKind>([
   ts.SyntaxKind.EqualsToken,
   ts.SyntaxKind.PlusEqualsToken,
@@ -216,6 +218,9 @@ function forbiddenInputOperations(source: string, label: string): string[] {
       }
     }
 
+    const rawKeyboardAction = forbiddenRawKeyboardAction(node, label);
+    if (rawKeyboardAction) report(node, rawKeyboardAction);
+
     if (
       ts.isPropertyAssignment(node) &&
       propertyName(node.name) === "button" &&
@@ -275,9 +280,15 @@ export function validateRealInputSources(root: string, catalog: readonly string[
   }
 
   if (catalog.length > 0) {
-    const supportRoot = join(dirname(root), "support");
+    const e2eRoot = dirname(root);
+    const supportRoot = join(e2eRoot, "support");
     for (const path of sourceFiles(supportRoot)) {
       const label = `support/${portablePath(relative(supportRoot, path))}`;
+      errors.push(...forbiddenInputOperations(readFileSync(path, "utf8"), label));
+    }
+    const sourceRoot = join(e2eRoot, "src");
+    for (const path of sourceFiles(sourceRoot).filter((candidate) => !candidate.endsWith(".test.ts"))) {
+      const label = `src/${portablePath(relative(sourceRoot, path))}`;
       errors.push(...forbiddenInputOperations(readFileSync(path, "utf8"), label));
     }
   }
