@@ -28,7 +28,7 @@ describe("scenario layout command", () => {
       /Manual-native supplements: 3 \(/,
     );
     assert.match(result.stdout, /platform-shortcuts-arrow-transfer-native → platform-shortcuts\/AC-017 on darwin, linux, win32/);
-    assert.match(result.stdout, /platform-context-menu-native → platform-shortcuts\/AC-017 on darwin, linux/);
+    assert.match(result.stdout, /platform-context-menu-native → platform-shortcuts\/AC-017 on darwin, linux, win32/);
     assert.match(result.stdout, /remote-edit-native-editor → remote-edit-safety\/AC-009 on darwin, linux, win32/);
   });
 });

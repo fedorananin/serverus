@@ -72,15 +72,19 @@ describe("@platform-shortcuts", () => {
     const localOptions = await $$("[data-pane='local'] [role='option']").getElements();
     if (localOptions.length === 0) throw new Error("The local fixture tree is empty.");
     await localOptions[0].click();
-    if (process.platform === "win32") {
-      await localOptions[0].click({ button: "right" });
-      const uploadAction = await $("aria/Upload →");
-      await uploadAction.waitForDisplayed({
-        timeoutMsg: "A real WebView2 right click did not open the file context menu.",
-      });
-      await browser.keys(Key.Escape);
-      await uploadAction.waitForDisplayed({ reverse: true });
-    }
+    await browser
+      .action("key")
+      .down(Key.Shift)
+      .down(Key.F10)
+      .up(Key.F10)
+      .up(Key.Shift)
+      .perform();
+    const uploadAction = await $("aria/Upload →");
+    await uploadAction.waitForDisplayed({
+      timeoutMsg: "Shift+F10 did not open the selected file's actions menu.",
+    });
+    await browser.keys(Key.Escape);
+    await uploadAction.waitForDisplayed({ reverse: true });
 
     await pressShortcut("a");
     await browser.waitUntil(

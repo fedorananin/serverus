@@ -33,12 +33,12 @@ export const MANUAL_NATIVE_SUPPLEMENTS = [
     title: "Open file actions with a native right-button click",
     acceptanceId: "AC-017",
     automatedOwnerId: "platform-shortcuts",
-    platforms: ["darwin", "linux"],
+    platforms: ALL_PLATFORMS,
     inputFidelity: "manual-native",
     manualAction:
       "Right-click a visible local and remote file row; verify the actions menu opens at the pointer and its enabled action works.",
     reason:
-      "The embedded WebKit driver does not reliably deliver the native right-button path on macOS or Linux; Windows covers it automatically through WebView2.",
+      "tauri-plugin-wdio-webdriver 1.2.0 emits secondary-button down/up events without a contextmenu event, so no embedded platform driver can prove the native right-button path.",
   },
   {
     id: "remote-edit-native-editor",

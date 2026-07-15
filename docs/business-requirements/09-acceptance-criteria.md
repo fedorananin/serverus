@@ -170,4 +170,7 @@ history is removed without affecting other tabs.
 **when** the operator invokes a documented application shortcut,
 
 **then** the macOS Command form and the non-macOS Control form perform the same
-logical action.
+logical action,
+
+**and** a selected file exposes the same visible actions menu through
+`Shift+F10` and a native right-click.

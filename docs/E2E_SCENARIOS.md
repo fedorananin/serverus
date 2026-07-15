@@ -56,7 +56,7 @@ override.
 | `remote-edit-safety` | AC-009 | macOS, Linux, Windows | `real-input` | Edit through an external fixture process, publish a successful save, and preserve the original remote file when promotion fails. |
 | `s3-buckets` | AC-010 | macOS, Linux, Windows | `real-input` | List and create buckets against an in-process S3-compatible server. |
 | `s3-sharing` | AC-011, AC-012 | macOS, Linux, Windows | `real-input` | Exercise Ask/private/public upload ACLs, publish an object and copy its custom public URL. |
-| `platform-shortcuts` | AC-017 | macOS, Linux, Windows | `real-input` | Exercise `T`, `W`, `1`, `2`, comma and `A` with the platform's real modifier key. |
+| `platform-shortcuts` | AC-017 | macOS, Linux, Windows | `real-input` | Exercise `T`, `W`, `1`, `2`, comma and `A` with the platform's real modifier key, then open selected-file actions with `Shift+F10`. |
 
 `real-input` means WebDriver clicks, types and presses keys through visible,
 accessible WebView controls. This includes the SSH scenarios: WebKit WebDriver
@@ -80,7 +80,7 @@ change exact ownership or turn an automated criterion into a second owner:
 | ID | Automated owner | Acceptance | Platforms | Manual action | Why automation does not claim it |
 | --- | --- | --- | --- | --- | --- |
 | `platform-shortcuts-arrow-transfer-native` | `platform-shortcuts` | AC-017 | macOS, Linux, Windows | Select a local file and press `Cmd/Ctrl+Right`; select a remote file and press `Cmd/Ctrl+Left`; verify both transfers complete with identical bytes. | `tauri-plugin-wdio-webdriver` 1.2.0 sends Arrow keys without retaining the active modifier flags. |
-| `platform-context-menu-native` | `platform-shortcuts` | AC-017 | macOS, Linux | Right-click a visible local and remote file row; verify the actions menu opens at the pointer and its enabled action works. | The embedded WebKit driver does not reliably deliver the native right-button path; Windows covers it automatically through WebView2. |
+| `platform-context-menu-native` | `platform-shortcuts` | AC-017 | macOS, Linux, Windows | Right-click a visible local and remote file row; verify the actions menu opens at the pointer and its enabled action works. | `tauri-plugin-wdio-webdriver` 1.2.0 emits secondary-button down/up events without a `contextmenu` event, so no embedded platform driver can prove the native right-button path. |
 | `remote-edit-native-editor` | `remote-edit-safety` | AC-009 | macOS, Linux, Windows | Configure an installed editor, open a remote file, save a unique change, and verify the visible upload result and remote bytes. | WebDriver cannot control arbitrary native editor windows or OS launchers; automation uses a deterministic external editor process. |
 
 The deterministic editor executable makes AC-009 repeatable: it is launched
@@ -162,25 +162,27 @@ generic error that cannot echo clipboard contents.
    proven under parallel application processes.
 
 Controls are exercised through their real accessible input paths. File actions
-use the visible pane **Actions** button, while the Windows platform scenario
-also opens the context menu with a real right-button click. Selects, forms and
-menu items are not changed by assigning DOM values, dispatching synthetic
-events, calling `requestSubmit()` or invoking `element.click()` in page
-JavaScript. The AST gate also rejects aliased/global `execute` calls and Mocha
-retry overrides. Shortcuts use `Command` on macOS and `Control` on both Linux and
-Windows. The automated AC-017 scenario presses T, W, 1, 2, comma and A through
-the real host modifier. It deliberately does not claim pane transfer with
+use the visible pane **Actions** button, and the platform scenario opens the
+selected file's menu with the keyboard-accessible `Shift+F10` path on every OS.
+Selects, forms and menu items are not changed by assigning DOM values,
+dispatching synthetic events, calling `requestSubmit()` or invoking
+`element.click()` in page JavaScript. The AST gate also rejects aliased/global
+`execute` calls, Mocha retry overrides and right-button automation that pinned
+embedded driver 1.2.0 cannot deliver faithfully. Shortcuts use `Command` on
+macOS and `Control` on both Linux and Windows. The automated AC-017 scenario
+presses T, W, 1, 2, comma and A through the real host modifier. It deliberately
+does not claim pane transfer with
 `Command`/`Control`+Left/Right: driver 1.2.0 loses the held modifier when it
 maps an Arrow key. Those two native chords remain the typed manual supplement
 above until the driver can deliver them faithfully. Windows never inherits a
 WebKit-only compatibility shim.
 
-The Windows shortcut scenario additionally opens a file menu with a real
-right-button click, so WebView2 pointer hit-testing is covered as well as the
-cross-platform keyboard path. The embedded WebKit driver does not currently
-deliver that right-click path reliably on macOS/Linux; the typed context-menu
-supplement keeps that native check explicit rather than replacing it with a
-synthetic DOM event.
+The keyboard menu check proves focus, selection and the visible actions menu,
+but it is not evidence for pointer hit-testing. The embedded driver 1.2.0 sends
+secondary-button down/up events without the `contextmenu` event that the app
+receives from a native right-click. The all-platform typed context-menu
+supplement keeps that native pointer check explicit rather than replacing it
+with a synthetic DOM event or allowing a false automated claim.
 
 Native OS dialogs, biometric prompts, Finder drag-out and other
 out-of-WebView surfaces remain manual-native. Automated scenarios do not

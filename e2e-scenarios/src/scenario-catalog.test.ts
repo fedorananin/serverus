@@ -122,6 +122,16 @@ describe("scenario catalog", () => {
     );
   });
 
+  it("keeps native right-click coverage manual on every automated platform", () => {
+    const supplement = MANUAL_NATIVE_SUPPLEMENTS.find(
+      ({ id }) => id === "platform-context-menu-native",
+    );
+
+    assert.ok(supplement);
+    assert.deepEqual(supplement.platforms, ALL_PLATFORMS);
+    assert.match(supplement.reason, /tauri-plugin-wdio-webdriver 1\.2\.0/);
+  });
+
   it("rejects incomplete or detached manual-native supplements", () => {
     assert.deepEqual(
       validateManualNativeSupplements(

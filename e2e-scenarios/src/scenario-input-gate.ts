@@ -40,6 +40,18 @@ function accessReceiver(expression: ts.Expression): ts.Expression | null {
   return null;
 }
 
+function propertyName(name: ts.PropertyName): string | null {
+  if (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) return name.text;
+  return null;
+}
+
+function isRightButtonValue(expression: ts.Expression): boolean {
+  return (
+    (ts.isStringLiteralLike(expression) && expression.text === "right") ||
+    (ts.isNumericLiteral(expression) && Number(expression.text) === 2)
+  );
+}
+
 function isDomType(type: ts.TypeNode | undefined): boolean {
   if (!type) return false;
   if (ts.isParenthesizedTypeNode(type)) return isDomType(type.type);
@@ -195,7 +207,21 @@ function forbiddenInputOperations(source: string, label: string): string[] {
         (insideBrowserExecution || isDomExpression(receiver, isDomIdentifier))
       ) {
         report(node, "DOM click()");
+      } else if (
+        (method === "click" || method === "down" || method === "up") &&
+        node.arguments[0] &&
+        isRightButtonValue(node.arguments[0])
+      ) {
+        report(node, "right-button automation");
       }
+    }
+
+    if (
+      ts.isPropertyAssignment(node) &&
+      propertyName(node.name) === "button" &&
+      isRightButtonValue(node.initializer)
+    ) {
+      report(node, "right-button automation");
     }
 
     if (
