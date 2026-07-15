@@ -17,11 +17,15 @@ import { readSystemClipboard } from "../../support/system-clipboard";
 
 async function waitForAccess(name: string, access: "private" | "public"): Promise<void> {
   const row = await fileOption("remote", name);
-  await row.waitUntil(async () => (await row.getAttribute("data-access")) === access, {
-    timeout: 30_000,
-    timeoutMsg: `${name} did not show the ${access} access badge.`,
-  });
-  expect(await row.getText()).toContain(access);
+  await row.waitUntil(
+    async () =>
+      (await row.getAttribute("data-access")) === access &&
+      (await row.$(".cell.perm").getText()) === access,
+    {
+      timeout: 30_000,
+      timeoutMsg: `${name} did not show the ${access} access badge.`,
+    },
+  );
 }
 
 describe("@s3-sharing", () => {
