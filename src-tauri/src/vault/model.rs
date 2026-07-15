@@ -561,9 +561,10 @@ mod tests {
     #[test]
     fn sidebar_width_defaults_when_absent() {
         // Vaults written before the sidebar was resizable have no field.
-        let panels: PanelSettings =
-            serde_json::from_str(r#"{"show_hidden":false,"size_format":"kib","default_local_dir":null}"#)
-                .unwrap();
+        let panels: PanelSettings = serde_json::from_str(
+            r#"{"show_hidden":false,"size_format":"kib","default_local_dir":null}"#,
+        )
+        .unwrap();
         assert_eq!(panels.sidebar_width, SIDEBAR_WIDTH_DEFAULT);
     }
 
@@ -572,7 +573,13 @@ mod tests {
         // Vaults written before folders remembered their disclosure state.
         let node: TreeNode =
             serde_json::from_str(r#"{"type":"folder","id":"f1","name":"Prod"}"#).unwrap();
-        assert!(matches!(node, TreeNode::Folder { collapsed: false, .. }));
+        assert!(matches!(
+            node,
+            TreeNode::Folder {
+                collapsed: false,
+                ..
+            }
+        ));
     }
 
     #[test]
