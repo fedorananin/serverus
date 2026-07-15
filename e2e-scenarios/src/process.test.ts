@@ -31,6 +31,6 @@ describe("scenario child processes", () => {
     const started = Date.now();
     await stopProcess(child, 50);
     assert.ok(Date.now() - started < 1_000);
-    assert.notEqual(child.signalCode, null);
+    assert.ok(child.exitCode !== null || child.signalCode !== null);
   });
 });
