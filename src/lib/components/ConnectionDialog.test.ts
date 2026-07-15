@@ -173,4 +173,57 @@ describe("ConnectionDialog credential loading", () => {
       null,
     );
   });
+
+  it("exposes SSH authentication methods as real selectable inputs", async () => {
+    render(ConnectionDialog, {
+      existing: null,
+      parentFolder: null,
+      onclose: vi.fn(),
+    });
+
+    expect(screen.getByRole("radio", { name: "Password" })).toBeChecked();
+    const keyFile = screen.getByRole("radio", { name: "Key file" });
+    await fireEvent.click(keyFile);
+
+    expect(keyFile).toBeChecked();
+    expect(screen.getByLabelText("SSH private key path")).toBeVisible();
+    expect(screen.queryByLabelText("Connection password")).not.toBeInTheDocument();
+  });
+
+  it("exposes connection protocols as selectable inputs and locks them while editing", async () => {
+    const view = render(ConnectionDialog, {
+      existing: null,
+      parentFolder: null,
+      onclose: vi.fn(),
+    });
+
+    expect(screen.getByRole("radio", { name: "SSH / SFTP" })).toBeChecked();
+    const ftp = screen.getByRole("radio", { name: "FTP / FTPS" });
+    await fireEvent.click(ftp);
+    expect(ftp).toBeChecked();
+    expect(screen.queryByRole("radiogroup", { name: "SSH authentication method" })).not.toBeInTheDocument();
+
+    apiMocks.connectionSecrets.mockResolvedValue(secrets("stored-password"));
+    await view.rerender({ existing, parentFolder: null, onclose: vi.fn() });
+    await waitFor(() =>
+      expect(screen.getByRole("radio", { name: "SSH / SFTP" })).toBeDisabled(),
+    );
+    expect(screen.getByRole("radio", { name: "FTP / FTPS" })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: "S3" })).toBeDisabled();
+  });
+
+  it("exposes S3 upload access modes as real selectable inputs", async () => {
+    render(ConnectionDialog, {
+      existing: null,
+      parentFolder: null,
+      onclose: vi.fn(),
+    });
+    await fireEvent.click(screen.getByRole("radio", { name: "S3" }));
+
+    expect(screen.getByRole("radio", { name: "Private" })).toBeChecked();
+    const ask = screen.getByRole("radio", { name: "Ask before upload" });
+    await fireEvent.click(ask);
+
+    expect(ask).toBeChecked();
+  });
 });

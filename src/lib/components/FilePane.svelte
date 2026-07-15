@@ -7,12 +7,11 @@
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import InputDialog from "./InputDialog.svelte";
   import ChmodDialog from "./ChmodDialog.svelte";
-
   import { startDrag } from "@crabnebula/tauri-plugin-drag";
   import { commands, errorMessage, unwrap } from "$lib/api";
   import { dnd } from "$lib/stores/dnd.svelte";
   import { isMod } from "$lib/platform";
-
+  import { copyPublicUrl } from "$lib/public-url-clipboard";
   interface Props {
     pane: PaneController;
     title: string;
@@ -26,12 +25,9 @@
     uploadMode?: S3UploadAcl | null;
     onuploadmode?: (mode: S3UploadAcl) => void;
   }
-
   let { pane, title, ontransfer, onopenfile, publicUrl, uploadMode, onuploadmode }: Props =
     $props();
-
   // -- S3 public/private actions (SPEC §4.4) --
-
   let aclNote = $state<{ text: string; error: boolean } | null>(null);
   let aclNoteTimer: ReturnType<typeof setTimeout> | undefined;
   function note(text: string, error = false) {
@@ -39,7 +35,6 @@
     clearTimeout(aclNoteTimer);
     aclNoteTimer = setTimeout(() => (aclNote = null), 6000);
   }
-
   async function setAcl(entries: RemoteEntry[], makePublic: boolean) {
     note(makePublic ? "Making public…" : "Making private…");
     try {
@@ -132,7 +127,7 @@
     void navigator.clipboard.writeText(entry.path);
   }
 
-  function openMenu(e: MouseEvent, entry: RemoteEntry | null) {
+  function openMenu(e: MouseEvent | KeyboardEvent, entry: RemoteEntry | null) {
     e.preventDefault();
     e.stopPropagation();
     if (entry && !pane.selected.has(entry.name)) {
@@ -147,6 +142,7 @@
         label: pane.side === "local" ? "Upload →" : "← Download",
         action: () => ontransfer(selection),
       });
+      if (single?.is_dir) items.push({ label: "Open", action: () => void pane.open(single) });
       if (single && !single.is_dir && pane.side === "remote" && onopenfile) {
         items.push({ label: "Edit…", action: () => onopenfile(single) });
       }
@@ -169,7 +165,7 @@
           if (url) {
             items.push({
               label: "Copy public URL",
-              action: () => void navigator.clipboard.writeText(url),
+              action: () => void copyPublicUrl(url).then((result) => note(result.text, result.error)),
             });
           }
         }
@@ -187,16 +183,21 @@
     items.push({ label: "New folder…", action: () => (dialog = { kind: "mkdir" }) });
     items.push({ label: "New file…", action: () => (dialog = { kind: "newfile" }) });
     items.push({ label: "Refresh", action: () => void pane.refresh() });
-    menu = { x: e.clientX, y: e.clientY, items };
+    const x = e instanceof MouseEvent ? e.clientX : 16; const y = e instanceof MouseEvent ? e.clientY : 16;
+    menu = { x, y, items };
   }
 
   function keydown(e: KeyboardEvent) {
-    if (e.key === "F2" || e.key === "Enter") {
+    if (e.key === "F10" && e.shiftKey) {
+      openMenu(e, pane.selectedEntries[0] ?? null);
+    } else if (e.key === "F2" || e.key === "Enter") {
       const sel = pane.selectedEntries;
       if (sel.length === 1) {
         e.preventDefault();
         dialog = { kind: "rename", entry: sel[0] };
       }
+    } else if (isMod(e) && e.key === (pane.side === "local" ? "ArrowRight" : "ArrowLeft") && pane.selectedEntries.length > 0) {
+      e.preventDefault(); e.stopPropagation(); ontransfer(pane.selectedEntries);
     } else if (e.key === "Backspace" && !isMod(e)) {
       e.preventDefault();
       void pane.up();
@@ -212,7 +213,6 @@
     }
   }
 
-  // Two drag mechanisms, one per side (HTML5 DnD is dead in the Tauri webview):
   //  - Local pane → native OS drag (startDrag). Real file paths, so it can go
   //    OUT to Finder; dropped back on the remote pane it arrives as a Tauri
   //    file-drop and is routed to an upload by FilesView.
@@ -244,8 +244,7 @@
     }
   }
 
-  // Native drag arms on pointerdown and fires once the pointer moves, so a
-  // plain click still just selects.
+  // Native drag arms on pointerdown and fires once the pointer moves.
   let armStart: { x: number; y: number } | null = null;
   function armNativeDrag(e: PointerEvent) {
     armStart = { x: e.clientX, y: e.clientY };
@@ -282,7 +281,6 @@
   // survive virtual scrolling.
   let marquee = $state<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   let marqueeFrom: { x: number; y: number } | null = null;
-  /** Selection to extend when the marquee started with Cmd/Shift held. */
   let marqueeBase: Set<string> | null = null;
   let marqueePointer = { x: 0, y: 0 };
   let marqueeRaf = 0;
@@ -301,6 +299,7 @@
 
   function rowsPointerDown(e: PointerEvent) {
     if (e.button !== 0 || !scroller) return;
+    scroller.focus();
     // Keep error text selectable (it has user-select: text for copying).
     if ((e.target as HTMLElement).closest?.(".pane-error")) return;
     const rect = scroller.getBoundingClientRect();
@@ -321,8 +320,7 @@
     if (!marqueeRaf) marqueeRaf = requestAnimationFrame(marqueeTick);
   }
 
-  // Auto-scroll while the pointer is above/below the list; keeps running
-  // between pointermove events so the selection grows without wiggling.
+  // Auto-scroll while the pointer is above/below the list.
   function marqueeTick() {
     marqueeRaf = 0;
     if (!marqueeFrom || !scroller) return;
@@ -453,6 +451,7 @@
     {/if}
     <button class="tool" title="Up" aria-label="Up" onclick={() => void pane.up()}>↑</button>
     <button class="tool" title="Refresh" aria-label="Refresh" onclick={() => void pane.refresh()}>⟳</button>
+    <button class="tool" title="Actions" aria-label="{pane.side === 'local' ? 'Local' : 'Remote'} pane actions" onclick={(e) => openMenu(e, pane.selectedEntries[0] ?? null)}>⋯</button>
     <button
       class="tool"
       title="Toggle hidden files"
@@ -466,7 +465,7 @@
     {#if editingPath}
       <form onsubmit={commitPath} class="path-form">
         <input
-          type="text"
+          type="text" aria-label="{title} path input"
           class="mono path-input"
           bind:value={pathInput}
           onblur={() => (editingPath = false)}
@@ -474,7 +473,7 @@
         />
       </form>
     {:else}
-      <button class="path mono" title={pane.path} onclick={startPathEdit}>{pane.path}</button>
+      <button class="path mono" title={pane.path} aria-label="{title} path" onclick={startPathEdit}>{pane.path}</button>
     {/if}
     <input type="text" class="filter" placeholder="Filter" bind:value={pane.filter} />
   </div>
@@ -513,10 +512,11 @@
             <div
               class="row mono"
               class:selected={pane.selected.has(entry.name)}
-              role="option"
+              role="option" aria-label={entry.name}
               aria-selected={pane.selected.has(entry.name)}
+              data-access={pane.s3 && !entry.is_dir ? formatAcl(pane.acl[entry.path]) : undefined}
               tabindex="-1"
-              onclick={(e) => !marqueeJustEnded && pane.click(entry, e)}
+              onclick={(e) => { scroller?.focus(); if (!marqueeJustEnded) pane.click(entry, e); }}
               ondblclick={() => rowDoubleClick(entry)}
               oncontextmenu={(e) => openMenu(e, entry)}
               onpointerdown={(e) => rowPointerDown(e, entry)}
@@ -554,7 +554,7 @@
   <div class="statusbar">
     <span>{total} items{pane.selected.size > 0 ? `, ${pane.selected.size} selected` : ""}</span>
     {#if aclNote}
-      <span class="acl-note" class:err={aclNote.error}>{aclNote.text}</span>
+      <span class="acl-note" class:err={aclNote.error} role={aclNote.error ? "alert" : "status"}>{aclNote.text}</span>
     {/if}
   </div>
 </div>

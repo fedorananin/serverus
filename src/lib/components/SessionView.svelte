@@ -56,7 +56,13 @@
         {/if}
       {/if}
     </div>
-    <div class="status">
+    <div
+      class="status"
+      data-testid="session-state"
+      data-state={tab.state}
+      role="status"
+      aria-label="Connection {tab.state}"
+    >
       <span class="dot" data-state={tab.state}></span>
       <span class="label">
         {#if tab.state === "connecting"}connecting…{/if}

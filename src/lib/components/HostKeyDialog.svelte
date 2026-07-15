@@ -6,7 +6,12 @@
 
 {#if p}
   <div class="backdrop" role="presentation">
-    <div class="dialog" class:changed={p.changed}>
+    <div
+      class="dialog"
+      class:changed={p.changed}
+      role="dialog"
+      aria-label={p.changed ? "Host key changed" : "Unknown host"}
+    >
       {#if p.changed}
         <h2>⚠️ Host key changed!</h2>
         <p class="warn">

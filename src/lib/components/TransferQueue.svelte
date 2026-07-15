@@ -1,15 +1,25 @@
 <script lang="ts">
   // Collapsible transfer queue panel at the bottom of the window (SPEC §6.1).
-  import { transfers } from "$lib/stores/transfers.svelte";
+  import { useAppModel } from "$lib/app/model.svelte";
   import { formatEta, formatSize, formatSpeed } from "$lib/format";
 
+  const transfers = useAppModel().transfers;
   const items = $derived(transfers.items);
   const summary = $derived(transfers.summary);
 </script>
 
 {#if summary.total_items > 0}
   <div class="queue" class:collapsed={transfers.collapsed}>
-    <button class="bar" onclick={() => (transfers.collapsed = !transfers.collapsed)}>
+    <button
+      class="bar"
+      data-testid="transfer-summary"
+      data-total={summary.total_items}
+      data-running={summary.running}
+      data-queued={summary.queued}
+      data-done={summary.done}
+      data-failed={summary.failed}
+      onclick={() => (transfers.collapsed = !transfers.collapsed)}
+    >
       <span class="chevron">{transfers.collapsed ? "▴" : "▾"}</span>
       <span>Transfers</span>
       <span class="counts">
@@ -66,7 +76,13 @@
     {#if !transfers.collapsed}
       <div class="list">
         {#each items as item (item.id)}
-          <div class="item">
+          <div
+            class="item"
+            data-transfer-name={item.name}
+            data-state={item.state}
+            data-done={item.done}
+            data-total={item.total}
+          >
             <span class="dir">{item.kind === "upload" ? "↑" : "↓"}</span>
             <span class="name" title={item.kind === "upload" ? item.remote_path : item.local_path}>
               {item.name}

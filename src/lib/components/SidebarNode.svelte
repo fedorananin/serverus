@@ -88,6 +88,7 @@
   class:drop-after={dropZone === "after"}
   style:padding-left="{10 + depth * 14}px"
   role="treeitem"
+  aria-label={displayName}
   aria-selected={selectedId === id}
   aria-expanded={isFolder ? isOpen : undefined}
   tabindex="-1"

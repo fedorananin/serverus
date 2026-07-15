@@ -67,7 +67,12 @@
     <div class="list">
       {#each connection?.tunnels ?? [] as t (t.name + t.local_port)}
         {@const running = activeFor(t.name, t.local_port)}
-        <div class="tunnel" class:running={running !== null}>
+        <div
+          class="tunnel"
+          class:running={running !== null}
+          role="group"
+          aria-label={`Tunnel ${t.name || "unnamed"}`}
+        >
           <span class="dot" class:on={running !== null}></span>
           <div class="info">
             <div class="name">

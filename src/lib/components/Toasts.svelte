@@ -14,14 +14,16 @@
     setTimeout(() => {
       const idx = toasts.findIndex((t) => t.id === toast.id);
       if (idx !== -1) toasts.splice(idx, 1);
-    }, error ? 6000 : 2500);
+    }, error ? 15_000 : 10_000);
   }
 </script>
 
 {#if toasts.length > 0}
   <div class="toasts">
     {#each toasts as toast (toast.id)}
-      <div class="toast" class:error={toast.error}>{toast.text}</div>
+      <div class="toast" class:error={toast.error} role={toast.error ? "alert" : "status"}>
+        {toast.text}
+      </div>
     {/each}
   </div>
 {/if}

@@ -14,6 +14,11 @@
   import { vault } from "$lib/stores/vault.svelte";
   import Modal from "./Modal.svelte";
   import BadgePicker from "./BadgePicker.svelte";
+  import ChoiceRadioGroup from "./ChoiceRadioGroup.svelte";
+
+  const protocolOptions = [{ value: "ssh", label: "SSH / SFTP" }, { value: "ftp", label: "FTP / FTPS" }, { value: "s3", label: "S3" }] as const;
+  const authOptions = [{ value: "password", label: "Password" }, { value: "key", label: "Key file" }, { value: "agent", label: "SSH agent" }] as const;
+  const uploadAclOptions = [{ value: "private", label: "Private" }, { value: "public_read", label: "Public (public-read)" }, { value: "ask", label: "Ask before upload" }] as const;
 
   interface Props {
     /** Existing connection to edit, or null to create. */
@@ -263,23 +268,20 @@
     <div class="row">
       <label class="grow">
         <span>Name</span>
-        <input type="text" bind:value={name} placeholder="prod-web-1" />
+        <input type="text" aria-label="Connection name" bind:value={name} placeholder="prod-web-1" />
       </label>
-      <label>
-        <span>Protocol</span>
-        <select bind:value={protocol} disabled={existing !== null}>
-          <option value="ssh">SSH / SFTP</option>
-          <option value="ftp">FTP / FTPS</option>
-          <option value="s3">S3</option>
-        </select>
-      </label>
+      <ChoiceRadioGroup
+        label="Protocol" ariaLabel="Connection protocol" name="connection-protocol"
+        value={protocol} options={protocolOptions} disabled={existing !== null}
+        onchange={(value) => (protocol = value)}
+      />
     </div>
 
     <div class="row">
       <label class="grow">
         <span>{protocol === "s3" ? "Endpoint" : "Host"}</span>
         <input
-          type="text"
+          type="text" aria-label="Connection host"
           bind:value={host}
           placeholder={protocol === "s3" ? "fra1.digitaloceanspaces.com" : "server.example.com"}
           class="mono"
@@ -302,7 +304,7 @@
       <label class="port">
         <span>Port</span>
         <input
-          type="number"
+          type="number" aria-label="Connection port"
           bind:value={port}
           min="1"
           max="65535"
@@ -317,21 +319,18 @@
         <label class="grow">
           <span>{protocol === "s3" ? "Access Key ID" : "Username"}</span>
           <input
-            type="text"
+            type="text" aria-label="Connection username"
             bind:value={username}
             placeholder={protocol === "s3" ? "DO00XXXXXXXXXXXXXXXX" : "root"}
             class="mono"
           />
         </label>
         {#if protocol === "ssh"}
-          <label>
-            <span>Method</span>
-            <select bind:value={authMethod}>
-              <option value="password">Password</option>
-              <option value="key">Key file</option>
-              <option value="agent">SSH agent</option>
-            </select>
-          </label>
+          <ChoiceRadioGroup
+            label="Method" ariaLabel="SSH authentication method" name="ssh-auth-method"
+            value={authMethod} options={authOptions}
+            onchange={(value) => (authMethod = value)}
+          />
         {/if}
       </div>
 
@@ -343,7 +342,7 @@
               {showSecrets ? "hide" : "show"}
             </button>
           </span>
-          <input type={showSecrets ? "text" : "password"} class="mono" bind:value={password} />
+          <input type={showSecrets ? "text" : "password"} aria-label="Connection password" class="mono" bind:value={password} />
         </label>
       {/if}
 
@@ -360,7 +359,7 @@
             <span>Private key path</span>
             <div class="key-row">
               <input
-                type="text"
+                type="text" aria-label="SSH private key path"
                 bind:value={keyPath}
                 placeholder="~/.ssh/id_ed25519"
                 class="mono"
@@ -454,20 +453,17 @@
           </label>
           <label>
             <span>Region</span>
-            <input type="text" bind:value={s3Region} placeholder="fra1" class="mono region" />
+            <input type="text" aria-label="S3 region" bind:value={s3Region} placeholder="fra1" class="mono region" />
           </label>
         </div>
         <div class="row">
-          <label class="grow">
-            <span>Upload files as</span>
-            <select bind:value={s3UploadAcl}>
-              <option value="private">Private</option>
-              <option value="public_read">Public (public-read)</option>
-              <option value="ask">Ask before upload</option>
-            </select>
-          </label>
+          <ChoiceRadioGroup
+            label="Upload files as" ariaLabel="S3 upload access" name="s3-upload-access"
+            value={s3UploadAcl} options={uploadAclOptions} grow
+            onchange={(value) => (s3UploadAcl = value)}
+          />
           <label class="checkbox">
-            <input type="checkbox" bind:checked={s3PathStyle} />
+            <input type="checkbox" aria-label="S3 path-style URLs" bind:checked={s3PathStyle} />
             <span>Path-style URLs (MinIO)</span>
           </label>
         </div>
@@ -475,6 +471,7 @@
           <span>Public base URL — CDN / custom domain for “Copy public URL” (optional)</span>
           <input
             type="text"
+            aria-label="S3 public base URL"
             bind:value={s3PublicBaseUrl}
             placeholder="https://cdn.example.com"
             class="mono"
@@ -486,11 +483,11 @@
     <div class="row">
       <label class="grow">
         <span>Remote start dir</span>
-        <input type="text" bind:value={remoteDir} placeholder="/var/www" class="mono" />
+        <input type="text" aria-label="Remote start directory" bind:value={remoteDir} placeholder="/var/www" class="mono" />
       </label>
       <label class="grow">
         <span>Local start dir</span>
-        <input type="text" bind:value={localDir} placeholder="~/Projects" class="mono" />
+        <input type="text" aria-label="Local start directory" bind:value={localDir} placeholder="~/Projects" class="mono" />
       </label>
     </div>
 

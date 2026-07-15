@@ -32,27 +32,31 @@
 <div class="panel">
   <div class="strip">
     {#each slots as slot, i (slot.id)}
-      <button
+      <div
         class="term-tab"
         class:active={slot.id === activeSlot}
-        onclick={() => (activeSlot = slot.id)}
       >
-        {i + 1}
+        <button
+          class="term-select"
+          aria-label={`Terminal ${i + 1}`}
+          aria-pressed={slot.id === activeSlot}
+          onclick={() => (activeSlot = slot.id)}
+        >
+          <span aria-hidden="true">{i + 1}</span>
+        </button>
         {#if slots.length > 1}
-          <span
+          <button
             class="x"
-            role="button"
-            tabindex="-1"
+            aria-label={`Close terminal ${i + 1}`}
             onclick={(e) => {
               e.stopPropagation();
               closeSlot(slot.id);
-            }}
-            onkeydown={(e) => e.key === "Enter" && closeSlot(slot.id)}>✕</span
+            }}>✕</button
           >
         {/if}
-      </button>
+      </div>
     {/each}
-    <button class="add" onclick={addTerminal} title="New terminal">+</button>
+    <button class="add" onclick={addTerminal} title="New terminal" aria-label="New terminal">+</button>
   </div>
   <div class="terms">
     {#each slots as slot (slot.id)}
@@ -87,9 +91,6 @@
   .term-tab {
     display: flex;
     align-items: center;
-    gap: 5px;
-    padding: 2px 9px;
-    font-size: 11px;
     background: transparent;
     border: 1px solid transparent;
   }
@@ -99,9 +100,22 @@
     border-color: var(--border);
   }
 
+  .term-select,
+  .x {
+    background: transparent;
+    border: none;
+    color: inherit;
+  }
+
+  .term-select {
+    padding: 2px 4px 2px 9px;
+    font-size: 11px;
+  }
+
   .x {
     color: var(--text-2);
     font-size: 9px;
+    padding: 2px 7px 2px 2px;
   }
 
   .x:hover {

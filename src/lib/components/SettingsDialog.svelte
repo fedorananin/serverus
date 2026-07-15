@@ -141,7 +141,7 @@
       <div class="row">
         <label>
           <span>Auto-lock after (minutes, 0 = never)</span>
-          <input type="number" min="0" max="1440" bind:value={settings.security.auto_lock_minutes} />
+          <input type="number" min="0" max="1440" aria-label="Auto-lock after (minutes, 0 = never)" bind:value={settings.security.auto_lock_minutes} />
         </label>
         <label class="checkbox">
           <input type="checkbox" bind:checked={settings.security.lock_on_sleep} />

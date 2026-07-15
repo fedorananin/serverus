@@ -4,6 +4,7 @@
   import type { RemoteEntry, S3UploadAcl } from "$lib/api";
   import { commands, errorMessage, unwrap } from "$lib/api";
   import { s3PublicUrl } from "$lib/format";
+  import { useAppModel } from "$lib/app/model.svelte";
   import { PaneController } from "$lib/stores/pane.svelte";
   import { isMod } from "$lib/platform";
   import { vault } from "$lib/stores/vault.svelte";
@@ -18,6 +19,7 @@
   }
 
   let { tab, sessionId }: Props = $props();
+  const transfers = useAppModel().transfers;
 
   let root = $state<HTMLDivElement>();
 
@@ -120,7 +122,7 @@
   async function upload(localPath: string) {
     transferError = null;
     try {
-      await unwrap(commands.transferUpload(sessionId, localPath, remote.path));
+      await transfers.upload(sessionId, localPath, remote.path);
       // Refresh once the queue settles is handled by the queue panel; do a
       // short delayed refresh for quick small files.
       setTimeout(() => void remote.refresh(), 800);
@@ -138,7 +140,7 @@
   async function download(remotePath: string) {
     transferError = null;
     try {
-      await unwrap(commands.transferDownload(sessionId, remotePath, local.path));
+      await transfers.download(sessionId, remotePath, local.path);
       setTimeout(() => void local.refresh(), 800);
     } catch (e) {
       transferError = errorMessage(e);
@@ -165,6 +167,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    if (vault.screen !== "main") return;
     // Hidden tabs stay mounted and hear window keydowns too — only the
     // visible FilesView may act on the transfer shortcuts.
     if (!root || root.offsetParent === null) return;

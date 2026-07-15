@@ -1,14 +1,16 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Channel } from "@tauri-apps/api/core";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { SearchAddon } from "@xterm/addon-search";
   import { WebLinksAddon } from "@xterm/addon-web-links";
   import "@xterm/xterm/css/xterm.css";
-  import { commands, unwrap } from "$lib/api";
-  import { registerTerminal, unregisterTerminal } from "$lib/terminals";
+  import { commands, unwrap, type TerminalStreamEvent } from "$lib/api";
   import { isMac } from "$lib/platform";
   import { vault } from "$lib/stores/vault.svelte";
+  import TerminalPasteButton from "./TerminalPasteButton.svelte";
+  import TerminalPasteConfirm from "./TerminalPasteConfirm.svelte";
 
   interface Props {
     sessionId: string;
@@ -20,9 +22,11 @@
 
   let container: HTMLDivElement;
   let termId: string | null = null;
+  let terminalReady = $state(false);
   let exited = $state(false);
   let searchOpen = $state(false);
   let searchQuery = $state("");
+  let searchResult = $state<"idle" | "found" | "not-found">("idle");
   let searchInput: HTMLInputElement | undefined = $state();
 
   let term: Terminal;
@@ -30,12 +34,57 @@
   let search: SearchAddon;
   let pendingPaste = $state<string | null>(null);
 
-  async function confirmPaste() {
+  function decode(b64: string): Uint8Array {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  function queuePaste(text: string) {
+    if (!text || !termId) return;
+    if (text.includes("\n")) pendingPaste = text;
+    else term.paste(text);
+  }
+
+  function confirmPaste() {
     if (termId && pendingPaste !== null) {
-      await unwrap(commands.termWrite(termId, pendingPaste));
+      term.paste(pendingPaste);
     }
     pendingPaste = null;
     term.focus();
+  }
+
+  async function runPaste() {
+    if (termId && pendingPaste !== null) {
+      const command = pendingPaste.replace(/\r\n|\n/gu, "\r").replace(/\r*$/u, "\r");
+      await unwrap(commands.termWrite(termId, command));
+    }
+    pendingPaste = null;
+    term.focus();
+  }
+
+  function openSearch() {
+    searchOpen = true;
+    searchResult = "idle";
+    queueMicrotask(() => searchInput?.focus());
+  }
+
+  function closeSearch() {
+    searchOpen = false;
+    searchResult = "idle";
+    term.focus();
+  }
+
+  function findNext(backwards = false) {
+    if (!searchQuery) {
+      searchResult = "idle";
+      return;
+    }
+    const found = backwards
+      ? search.findPrevious(searchQuery)
+      : search.findNext(searchQuery);
+    searchResult = found ? "found" : "not-found";
   }
 
   onMount(() => {
@@ -62,9 +111,7 @@
     term.open(container);
     fit.fit();
 
-    // SPEC §5.5: Cmd+C copies the selection, Cmd+V pastes (multiline pastes
-    // are confirmed), Cmd+F searches. Copy-on-select is opt-in — always-on
-    // silently clobbers whatever the user copied elsewhere.
+    // SPEC §5.5: terminal copy, paste confirmation, and search shortcuts.
     if (vault.data?.settings.terminal.copy_on_select) {
       term.onSelectionChange(() => {
         const sel = term.getSelection();
@@ -85,8 +132,7 @@
         return false;
       }
       if (combo("f")) {
-        searchOpen = true;
-        queueMicrotask(() => searchInput?.focus());
+        openSearch();
         return false;
       }
       return true;
@@ -98,37 +144,36 @@
       e.preventDefault();
       e.stopPropagation();
       const text = e.clipboardData?.getData("text/plain") ?? "";
-      if (!text || !termId) return;
-      if (text.includes("\n")) {
-        pendingPaste = text;
-      } else {
-        void unwrap(commands.termWrite(termId, text));
-      }
+      queuePaste(text);
     };
     container.addEventListener("paste", onPaste, true);
+    term.onWriteParsed(() => {
+      if (searchOpen && searchQuery) findNext();
+    });
 
     let disposed = false;
     void (async () => {
-      const id = await unwrap(commands.termOpen(sessionId, term.cols, term.rows));
+      const output = new Channel<TerminalStreamEvent>((event) => {
+        if (disposed) return;
+        if (event.kind === "data") term.write(decode(event.data));
+        else {
+          exited = true;
+          onexit();
+        }
+      });
+      const id = await unwrap(commands.termOpen(sessionId, term.cols, term.rows, output));
       if (disposed) {
         void unwrap(commands.termClose(id));
         return;
       }
       termId = id;
-      registerTerminal(
-        id,
-        (data) => term.write(data),
-        () => {
-          exited = true;
-          onexit();
-        },
-      );
       term.onData((data) => {
         void unwrap(commands.termWrite(id, data));
       });
       term.onResize(({ cols, rows }) => {
         void unwrap(commands.termResize(id, cols, rows));
       });
+      terminalReady = true;
       term.focus();
     })();
 
@@ -144,65 +189,55 @@
       observer.disconnect();
       container.removeEventListener("paste", onPaste, true);
       if (termId) {
-        unregisterTerminal(termId);
         void unwrap(commands.termClose(termId)).catch(() => {});
       }
       term.dispose();
     };
   });
 
-  function findNext(backwards = false) {
-    if (!searchQuery) return;
-    if (backwards) search.findPrevious(searchQuery);
-    else search.findNext(searchQuery);
-  }
 </script>
 
 <div class="terminal-wrap">
+  {#if !terminalReady}<div class="opening" role="status">Opening terminal…</div>{/if}
+  {#if terminalReady}<TerminalPasteButton onpaste={queuePaste} onfind={openSearch} />{/if}
   {#if searchOpen}
     <div class="find-bar">
       <input
         type="text"
         placeholder="Find"
-        bind:value={searchQuery}
+        aria-label="Terminal find text"
+        value={searchQuery}
         bind:this={searchInput}
+        oninput={(event) => {
+          searchQuery = event.currentTarget.value;
+          findNext();
+        }}
         onkeydown={(e) => {
           if (e.key === "Enter") findNext(e.shiftKey);
-          if (e.key === "Escape") {
-            searchOpen = false;
-            term.focus();
-          }
+          if (e.key === "Escape") closeSearch();
         }}
       />
+      <span class="find-result" role="status">
+        {searchResult === "found" ? "Match found" : searchResult === "not-found" ? "No matches" : ""}
+      </span>
       <button onclick={() => findNext(true)} title="Previous">↑</button>
       <button onclick={() => findNext(false)} title="Next">↓</button>
-      <button
-        onclick={() => {
-          searchOpen = false;
-          term.focus();
-        }}
-        title="Close">✕</button
-      >
+      <button onclick={closeSearch} title="Close">✕</button>
     </div>
   {/if}
-  <div class="terminal" bind:this={container}></div>
+  <div class="terminal" data-terminal-state={terminalReady ? "ready" : "opening"} bind:this={container}></div>
   {#if exited}
     <div class="exited">shell exited</div>
   {/if}
 </div>
 
 {#if pendingPaste !== null}
-  {@const lines = pendingPaste.split("\n").length}
-  <div class="paste-backdrop" role="presentation">
-    <div class="paste-dialog">
-      <p>Paste {lines} lines into the terminal?</p>
-      <pre class="mono">{pendingPaste.length > 400 ? pendingPaste.slice(0, 400) + "…" : pendingPaste}</pre>
-      <div class="paste-actions">
-        <button onclick={() => (pendingPaste = null)}>Cancel</button>
-        <button class="primary" onclick={() => void confirmPaste()}>Paste</button>
-      </div>
-    </div>
-  </div>
+  <TerminalPasteConfirm
+    text={pendingPaste}
+    oncancel={() => (pendingPaste = null)}
+    onpaste={confirmPaste}
+    onrun={() => void runPaste()}
+  />
 {/if}
 
 <style>
@@ -211,12 +246,17 @@
     height: 100%;
     background: var(--bg-0);
   }
-
   .terminal {
     height: 100%;
     padding: 4px 0 0 6px;
   }
-
+  .opening {
+    position: absolute;
+    inset: 8px auto auto 10px;
+    z-index: 1;
+    color: var(--text-2);
+    font-size: 12px;
+  }
   .find-bar {
     position: absolute;
     top: 6px;
@@ -229,18 +269,21 @@
     border-radius: var(--radius);
     padding: 4px;
   }
-
   .find-bar input {
     width: 160px;
     font-size: 12px;
     padding: 3px 6px;
   }
-
+  .find-result {
+    align-self: center;
+    min-width: 72px;
+    color: var(--text-1);
+    font-size: 11px;
+  }
   .find-bar button {
     padding: 2px 7px;
     font-size: 12px;
   }
-
   .exited {
     position: absolute;
     bottom: 10px;
@@ -251,45 +294,5 @@
     color: var(--text-1);
     font-size: 11px;
     padding: 2px 8px;
-  }
-
-  .paste-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 150;
-  }
-
-  .paste-dialog {
-    background: var(--bg-1);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 16px;
-    width: 420px;
-  }
-
-  .paste-dialog p {
-    margin: 0 0 8px;
-  }
-
-  .paste-dialog pre {
-    max-height: 160px;
-    overflow: auto;
-    background: var(--bg-0);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 8px;
-    font-size: 11px;
-    user-select: text;
-  }
-
-  .paste-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 10px;
   }
 </style>

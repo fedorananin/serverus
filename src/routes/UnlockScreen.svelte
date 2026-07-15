@@ -4,6 +4,7 @@
 
   let password = $state("");
   let confirm = $state("");
+  let vaultPath = $state("");
   let passwordInput: HTMLInputElement | undefined = $state();
 
   /** Escape hatches for the lock screen: forgot the password, or the vault
@@ -25,6 +26,14 @@
       filters: [{ name: "Serverus vault", extensions: ["serverus"] }],
     });
     if (typeof picked === "string") await vault.switchVault(picked);
+  }
+
+  async function useVaultPath(event: SubmitEvent) {
+    event.preventDefault();
+    const path = vaultPath.trim();
+    if (!path || vault.busy) return;
+    await vault.switchVault(path);
+    vaultPath = "";
   }
 
   function focusOnMount(node: HTMLInputElement) {
@@ -67,6 +76,7 @@
     <form onsubmit={submit}>
       <input
         type="password"
+        aria-label="Master password"
         placeholder="Master password"
         bind:value={password}
         bind:this={passwordInput}
@@ -76,17 +86,18 @@
       {#if creating}
         <input
           type="password"
+          aria-label="Repeat master password"
           placeholder="Repeat master password"
           bind:value={confirm}
           disabled={vault.busy}
         />
         {#if mismatch}
-          <div class="error">Passwords do not match</div>
+          <div class="error" role="alert">Passwords do not match</div>
         {/if}
       {/if}
 
       {#if vault.error}
-        <div class="error">{vault.error}</div>
+        <div class="error" role="alert">{vault.error}</div>
       {/if}
 
       <button class="primary" type="submit" disabled={!canSubmit}>
@@ -110,6 +121,19 @@
     </form>
 
     <div class="path mono" title={vault.info?.path}>{vault.info?.path}</div>
+    <form class="vault-path-form" onsubmit={useVaultPath}>
+      <input
+        class="vault-path-input mono"
+        type="text"
+        aria-label="Vault path"
+        placeholder="/path/to/main.serverus"
+        bind:value={vaultPath}
+        disabled={vault.busy}
+      />
+      <button type="submit" class="subtle path-submit" disabled={vault.busy || !vaultPath.trim()}>
+        Use path
+      </button>
+    </form>
     <div class="vault-actions">
       <button type="button" class="subtle" disabled={vault.busy} onclick={() => void openOtherVault()}>
         Open another vault…
@@ -204,6 +228,23 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .vault-path-form {
+    display: flex;
+    flex-direction: row;
+    gap: 6px;
+  }
+
+  .vault-path-input {
+    min-width: 0;
+    flex: 1;
+    text-align: left;
+    font-size: 10px;
+  }
+
+  .path-submit {
+    flex: 0 0 auto;
   }
 
   .vault-actions {

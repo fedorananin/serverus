@@ -1,8 +1,9 @@
 <script lang="ts">
   // Overwrite / Skip / Rename with "apply to all" (SPEC §6.1).
-  import { transfers } from "$lib/stores/transfers.svelte";
+  import { useAppModel } from "$lib/app/model.svelte";
   import Modal from "./Modal.svelte";
 
+  const transfers = useAppModel().transfers;
   const item = $derived(transfers.conflicted);
   let applyToAll = $state(false);
 

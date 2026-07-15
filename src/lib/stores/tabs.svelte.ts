@@ -99,6 +99,7 @@ class TabsStore {
     const tab = this.tabs.find((t) => t.id === tabId);
     if (!tab) return;
     const attempt = Symbol(tabId);
+    const accessGeneration = vault.accessGeneration;
     this.connectAttempts.set(tabId, attempt);
     const isCurrent = () =>
       this.tabs.includes(tab) && this.connectAttempts.get(tabId) === attempt;
@@ -122,6 +123,11 @@ class TabsStore {
       if (!isCurrent()) return;
       this.connectAttempts.delete(tabId);
       if (isApiError(e) && e.code === "host_key_prompt" && e.host_key) {
+        if (!vault.isAccessCurrent(accessGeneration)) {
+          tab.state = "error";
+          tab.error = "Vault access was revoked";
+          return;
+        }
         hostKey.ask(e.host_key, {
           accepted: () => void this.connect(tabId),
           rejected: () => {
@@ -147,6 +153,15 @@ class TabsStore {
     if (this.activeId === id) {
       this.activeId = this.tabs[Math.min(idx, this.tabs.length - 1)]?.id ?? null;
     }
+  }
+
+  /** Drop all UI ownership of a retired backend runtime context. In-flight
+   *  connects remain responsible for disconnecting any success that arrives
+   *  after this reset, but they can no longer register it on an old tab. */
+  retireContext() {
+    this.connectAttempts.clear();
+    this.tabs = [];
+    this.activeId = null;
   }
 
   activate(id: string) {
