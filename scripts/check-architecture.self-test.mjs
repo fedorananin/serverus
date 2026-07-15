@@ -223,6 +223,21 @@ test("rejects handwritten source files above 300 lines", async () => {
   );
 });
 
+test("does not exempt oversized frontend components", async () => {
+  const root = await createFixture();
+  const components = ["FilePane.svelte", "ConnectionDialog.svelte", "SettingsDialog.svelte", "Sidebar.svelte"];
+  await Promise.all(components.map((name) =>
+    put(root, `src/lib/components/${name}`, "<!-- line -->\n".repeat(301))));
+  const result = runChecker(root);
+  assert.equal(result.status, 1);
+  for (const name of components) {
+    assert.match(
+      result.stderr,
+      new RegExp(String.raw`\[source-file-size\].*${name.replace(".", String.raw`\.`)}.*301`, "s"),
+    );
+  }
+});
+
 test("rejects desktop integration tests above 300 lines", async () => {
   const root = await createFixture();
   await put(root, "src-tauri/tests/oversized.rs", "// line\n".repeat(301));

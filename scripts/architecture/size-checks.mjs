@@ -13,12 +13,6 @@ const LEGACY_OVERSIZED_FILES = new Map([
   ["src-tauri/src/session/ssh.rs", 359],
   // Platform unlock split remains in migration phase 3.
   ["src-tauri/src/vault/quick_unlock.rs", 431],
-  // These presentation components move with their feature controllers in the
-  // frontend migration; their frozen caps prevent further monolith growth.
-  ["src/lib/components/FilePane.svelte", 848],
-  ["src/lib/components/ConnectionDialog.svelte", 718],
-  ["src/lib/components/SettingsDialog.svelte", 491],
-  ["src/lib/components/Sidebar.svelte", 352],
 ]);
 
 const EXTENSIONS = new Set([".rs", ".js", ".mjs", ".ts", ".tsx", ".svelte"]);
