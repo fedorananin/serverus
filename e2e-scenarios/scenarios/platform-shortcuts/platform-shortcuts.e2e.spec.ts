@@ -69,6 +69,9 @@ describe("@platform-shortcuts", () => {
     await browser.keys(Key.Escape);
     await uploadAction.waitForDisplayed({ reverse: true });
 
+    // Closing the actions menu returns focus to its button, so a user must
+    // activate the file pane again before using its selection shortcut.
+    await localOptions[0].click();
     await pressPrimaryShortcut("a");
     await browser.waitUntil(
       async () => {
