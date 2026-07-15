@@ -17,7 +17,64 @@ permissions:
   contents: write
 
 jobs:
+  validate-scenarios:
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-22.04
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux scenario dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev libxdo-dev \
+            openssh-server xclip xvfb
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Scenario harness contracts
+        run: npm run scenarios:check
+
+      - name: Scenario tests
+        if: runner.os != 'Linux'
+        run: npm run test:scenarios
+
+      - name: Scenario tests (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:scenarios
+
+      - name: Upload scenario diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-scenario-diagnostics-${{ runner.os }}
+          path: .artifacts/scenarios/
+          if-no-files-found: ignore
+          include-hidden-files: true
+
   release:
+    timeout-minutes: 120
+    needs: validate-scenarios
     strategy:
       fail-fast: false
       matrix:
