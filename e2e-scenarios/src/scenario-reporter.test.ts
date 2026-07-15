@@ -28,6 +28,18 @@ describe("secret-free scenario reporter", () => {
     );
   });
 
+  it("treats the pending state emitted by a Mocha this.skip as skipped", () => {
+    assert.deepEqual(
+      scenarioResultFromSuite({
+        title: "@ssh-terminal",
+        duration: 1,
+        hooks: [],
+        tests: [{ state: "pending", pendingReason: "sync skip; aborting execution" }],
+      }),
+      { scenarioId: "ssh-terminal", status: "skipped", durationMs: 1 },
+    );
+  });
+
   it("includes nested tests and hooks when accounting for a tagged suite", () => {
     assert.equal(
       scenarioResultFromSuite({

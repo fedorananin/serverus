@@ -3,7 +3,10 @@ import type { TauriCapabilities } from "@wdio/tauri-service";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { settleWithin } from "./e2e-scenarios/src/scenario-diagnostics";
+import {
+  settleWithin,
+  shouldCaptureFailureDiagnostic,
+} from "./e2e-scenarios/src/scenario-diagnostics";
 import ScenarioReporter from "./e2e-scenarios/src/scenario-reporter";
 import { resolveScenarioIds } from "./e2e-scenarios/src/scenario-selection";
 import {
@@ -72,7 +75,7 @@ export const config: WebdriverIO.Config = {
     context.timeout(scenarioTimeoutMs(test.parent));
   },
   afterTest: async (test, _context, result) => {
-    if (result.passed) return;
+    if (!shouldCaptureFailureDiagnostic(result)) return;
     mkdirSync(artifacts, { recursive: true });
     const name = test.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
     await settleWithin(

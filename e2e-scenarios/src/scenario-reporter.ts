@@ -26,7 +26,7 @@ function suiteStatus(suite: SuiteSnapshot): ScenarioResultStatus {
   const tests = descendants.flatMap(({ tests }) => tests);
   if (tests.length === 0) return "failed";
   if (tests.every(({ state }) => state === "passed")) return "passed";
-  if (tests.every(({ state }) => state === "skipped")) return "skipped";
+  if (tests.every(({ state }) => state === "skipped" || state === "pending")) return "skipped";
   return "failed";
 }
 

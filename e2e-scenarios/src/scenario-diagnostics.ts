@@ -1,3 +1,10 @@
+export function shouldCaptureFailureDiagnostic(result: {
+  passed: boolean;
+  skipped?: boolean;
+}): boolean {
+  return !result.passed && result.skipped !== true;
+}
+
 export async function settleWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<false>((resolveTimeout) => {

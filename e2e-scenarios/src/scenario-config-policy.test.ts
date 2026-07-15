@@ -48,4 +48,13 @@ describe("scenario WebDriver safety policy", () => {
       );
     }
   });
+
+  it("guards failure screenshots with the skip-aware diagnostic predicate", () => {
+    const afterTest = properties("afterTest");
+    assert.equal(afterTest.length, 1);
+    assert.match(
+      afterTest[0].initializer.getText(source),
+      /shouldCaptureFailureDiagnostic\(result\)/u,
+    );
+  });
 });
