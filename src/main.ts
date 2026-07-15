@@ -1,6 +1,9 @@
 import { mount } from "svelte";
 import App from "./App.svelte";
+import { initializeTheme } from "$lib/theme";
 import "./styles/global.css";
+
+initializeTheme();
 
 async function bootstrap() {
   if (import.meta.env.MODE === "scenarios") {

@@ -9,6 +9,7 @@
   import { commands, unwrap, type TerminalStreamEvent } from "$lib/api";
   import { isMac } from "$lib/platform";
   import { vault } from "$lib/stores/vault.svelte";
+  import { syncTerminalTheme, terminalThemeOptions } from "./terminal/terminal-theme";
   import TerminalPasteButton from "./TerminalPasteButton.svelte";
   import TerminalPasteConfirm from "./TerminalPasteConfirm.svelte";
 
@@ -96,12 +97,7 @@
       cursorBlink: true,
       macOptionIsMeta: true,
       allowProposedApi: true,
-      theme: {
-        background: "#0d1117",
-        foreground: "#e6edf3",
-        cursor: "#3fb950",
-        selectionBackground: "rgba(63, 185, 80, 0.3)",
-      },
+      theme: terminalThemeOptions(),
     });
     fit = new FitAddon();
     search = new SearchAddon();
@@ -110,6 +106,7 @@
     term.loadAddon(new WebLinksAddon());
     term.open(container);
     fit.fit();
+    const unsubscribeTheme = syncTerminalTheme(term);
 
     // SPEC §5.5: terminal copy, paste confirmation, and search shortcuts.
     if (vault.data?.settings.terminal.copy_on_select) {
@@ -187,6 +184,7 @@
     return () => {
       disposed = true;
       observer.disconnect();
+      unsubscribeTheme();
       container.removeEventListener("paste", onPaste, true);
       if (termId) {
         void unwrap(commands.termClose(termId)).catch(() => {});

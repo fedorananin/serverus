@@ -163,6 +163,10 @@ export type ApiError = {
 	host_key: HostKeyPrompt | null,
 };
 
+export type AppearanceSettings = {
+	theme: ThemePreference,
+};
+
 export type AuthMethod = "password" | "key" | "agent";
 
 export type Badge = {
@@ -397,6 +401,8 @@ export type SessionStateEvent = {
 };
 
 export type Settings = {
+	/**  Missing in vaults written before theme selection was introduced. */
+	appearance?: AppearanceSettings,
 	security: SecuritySettings,
 	transfers: TransferSettings,
 	editor: EditorSettings,
@@ -422,6 +428,8 @@ export type TerminalSettings = {
 };
 
 export type TerminalStreamEvent = { kind: "data"; data: string } | { kind: "exit" };
+
+export type ThemePreference = "system" | "light" | "dark";
 
 export type TransferKind = "upload" | "download";
 

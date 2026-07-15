@@ -524,13 +524,16 @@ git tag v1.1.2 && git push origin v1.1.2
 
 Review the draft on the Releases page, then publish. No local builds needed.
 
+Appearance can follow the operating system automatically or be pinned to the
+GitHub Light-inspired light palette or the original dark palette. Theme changes
+apply immediately to the app chrome, dialogs, file panes, and live terminals.
+
 ---
 
 ## Roadmap (post‑v1)
 
 Deliberately out of scope for v1, to keep it from sprawling:
 
-- Light theme (the CSS is already variable‑driven and ready for it)
 - Server‑to‑server transfers, two‑way directory sync, diff
 - Remote / dynamic (SOCKS) forwarding
 - Import from `~/.ssh/config`, electerm, Cyberduck

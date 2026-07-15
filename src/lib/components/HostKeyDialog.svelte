@@ -46,7 +46,7 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: var(--overlay-strong);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -63,7 +63,7 @@
 
   .dialog.changed {
     border-color: var(--danger);
-    box-shadow: 0 0 0 1px var(--danger), 0 12px 40px rgba(229, 72, 77, 0.25);
+    box-shadow: 0 0 0 1px var(--danger), var(--shadow-danger);
   }
 
   h2 {

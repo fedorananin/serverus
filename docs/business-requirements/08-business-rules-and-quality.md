@@ -58,6 +58,7 @@
 | NFR-UX-002 | Protocol differences must be exposed only when they change a real operator decision, such as S3 ACL versus Unix permissions. |
 | NFR-UX-003 | Native pickers, system editor integration, clipboard actions, and file-manager drag-and-drop must be used where they reduce manual path entry. |
 | NFR-UX-004 | Platform shortcuts must use Command conventions on macOS and Control conventions elsewhere. |
+| NFR-UX-005 | System appearance must follow operating-system theme changes without restart or transition animation. Light and dark palettes must keep controls, terminal content, and saved badge colors discernible. |
 
 ## Compatibility and verification
 

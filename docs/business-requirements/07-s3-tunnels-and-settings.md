@@ -42,3 +42,4 @@
 | FR-SET-007 | Known-host settings must expose saved host records and an individual Forget action. |
 | FR-SET-008 | About must show the application version, MIT license status, and a GitHub repository action that opens externally. |
 | FR-SET-009 | Ordinary preference edits must be committed through Save and discarded through Cancel. Immediate vault-management and known-host actions may report their own result independently. |
+| FR-SET-010 | Appearance must offer System, Light, and Dark choices. A choice must preview immediately; Save persists it, while Cancel restores the saved preference. |

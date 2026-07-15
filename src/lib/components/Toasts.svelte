@@ -45,7 +45,7 @@
     border-radius: var(--radius);
     padding: 7px 14px;
     font-size: 12px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--shadow-float);
     animation: slide-in 0.15s ease-out;
   }
 

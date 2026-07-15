@@ -1,0 +1,149 @@
+.form.settings-dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-dialog-form fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  /* Fieldsets refuse to shrink below their content by default
+     (min-inline-size: min-content) — a long vault path would force
+     a horizontal scrollbar on the whole dialog. */
+  min-width: 0;
+}
+
+.settings-dialog-form legend {
+  font-size: 11px;
+  color: var(--text-1);
+  padding: 0 4px;
+}
+
+.settings-dialog-form .row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+}
+
+.settings-dialog-form > fieldset > label,
+.settings-dialog-form > fieldset > .row > label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.settings-dialog-form > fieldset > label > span,
+.settings-dialog-form > fieldset > .row > label > span {
+  font-size: 11px;
+  color: var(--text-1);
+}
+
+.settings-dialog-form label.narrow {
+  max-width: 90px;
+}
+
+.settings-dialog-form .checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-dialog-form .checkbox > span {
+  font-size: 13px;
+  color: var(--text-0);
+}
+
+.settings-dialog-form .vault-path {
+  font-size: 11px;
+  color: var(--text-1);
+  /* Long paths wrap instead of scrolling the dialog sideways. */
+  overflow-wrap: anywhere;
+}
+
+.settings-dialog-form .pw-change {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.settings-dialog-form .move-vault {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-dialog-form .move-vault input {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+}
+
+.settings-dialog-form .export {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-dialog-form .export .hint {
+  font-size: 10px;
+  color: var(--text-2);
+}
+
+.settings-dialog-form .known-host {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+
+.settings-dialog-form .small {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.settings-dialog-form .error {
+  color: var(--danger);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.settings-dialog-form .ok {
+  color: var(--accent);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.settings-dialog-form .about {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-dialog-form .about .app-name {
+  font-size: 12px;
+  color: var(--text-0);
+}
+
+.settings-dialog-form .repo-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.settings-dialog-form .repo-link:hover {
+  text-decoration: underline;
+}
+
+.settings-dialog-form .about-note {
+  font-size: 10px;
+  color: var(--text-2);
+}

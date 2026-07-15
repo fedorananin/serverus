@@ -18,7 +18,7 @@
     border-radius: var(--radius);
     padding: 3px 10px;
     font-size: 11px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+    box-shadow: var(--shadow-drag);
     max-width: 240px;
     overflow: hidden;
     text-overflow: ellipsis;

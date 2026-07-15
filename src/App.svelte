@@ -8,7 +8,8 @@
     wireAccessRevocation,
     wireContextRetirement,
   } from "$lib/app/model.svelte";
-  import { commands, unwrap } from "$lib/api";
+  import { commands, unwrap, type ThemePreference } from "$lib/api";
+  import { setThemePreference } from "$lib/theme";
   import UnlockScreen from "./routes/UnlockScreen.svelte";
   import MainScreen from "./routes/MainScreen.svelte";
 
@@ -16,6 +17,8 @@
   provideAppModel(model);
   let nextRemoteEditNoticeId = 1;
   let remoteEditNotices = $state<Array<{ id: number; text: string; error: boolean }>>([]);
+  let themedAccessGeneration = -1;
+  let lastSavedTheme: ThemePreference | null = null;
 
   function showRemoteEditNotice(text: string, error: boolean) {
     const notice = { id: nextRemoteEditNoticeId++, text, error };
@@ -28,6 +31,16 @@
 
   $effect(() => {
     void vault.init();
+  });
+
+  $effect(() => {
+    const savedTheme = vault.data?.settings.appearance?.theme;
+    if (!savedTheme) return;
+    const accessGeneration = vault.accessGeneration;
+    if (accessGeneration === themedAccessGeneration && savedTheme === lastSavedTheme) return;
+    themedAccessGeneration = accessGeneration;
+    lastSavedTheme = savedTheme;
+    setThemePreference(savedTheme);
   });
 
   $effect(() => {
@@ -99,7 +112,7 @@
     background: var(--bg-2);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--shadow-float);
     font-size: 12px;
   }
   .remote-edit-notice.error { border-color: var(--danger); }

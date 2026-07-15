@@ -87,6 +87,10 @@ Serverus export, which contains a few UI-only flags, imports cleanly).
 }
 ```
 
+The optional appearance block uses
+`"appearance": { "theme": "system" | "light" | "dark" }`. Older vaults and
+imports without this block default to `system`.
+
 The smallest valid file is one connection:
 
 ```json

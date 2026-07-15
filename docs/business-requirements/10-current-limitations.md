@@ -61,6 +61,4 @@ features that a connection manager might otherwise imply.
   conversion files, but does not directly parse Electerm, Cyberduck, or
   `~/.ssh/config` formats.
 - The UI is English-only.
-- The application currently provides a dark visual theme rather than a theme
-  selection system.
 - There is no built-in automatic updater in the documented v1.1.0 behavior.

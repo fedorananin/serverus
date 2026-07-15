@@ -1,6 +1,20 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemePreference {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
+pub struct AppearanceSettings {
+    pub theme: ThemePreference,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct SecuritySettings {
     /// 0 = never.
@@ -137,6 +151,9 @@ impl Default for PanelSettings {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
 pub struct Settings {
+    /// Missing in vaults written before theme selection was introduced.
+    #[serde(default)]
+    pub appearance: AppearanceSettings,
     pub security: SecuritySettings,
     pub transfers: TransferSettings,
     pub editor: EditorSettings,

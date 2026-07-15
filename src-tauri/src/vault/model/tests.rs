@@ -11,6 +11,16 @@ fn sidebar_width_defaults_when_absent() {
 }
 
 #[test]
+fn appearance_defaults_to_system_for_older_vaults() {
+    let mut value = serde_json::to_value(Settings::default()).unwrap();
+    value.as_object_mut().unwrap().remove("appearance");
+
+    let settings: Settings = serde_json::from_value(value).unwrap();
+
+    assert_eq!(settings.appearance.theme, ThemePreference::System);
+}
+
+#[test]
 fn folders_from_older_vaults_are_expanded() {
     // Vaults written before folders remembered their disclosure state.
     let node: TreeNode =
