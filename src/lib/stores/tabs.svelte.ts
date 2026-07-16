@@ -168,6 +168,16 @@ class TabsStore {
     if (this.tabs.some((t) => t.id === id)) this.activeId = id;
   }
 
+  /** Move a tab to a new position in the strip (drag reorder / ⌘⇧←→). */
+  move(id: string, toIndex: number) {
+    const from = this.tabs.findIndex((t) => t.id === id);
+    if (from === -1) return;
+    const to = Math.max(0, Math.min(toIndex, this.tabs.length - 1));
+    if (to === from) return;
+    const [tab] = this.tabs.splice(from, 1);
+    this.tabs.splice(to, 0, tab);
+  }
+
   activateIndex(i: number) {
     const tab = this.tabs[i];
     if (tab) this.activeId = tab.id;

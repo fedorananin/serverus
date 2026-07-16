@@ -39,6 +39,58 @@
   function connectionFor(connectionId: string) {
     return vault.data?.connections[connectionId] ?? null;
   }
+
+  // Pointer-based tab reorder — HTML5 DnD does not work inside the Tauri
+  // webview (same reason as dnd.svelte.ts). A drag starts only after the
+  // pointer moves past a threshold, so plain clicks still just activate.
+  const DRAG_THRESHOLD = 5;
+  let draggingId = $state<string | null>(null);
+  let pressed: { id: string; x: number; y: number } | null = null;
+
+  function onTabPointerDown(event: PointerEvent, id: string) {
+    if (event.button !== 0) return;
+    if (event.target instanceof Element && event.target.closest(".tab-close")) return;
+    pressed = { id, x: event.clientX, y: event.clientY };
+    window.addEventListener("pointermove", onDragMove);
+    window.addEventListener("pointerup", onDragEnd);
+  }
+
+  function onDragMove(event: PointerEvent) {
+    if (!pressed) return;
+    if (!draggingId) {
+      const dist = Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y);
+      if (dist < DRAG_THRESHOLD) return;
+      draggingId = pressed.id;
+      tabs.activate(pressed.id);
+    }
+    autoscroll(event.clientX);
+    // Insertion index = how many other tabs have their midpoint left of the pointer.
+    const others = [...(tabStrip?.querySelectorAll<HTMLElement>("[data-tab-id]") ?? [])].filter(
+      (el) => el.dataset.tabId !== draggingId,
+    );
+    let index = 0;
+    for (const el of others) {
+      const rect = el.getBoundingClientRect();
+      if (event.clientX > rect.left + rect.width / 2) index += 1;
+    }
+    tabs.move(draggingId, index);
+  }
+
+  /** Nudge the strip while dragging near its edges so far-away slots are reachable. */
+  function autoscroll(pointerX: number) {
+    const element = tabStrip;
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    if (pointerX < rect.left + 24) element.scrollLeft -= 12;
+    else if (pointerX > rect.right - 24) element.scrollLeft += 12;
+  }
+
+  function onDragEnd() {
+    pressed = null;
+    draggingId = null;
+    window.removeEventListener("pointermove", onDragMove);
+    window.removeEventListener("pointerup", onDragEnd);
+  }
 </script>
 
 <svelte:window onresize={updateFades} />
@@ -58,11 +110,13 @@
         <div
           class="tab"
           class:active={tab.id === tabs.activeId}
+          class:dragging={tab.id === draggingId}
           data-tab-id={tab.id}
           role="tab"
           tabindex="-1"
           aria-selected={tab.id === tabs.activeId}
           title={connection?.name ?? undefined}
+          onpointerdown={(event) => onTabPointerDown(event, tab.id)}
           onclick={() => tabs.activate(tab.id)}
           onauxclick={(event) => event.button === 1 && tabs.close(tab.id)}
           onkeydown={(event) => event.key === "Enter" && tabs.activate(tab.id)}
@@ -111,6 +165,8 @@
     overflow-x: auto;
     scrollbar-width: none;
     outline: none;
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   .tabstrip::-webkit-scrollbar {
@@ -166,6 +222,10 @@
   .tab.active {
     background: var(--bg-0);
     border-color: var(--border);
+  }
+
+  .tab.dragging {
+    opacity: 0.7;
   }
 
   .tab-name {

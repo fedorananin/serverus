@@ -19,6 +19,7 @@ const tabsMock = vi.hoisted(() => ({
   close: vi.fn(),
   open: vi.fn(),
   activateIndex: vi.fn(),
+  move: vi.fn(),
 }));
 
 const modelMock = vi.hoisted(() => ({
@@ -55,6 +56,7 @@ describe("MainScreen lock boundary", () => {
     tabsMock.close.mockReset();
     tabsMock.open.mockReset();
     tabsMock.activateIndex.mockReset();
+    tabsMock.move.mockReset();
     modelMock.transfers.init.mockReset();
     modelMock.api.vault.touchActivity.mockClear();
   });
@@ -87,5 +89,29 @@ describe("MainScreen lock boundary", () => {
 
     expect(tabsMock.close).toHaveBeenCalledWith("tab-a");
     expect(modelMock.api.vault.touchActivity).toHaveBeenCalledOnce();
+  });
+
+  it("moves the active tab with mod+shift+arrow", async () => {
+    vaultMock.screen = "main";
+    render(MainScreen);
+
+    await fireEvent.keyDown(window, { key: "ArrowRight", ctrlKey: true, shiftKey: true });
+    expect(tabsMock.move).toHaveBeenCalledWith("tab-a", 1);
+
+    await fireEvent.keyDown(window, { key: "ArrowLeft", ctrlKey: true, shiftKey: true });
+    expect(tabsMock.move).toHaveBeenCalledWith("tab-a", -1);
+  });
+
+  it("does not hijack mod+shift+arrow inside a text field", async () => {
+    vaultMock.screen = "main";
+    render(MainScreen);
+
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+    await fireEvent.keyDown(input, { key: "ArrowRight", ctrlKey: true, shiftKey: true });
+
+    expect(tabsMock.move).not.toHaveBeenCalled();
+    input.remove();
   });
 });

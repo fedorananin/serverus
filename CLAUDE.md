@@ -128,7 +128,11 @@ drag-resizable (200–380 px, default 230, double-click the edge to reset) —
 the width lives in `PanelSettings::sidebar_width`, clamped both in the drag
 handler and in `Settings::clamp` on write; folders persist their disclosure
 state in `TreeNode::Folder::collapsed` (`serde(default)` = expanded, so old
-vaults and imports open as before). Also v1.1.0: cross-platform
+vaults and imports open as before). v1.2.2: session tabs are reorderable —
+pointer-drag in `SessionTabBar` (live reorder by tab midpoints, edge
+autoscroll) plus `⌘⇧←/→`; the order is `tabs.tabs` array order only (nothing
+persisted, no backend), and the hotkey skips text fields except xterm's
+helper textarea. Also v1.1.0: cross-platform
 support — Windows Hello quick unlock (`quick_unlock.rs::windows_hello`,
 KeePassXC scheme: Hello-gated deterministic RSA signature → HKDF → AES-GCM
 wrapped DEK blob in the config dir), cfg-gated unix permissions / openers /

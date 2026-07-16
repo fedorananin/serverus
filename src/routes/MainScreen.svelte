@@ -20,6 +20,17 @@
     if (vault.screen === "main") void transfers.init();
   });
 
+  /** True when the key lands in a text field where ⌘⇧←/→ means "select to
+   *  line edge" — but not xterm's hidden helper textarea, which is where the
+   *  event target sits whenever a terminal has focus. */
+  function isTextFieldTarget(event: KeyboardEvent) {
+    const target = event.target;
+    return (
+      (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) &&
+      !target.classList.contains("xterm-helper-textarea")
+    );
+  }
+
   function handleKeydown(event: KeyboardEvent) {
     if (vault.screen !== "main") return;
     if (!isMod(event)) return;
@@ -32,6 +43,15 @@
     } else if (event.key >= "1" && event.key <= "9") {
       event.preventDefault();
       tabs.activateIndex(Number(event.key) - 1);
+    } else if (
+      event.shiftKey &&
+      (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
+      tabs.activeId &&
+      !isTextFieldTarget(event)
+    ) {
+      event.preventDefault();
+      const index = tabs.tabs.findIndex((t) => t.id === tabs.activeId);
+      tabs.move(tabs.activeId, index + (event.key === "ArrowLeft" ? -1 : 1));
     } else if (event.key === ",") {
       event.preventDefault();
       showSettings = true;
