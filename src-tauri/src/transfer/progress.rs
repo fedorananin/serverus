@@ -44,13 +44,13 @@ impl TransferManager {
                         item.speed_bps.store(speed, Ordering::Relaxed);
                     }
                 }
-                let active = if let Some((context_id, items, summary)) = manager.progress_snapshot()
-                {
-                    let active = summary.queued + summary.running;
+                let active = if let Some((context_id, snapshot)) = manager.progress_snapshot() {
+                    let active = snapshot.summary.queued + snapshot.summary.running;
                     app.emit(TransferProgressEvent {
                         runtime_context_id: context_id.get().to_string(),
-                        items,
-                        summary,
+                        items: snapshot.items,
+                        summary: snapshot.summary,
+                        session_summaries: snapshot.session_summaries,
                     });
                     active
                 } else {
@@ -78,7 +78,7 @@ impl TransferManager {
         self.emitter_running.store(false, Ordering::SeqCst);
         let active = self
             .progress_snapshot()
-            .is_some_and(|(_, _, summary)| summary.queued + summary.running > 0);
+            .is_some_and(|(_, snapshot)| snapshot.summary.queued + snapshot.summary.running > 0);
         active && !self.emitter_running.swap(true, Ordering::SeqCst)
     }
 

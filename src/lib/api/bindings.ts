@@ -95,16 +95,16 @@ export const commands = {
 	known_hosts: { [key in string]: string },
 	settings: Settings,
 } | null, ApiError>(__TAURI_INVOKE("s3_set_upload_acl", { sessionId, mode, persist })),
-	transferUpload: (sessionId: string, localPath: string, remoteDir: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_upload", { sessionId, localPath, remoteDir })),
-	transferDownload: (sessionId: string, remotePath: string, localDir: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_download", { sessionId, remotePath, localDir })),
+	transferUpload: (sessionId: string, localPaths: string[], remoteDir: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_upload", { sessionId, localPaths, remoteDir })),
+	transferDownload: (sessionId: string, remotePaths: string[], localDir: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_download", { sessionId, remotePaths, localDir })),
 	transferList: () => typedError<TransferListDto, ApiError>(__TAURI_INVOKE("transfer_list")),
 	transferPause: (id: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_pause", { id })),
 	transferResume: (id: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_resume", { id })),
 	transferCancel: (id: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_cancel", { id })),
-	transferPauseAll: (runtimeContextId: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_pause_all", { runtimeContextId })),
-	transferResumeAll: (runtimeContextId: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_resume_all", { runtimeContextId })),
-	transferCancelAll: (runtimeContextId: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_cancel_all", { runtimeContextId })),
-	transferClearFinished: (runtimeContextId: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_clear_finished", { runtimeContextId })),
+	transferPauseAll: (runtimeContextId: string, sessionId: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_pause_all", { runtimeContextId, sessionId })),
+	transferResumeAll: (runtimeContextId: string, sessionId: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_resume_all", { runtimeContextId, sessionId })),
+	transferCancelAll: (runtimeContextId: string, sessionId: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_cancel_all", { runtimeContextId, sessionId })),
+	transferClearFinished: (runtimeContextId: string, sessionId: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_clear_finished", { runtimeContextId, sessionId })),
 	transferResolve: (sessionId: string, id: string, action: ConflictAction, applyToAll: boolean) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_resolve", { sessionId, id, action, applyToAll })),
 	transferRetry: (id: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_retry", { id })),
 	/**
@@ -437,6 +437,8 @@ export type TransferListDto = {
 	runtime_context_id: string,
 	items: TransferSnapshot[],
 	summary: TransferSummary,
+	/**  Exact per-session counts — the transfer panel is rendered per tab. */
+	session_summaries: { [key in string]: TransferSummary },
 };
 
 /**  Periodic transfer queue snapshot (~4 Hz while transfers are active). */
@@ -444,6 +446,8 @@ export type TransferProgressEvent = {
 	runtime_context_id: string,
 	items: TransferSnapshot[],
 	summary: TransferSummary,
+	/**  Exact per-session counts — the transfer panel is rendered per tab. */
+	session_summaries: { [key in string]: TransferSummary },
 };
 
 export type TransferSettings = {
@@ -531,6 +535,12 @@ export type VaultInfo = {
 	 *  ("Touch ID" / "Windows Hello").
 	 */
 	quick_unlock_method: string,
+	/**
+	 *  True only in `scenario-tests` builds. The lock screen shows a typed
+	 *  vault-path field then — WebDriver cannot drive the native file
+	 *  pickers — and hides it from real users otherwise.
+	 */
+	scenario_build: boolean,
 };
 
 /**  The vault was locked (auto-lock, sleep, or explicit). */

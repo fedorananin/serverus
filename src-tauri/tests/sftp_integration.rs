@@ -28,3 +28,8 @@ async fn recursive_roundtrip_through_queue() {
 async fn conflict_policies() {
     conflicts::conflict_policies().await;
 }
+
+#[tokio::test]
+async fn conflict_apply_to_all_spans_selection() {
+    conflicts::apply_to_all_spans_selection().await;
+}

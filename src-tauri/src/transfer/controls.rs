@@ -22,21 +22,27 @@ impl TransferManager {
         }
     }
 
-    pub fn cancel_all(&self, context_id: RuntimeContextId) -> bool {
-        self.apply_to_context(context_id, DomainTransferEvent::CancelRequested)
+    pub fn cancel_all(&self, context_id: RuntimeContextId, session_id: &str) -> bool {
+        self.apply_to_session(context_id, session_id, DomainTransferEvent::CancelRequested)
     }
 
-    pub fn pause_all(&self, context_id: RuntimeContextId) -> bool {
-        self.apply_to_context(context_id, DomainTransferEvent::PauseRequested)
+    pub fn pause_all(&self, context_id: RuntimeContextId, session_id: &str) -> bool {
+        self.apply_to_session(context_id, session_id, DomainTransferEvent::PauseRequested)
     }
 
-    pub fn resume_all(&self, context_id: RuntimeContextId) -> bool {
-        self.apply_to_context(context_id, DomainTransferEvent::ResumeRequested)
+    pub fn resume_all(&self, context_id: RuntimeContextId, session_id: &str) -> bool {
+        self.apply_to_session(context_id, session_id, DomainTransferEvent::ResumeRequested)
     }
 
-    fn apply_to_context(&self, context_id: RuntimeContextId, event: DomainTransferEvent) -> bool {
+    /// Bulk actions come from a per-tab panel and must not touch other tabs.
+    fn apply_to_session(
+        &self,
+        context_id: RuntimeContextId,
+        session_id: &str,
+        event: DomainTransferEvent,
+    ) -> bool {
         self.mutate_items_for_context(context_id, |items| {
-            for item in items {
+            for item in items.iter().filter(|item| item.session_id == session_id) {
                 let _ = item.apply_and_dispatch(event, None, None);
             }
         })

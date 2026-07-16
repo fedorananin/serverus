@@ -121,19 +121,24 @@
     </form>
 
     <div class="path mono" title={vault.info?.path}>{vault.info?.path}</div>
-    <form class="vault-path-form" onsubmit={useVaultPath}>
-      <input
-        class="vault-path-input mono"
-        type="text"
-        aria-label="Vault path"
-        placeholder="/path/to/main.serverus"
-        bind:value={vaultPath}
-        disabled={vault.busy}
-      />
-      <button type="submit" class="subtle path-submit" disabled={vault.busy || !vaultPath.trim()}>
-        Use path
-      </button>
-    </form>
+    {#if vault.info?.scenario_build}
+      <!-- e2e-only escape hatch: WebDriver cannot drive the native pickers
+           behind "Open another vault… / New vault…", so scenario builds keep
+           a typed path field. Hidden in real builds — the pickers cover it. -->
+      <form class="vault-path-form" onsubmit={useVaultPath}>
+        <input
+          class="vault-path-input mono"
+          type="text"
+          aria-label="Vault path"
+          placeholder="/path/to/main.serverus"
+          bind:value={vaultPath}
+          disabled={vault.busy}
+        />
+        <button type="submit" class="subtle path-submit" disabled={vault.busy || !vaultPath.trim()}>
+          Use path
+        </button>
+      </form>
+    {/if}
     <div class="vault-actions">
       <button type="button" class="subtle" disabled={vault.busy} onclick={() => void openOtherVault()}>
         Open another vault…

@@ -102,8 +102,11 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
   `FitAddon.fit()` against 0×0.
 - **`russh-sftp`: `FileAttributes::default()` is NOT empty** (carries uid/gid 0
   → SETSTAT chowns to root). Build from `FileAttributes::empty()` for chmod/mtime.
-- Transfer queue + history are **per-connection**: cleared on tab
-  close/disconnect (`TransferManager::clear_session`) and on app exit.
+- Transfer queue + history are **per-session, end to end**: the panel lives in
+  each tab's Files view and shows only that session's transfers (per-session
+  summaries + bulk actions scoped by `session_id`); cleared on tab
+  close/disconnect (`TransferManager::clear_session`) and on app exit. There is
+  no global transfer panel.
 - `Connection.disable_terminal` = SFTP-only SSH servers (no shell); the UI hides
   the terminal view and the backend never opens a shell channel.
 

@@ -73,7 +73,7 @@ async fn clear_all_drains_every_registry_before_signalling_active_work() {
 
     manager.clear_all().await;
 
-    assert!(manager.snapshot().0.is_empty());
+    assert!(manager.snapshot().items.is_empty());
     assert_eq!(*receiver.borrow(), Control::Cancel);
     assert!(manager.queues.lock().unwrap().is_empty());
     assert!(manager.activity.state.lock().unwrap().tasks.is_empty());

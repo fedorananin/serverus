@@ -22,7 +22,7 @@ function emptySummary(): TransferSummary {
 export class TransfersStore {
   items = $state<TransferSnapshot[]>([]);
   summary = $state<TransferSummary>(emptySummary());
-  collapsed = $state(true);
+  sessionSummaries = $state<Record<string, TransferSummary>>({});
   private subscriptionInitialization: Promise<void> | null = null;
   private contextInitialization: { epoch: number; promise: Promise<void> } | null = null;
   private contextEpoch = 0;
@@ -43,6 +43,15 @@ export class TransfersStore {
 
   get conflicted(): TransferSnapshot | null {
     return this.items.find((i) => i.state === "conflict") ?? null;
+  }
+
+  /** The transfer panel is per tab: only that session's items are shown. */
+  itemsFor(sessionId: string): TransferSnapshot[] {
+    return this.items.filter((i) => i.session_id === sessionId);
+  }
+
+  summaryFor(sessionId: string): TransferSummary {
+    return this.sessionSummaries[sessionId] ?? emptySummary();
   }
 
   init(): Promise<void> {
@@ -74,6 +83,7 @@ export class TransfersStore {
     this.activeContextId = snapshot.runtime_context_id;
     this.items = snapshot.items;
     this.summary = snapshot.summary;
+    this.sessionSummaries = snapshot.session_summaries;
     return true;
   }
 
@@ -86,9 +96,8 @@ export class TransfersStore {
   }
 
   private applyProgress(snapshot: TransferListDto): boolean {
-    if (!this.applySnapshot(snapshot)) return false;
-    if (snapshot.summary.queued + snapshot.summary.running > 0) this.collapsed = false;
-    return true;
+    // Auto-expansion lives in the per-tab panel; progress only updates data.
+    return this.applySnapshot(snapshot);
   }
 
   async refresh() {
@@ -122,33 +131,36 @@ export class TransfersStore {
     this.activeContextId = null;
     this.items = [];
     this.summary = emptySummary();
-    this.collapsed = true;
+    this.sessionSummaries = {};
   }
 
-  upload(sessionId: string, localPath: string, remoteDir: string): Promise<void> {
-    return this.api.transfers.upload(sessionId, localPath, remoteDir);
+  upload(sessionId: string, localPaths: string[], remoteDir: string): Promise<void> {
+    return this.api.transfers.upload(sessionId, localPaths, remoteDir);
   }
 
-  download(sessionId: string, remotePath: string, localDir: string): Promise<void> {
-    return this.api.transfers.download(sessionId, remotePath, localDir);
+  download(sessionId: string, remotePaths: string[], localDir: string): Promise<void> {
+    return this.api.transfers.download(sessionId, remotePaths, localDir);
   }
 
   pause = (id: string) => void this.api.transfers.pause(id);
   retry = (id: string) => void this.api.transfers.retry(id);
   resume = (id: string) => void this.api.transfers.resume(id);
   cancel = (id: string) => void this.api.transfers.cancel(id);
-  pauseAll = () => this.applyToActiveContext((id) => this.api.transfers.pauseAll(id));
-  resumeAll = () => this.applyToActiveContext((id) => this.api.transfers.resumeAll(id));
-  cancelAll = () => this.applyToActiveContext((id) => this.api.transfers.cancelAll(id));
+  pauseAll = (sessionId: string) =>
+    this.applyToActiveContext((id) => this.api.transfers.pauseAll(id, sessionId));
+  resumeAll = (sessionId: string) =>
+    this.applyToActiveContext((id) => this.api.transfers.resumeAll(id, sessionId));
+  cancelAll = (sessionId: string) =>
+    this.applyToActiveContext((id) => this.api.transfers.cancelAll(id, sessionId));
 
   private applyToActiveContext(action: (contextId: string) => Promise<void>): Promise<void> {
     return this.activeContextId === null ? Promise.resolve() : action(this.activeContextId);
   }
 
-  async clearFinished() {
+  async clearFinished(sessionId: string) {
     const contextId = this.activeContextId;
     if (contextId === null) return;
-    await this.api.transfers.clearFinished(contextId);
+    await this.api.transfers.clearFinished(contextId, sessionId);
     await this.refresh();
   }
 

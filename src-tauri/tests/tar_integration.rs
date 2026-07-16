@@ -50,13 +50,16 @@ fn settings() -> TransferSettings {
 
 async fn wait_for_drain(manager: &Arc<TransferManager>) {
     for _ in 0..600 {
-        let (_, summary) = manager.snapshot();
+        let summary = manager.snapshot().summary;
         if summary.queued == 0 && summary.running == 0 {
             return;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    let (items, summary) = manager.snapshot();
+    let (items, summary) = {
+        let s = manager.snapshot();
+        (s.items, s.summary)
+    };
     panic!("queue did not drain: {summary:?}\n{items:#?}");
 }
 
@@ -118,7 +121,7 @@ async fn tar_roundtrip_many_small_files() {
         .unwrap();
     wait_for_drain(&manager).await;
     {
-        let (items, _) = manager.snapshot();
+        let items = manager.snapshot().items;
         assert_eq!(items.len(), 1, "tar upload must be a single queue item");
         assert!(items[0].accelerated);
         assert!(
@@ -126,7 +129,7 @@ async fn tar_roundtrip_many_small_files() {
             "{:#?}",
             items[0]
         );
-        assert!(manager.clear_finished(context_id));
+        assert!(manager.clear_finished(context_id, "s"));
     }
 
     // Spot-check on the remote side.
@@ -155,7 +158,7 @@ async fn tar_roundtrip_many_small_files() {
         .unwrap();
     wait_for_drain(&manager).await;
     {
-        let (items, _) = manager.snapshot();
+        let items = manager.snapshot().items;
         assert_eq!(items.len(), 1);
         assert!(items[0].accelerated);
         assert!(
@@ -173,4 +176,59 @@ async fn tar_roundtrip_many_small_files() {
             assert_eq!(original, copied, "mismatch at {rel}");
         }
     }
+}
+
+/// The Compare Folders feature marks a file "same" only when size and mtime
+/// match exactly, so a tar-accelerated upload must land files with the very
+/// second the local listing reports.
+#[tokio::test]
+async fn tar_upload_preserves_exact_mtime() {
+    let sshd = TestSshd::spawn();
+    let ssh = connect(&sshd).await;
+    let fs_remote: Arc<dyn RemoteFs> = Arc::new(SftpFs::open(&ssh).await.unwrap());
+
+    let src_root = tempfile::tempdir().unwrap();
+    let tree = src_root.path().join("stamped");
+    fs::create_dir_all(&tree).unwrap();
+    let file = tree.join("old.txt");
+    fs::write(&file, b"payload").unwrap();
+    // A timestamp firmly in the past so "extraction time" can't pass by luck.
+    filetime::set_file_mtime(&file, filetime::FileTime::from_unix_time(1_600_000_000, 0)).unwrap();
+
+    let scratch = sshd.dir.path().to_string_lossy().into_owned();
+    let remote_base = join_remote(&scratch, "tar-mtime");
+    fs_remote.mkdir(&remote_base).await.unwrap();
+
+    let manager = Arc::new(TransferManager::default());
+    let context_id = transfer_context::activate(&manager);
+    let sink: Arc<dyn ProgressSink> = Arc::new(NullSink);
+    manager
+        .enqueue_upload_accelerated(
+            context_id,
+            &sink,
+            UploadRequest::new(
+                fs_remote.clone(),
+                "s",
+                tree.to_str().unwrap(),
+                &remote_base,
+                settings(),
+            ),
+            Some(ssh.clone()),
+        )
+        .await
+        .unwrap();
+    wait_for_drain(&manager).await;
+
+    let local_listing = serverus_lib::local_fs::list(tree.to_str().unwrap()).unwrap();
+    let local_entry = local_listing.iter().find(|e| e.name == "old.txt").unwrap();
+    let remote_listing = fs_remote
+        .list(&join_remote(&remote_base, "stamped"))
+        .await
+        .unwrap();
+    let remote_entry = remote_listing.iter().find(|e| e.name == "old.txt").unwrap();
+    assert_eq!(local_entry.size, remote_entry.size);
+    assert_eq!(
+        local_entry.mtime, remote_entry.mtime,
+        "tar upload must preserve the exact mtime the Compare feature checks"
+    );
 }

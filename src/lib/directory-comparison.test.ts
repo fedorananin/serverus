@@ -71,6 +71,19 @@ describe("compareDirectoryEntries", () => {
     ]);
   });
 
+  it("ignores mtime when asked — S3's server-managed LastModified is not comparable", () => {
+    const local = [entry("uploaded.txt", { mtime: 100 }), entry("shrunk.txt", { size: 10 })];
+    const remote = [
+      entry("uploaded.txt", { mtime: 999_999 }),
+      entry("shrunk.txt", { size: 11, mtime: 999_999 }),
+    ];
+
+    const comparison = compareDirectoryEntries(local, remote, { ignoreMtime: true });
+
+    expect(comparison.localStatuses.get("uploaded.txt")).toBe("matching");
+    expect(comparison.localStatuses.get("shrunk.txt")).toBe("different");
+  });
+
   it("does not claim to compare directory contents from directory metadata", () => {
     const comparison = compareDirectoryEntries(
       [entry("assets", { is_dir: true, size: 0, mtime: 100 })],

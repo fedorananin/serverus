@@ -27,7 +27,7 @@ async fn one_attack_shaped_child_name_fails_alone_not_the_tree() {
         .unwrap_or_else(|error| panic!("{name:?} aborted the whole tree: {error}"));
         wait_for_transfer(&manager).await;
 
-        let (items, _) = manager.snapshot();
+        let items = manager.snapshot().items;
         assert_eq!(items.len(), 2, "{name:?}");
         let failed = items
             .iter()
@@ -60,7 +60,7 @@ async fn duplicate_local_names_fail_only_the_duplicate() {
     .unwrap();
     wait_for_transfer(&manager).await;
 
-    let (items, _) = manager.snapshot();
+    let items = manager.snapshot().items;
     assert_eq!(items.len(), 2);
     assert!(items.iter().any(|item| item.state == TransferState::Done));
     let failed = items
@@ -101,7 +101,7 @@ async fn unix_legal_names_download_verbatim() {
     .unwrap();
     wait_for_transfer(&manager).await;
 
-    let (items, _) = manager.snapshot();
+    let items = manager.snapshot().items;
     assert!(
         items.iter().all(|item| item.state == TransferState::Done),
         "some legal name failed: {items:?}"
@@ -162,7 +162,7 @@ async fn download_does_not_follow_an_existing_file_symlink() {
     wait_for_transfer(&manager).await;
 
     assert_eq!(std::fs::read_to_string(outside_file).unwrap(), "keep me");
-    assert_eq!(manager.snapshot().0[0].state, TransferState::Error);
+    assert_eq!(manager.snapshot().items[0].state, TransferState::Error);
 }
 
 #[cfg(unix)]

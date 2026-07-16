@@ -11,7 +11,6 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { needsPasteConfirmation } from "./terminal/paste";
   import { syncTerminalTheme, terminalThemeOptions } from "./terminal/terminal-theme";
-  import TerminalPasteButton from "./TerminalPasteButton.svelte";
   import TerminalPasteConfirm from "./TerminalPasteConfirm.svelte";
 
   interface Props {
@@ -43,7 +42,7 @@
     return out;
   }
 
-  function queuePaste(text: string) {
+  export function queuePaste(text: string) {
     if (!text || !termId) return;
     if (needsPasteConfirmation(text)) pendingPaste = text;
     else term.paste(text);
@@ -66,7 +65,7 @@
     term.focus();
   }
 
-  function openSearch() {
+  export function openSearch() {
     searchOpen = true;
     searchResult = "idle";
     queueMicrotask(() => searchInput?.focus());
@@ -198,7 +197,6 @@
 
 <div class="terminal-wrap">
   {#if !terminalReady}<div class="opening" role="status">Opening terminal…</div>{/if}
-  {#if terminalReady}<TerminalPasteButton onpaste={queuePaste} onfind={openSearch} />{/if}
   {#if searchOpen}
     <div class="find-bar">
       <input

@@ -22,6 +22,8 @@ pub struct TransferProgressEvent {
     pub runtime_context_id: String,
     pub items: Vec<crate::transfer::TransferSnapshot>,
     pub summary: crate::transfer::TransferSummary,
+    /// Exact per-session counts — the transfer panel is rendered per tab.
+    pub session_summaries: std::collections::HashMap<String, crate::transfer::TransferSummary>,
 }
 
 /// A remote-edited file was saved and uploaded back ("Uploaded ✓" toast,

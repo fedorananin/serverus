@@ -12,6 +12,7 @@ function fakeApi(): AppApi {
         runtime_context_id: "context-a",
         items: [],
         summary: { queued: 0, running: 0, done: 0, failed: 0, total_items: 0 },
+        session_summaries: {},
       })),
       upload: vi.fn(async () => {}),
       download: vi.fn(async () => {}),

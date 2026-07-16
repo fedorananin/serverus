@@ -17,6 +17,21 @@ function deferred<T>() {
 }
 
 function snapshot(items: TransferSnapshot[] = []): TransferListDto {
+  const session_summaries: TransferListDto["session_summaries"] = {};
+  for (const item of items) {
+    const summary = (session_summaries[item.session_id] ??= {
+      queued: 0,
+      running: 0,
+      done: 0,
+      failed: 0,
+      total_items: 0,
+    });
+    summary.total_items += 1;
+    if (item.state === "queued") summary.queued += 1;
+    if (item.state === "running") summary.running += 1;
+    if (item.state === "done") summary.done += 1;
+    if (item.state === "error") summary.failed += 1;
+  }
   return {
     runtime_context_id: "context-current",
     items,
@@ -27,6 +42,7 @@ function snapshot(items: TransferSnapshot[] = []): TransferListDto {
       failed: items.filter((item) => item.state === "error").length,
       total_items: items.length,
     },
+    session_summaries,
   };
 }
 
@@ -59,8 +75,8 @@ class FakeAppApi implements AppApi {
     this.current = initial;
     this.transfers = {
       list: vi.fn(async () => this.current),
-      upload: vi.fn(async (_sessionId: string, _localPath: string, _remoteDir: string) => {}),
-      download: vi.fn(async (_sessionId: string, _remotePath: string, _localDir: string) => {}),
+      upload: vi.fn(async (_sessionId: string, _localPaths: string[], _remoteDir: string) => {}),
+      download: vi.fn(async (_sessionId: string, _remotePaths: string[], _localDir: string) => {}),
       pause: vi.fn(async (_id: string) => {}),
       retry: vi.fn(async (_id: string) => {}),
       resume: vi.fn(async (_id: string) => {}),
@@ -138,7 +154,7 @@ describe("TransfersStore", () => {
     expect(store.summary.total_items).toBe(1);
   });
 
-  it("applies progress events and opens the queue for active work", async () => {
+  it("applies progress events and exposes per-session views", async () => {
     const events = new FakeEventSource();
     const store = new TransfersStore(new FakeAppApi(), events);
     await store.init();
@@ -147,7 +163,10 @@ describe("TransfersStore", () => {
 
     expect(store.items.map((item) => item.id)).toEqual(["running"]);
     expect(store.summary.running).toBe(1);
-    expect(store.collapsed).toBe(false);
+    expect(store.itemsFor("session-running").map((item) => item.id)).toEqual(["running"]);
+    expect(store.itemsFor("session-other")).toEqual([]);
+    expect(store.summaryFor("session-running").running).toBe(1);
+    expect(store.summaryFor("session-other").total_items).toBe(0);
   });
 
   it("preserves progress that arrives after the initial list request", async () => {
@@ -165,7 +184,6 @@ describe("TransfersStore", () => {
 
     expect(store.items.map((item) => item.id)).toEqual(["newer-event"]);
     expect(store.summary.running).toBe(1);
-    expect(store.collapsed).toBe(false);
   });
 
   it("clears the cached queue when its runtime context retires", async () => {

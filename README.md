@@ -13,7 +13,7 @@ A native macOS connection manager. Built with Tauri 2, a Rust backend and a Svel
 ![Built with Rust](https://img.shields.io/badge/backend-Rust-orange)
 ![Built with Tauri](https://img.shields.io/badge/shell-Tauri%202-24C8DB)
 ![Frontend Svelte](https://img.shields.io/badge/frontend-Svelte%205-FF3E00)
-![Version](https://img.shields.io/badge/version-1.2.0-brightgreen)
+![Version](https://img.shields.io/badge/version-1.2.1-brightgreen)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
@@ -181,8 +181,10 @@ Plus:
 - Symlinks are shown with an arrow and followed to their target.
 
 ### 📦 Transfer queue & acceleration
-- A single per‑connection queue: file/folder, progress, speed, ETA, and
-  pause / resume / cancel per item and globally.
+- A per‑connection queue: file/folder, progress, speed, ETA, and
+  pause / resume / cancel per item or for the whole tab. The panel lives in
+  each tab's Files view and shows only that tab's transfers — other tabs and
+  terminals stay clean.
 - Up to **N concurrent files per server** (default 5); each server's queue is
   independent.
 - Conflict handling: Overwrite / Skip / Rename with "apply to all", plus a
@@ -530,7 +532,7 @@ that matrix succeeds does it build and upload installers for all three OSes to
 a **draft** GitHub Release (`.github/workflows/release.yml`):
 
 ```bash
-git tag v1.2.0 && git push origin v1.2.0
+git tag v1.2.1 && git push origin v1.2.1
 ```
 
 Review the draft on the Releases page, then publish. No local builds needed.

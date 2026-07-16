@@ -18,6 +18,10 @@ pub struct VaultInfo {
     /// UI label for the platform's quick-unlock mechanism
     /// ("Touch ID" / "Windows Hello").
     pub quick_unlock_method: String,
+    /// True only in `scenario-tests` builds. The lock screen shows a typed
+    /// vault-path field then — WebDriver cannot drive the native file
+    /// pickers — and hides it from real users otherwise.
+    pub scenario_build: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -31,6 +35,8 @@ pub struct TransferListDto {
     pub runtime_context_id: String,
     pub items: Vec<TransferSnapshot>,
     pub summary: TransferSummary,
+    /// Exact per-session counts — the transfer panel is rendered per tab.
+    pub session_summaries: std::collections::HashMap<String, TransferSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]

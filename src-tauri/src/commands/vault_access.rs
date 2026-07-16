@@ -17,6 +17,7 @@ pub async fn vault_get_info(state: State<'_, AppState>) -> ApiResult<VaultInfo> 
             biometry_available: biometry,
             quick_unlock_ready: biometry && quick.has_dek(&mgr.vault_id()),
             quick_unlock_method: quick.method_name().to_string(),
+            scenario_build: cfg!(feature = "scenario-tests"),
         })
     })
     .await

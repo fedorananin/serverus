@@ -49,11 +49,21 @@ pub struct TransferSnapshot {
     pub speed_bps: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Default, Serialize, Type)]
 pub struct TransferSummary {
     pub queued: u32,
     pub running: u32,
     pub done: u32,
     pub failed: u32,
     pub total_items: u32,
+}
+
+/// One coherent view of the whole queue: the (per-session capped) item list,
+/// the global summary, and exact per-session summaries — the transfer panel
+/// is rendered per tab and needs counts scoped to its own session.
+#[derive(Debug, Clone)]
+pub struct TransferQueueSnapshot {
+    pub items: Vec<TransferSnapshot>,
+    pub summary: TransferSummary,
+    pub session_summaries: std::collections::HashMap<String, TransferSummary>,
 }

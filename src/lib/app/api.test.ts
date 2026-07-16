@@ -22,17 +22,17 @@ beforeEach(() => {
 it("delegates upload and download to generated Tauri commands", async () => {
   const api = new TauriAppApi();
 
-  await api.transfers.upload("session-a", "/local/a.txt", "/remote");
-  await api.transfers.download("session-a", "/remote/b.txt", "/local");
+  await api.transfers.upload("session-a", ["/local/a.txt", "/local/b.txt"], "/remote");
+  await api.transfers.download("session-a", ["/remote/b.txt"], "/local");
 
   expect(commandMocks.transferUpload).toHaveBeenCalledWith(
     "session-a",
-    "/local/a.txt",
+    ["/local/a.txt", "/local/b.txt"],
     "/remote",
   );
   expect(commandMocks.transferDownload).toHaveBeenCalledWith(
     "session-a",
-    "/remote/b.txt",
+    ["/remote/b.txt"],
     "/local",
   );
 });

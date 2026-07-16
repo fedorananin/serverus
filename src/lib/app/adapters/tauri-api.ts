@@ -8,11 +8,11 @@ import type {
 export class TauriAppApi implements AppApi {
   readonly transfers: TransfersApi = {
     list: () => unwrap(commands.transferList()),
-    upload: async (sessionId, localPath, remoteDir) => {
-      await unwrap(commands.transferUpload(sessionId, localPath, remoteDir));
+    upload: async (sessionId, localPaths, remoteDir) => {
+      await unwrap(commands.transferUpload(sessionId, localPaths, remoteDir));
     },
-    download: async (sessionId, remotePath, localDir) => {
-      await unwrap(commands.transferDownload(sessionId, remotePath, localDir));
+    download: async (sessionId, remotePaths, localDir) => {
+      await unwrap(commands.transferDownload(sessionId, remotePaths, localDir));
     },
     pause: async (id) => {
       await unwrap(commands.transferPause(id));
@@ -26,17 +26,17 @@ export class TauriAppApi implements AppApi {
     cancel: async (id) => {
       await unwrap(commands.transferCancel(id));
     },
-    pauseAll: async (runtimeContextId) => {
-      await unwrap(commands.transferPauseAll(runtimeContextId));
+    pauseAll: async (runtimeContextId, sessionId) => {
+      await unwrap(commands.transferPauseAll(runtimeContextId, sessionId));
     },
-    resumeAll: async (runtimeContextId) => {
-      await unwrap(commands.transferResumeAll(runtimeContextId));
+    resumeAll: async (runtimeContextId, sessionId) => {
+      await unwrap(commands.transferResumeAll(runtimeContextId, sessionId));
     },
-    cancelAll: async (runtimeContextId) => {
-      await unwrap(commands.transferCancelAll(runtimeContextId));
+    cancelAll: async (runtimeContextId, sessionId) => {
+      await unwrap(commands.transferCancelAll(runtimeContextId, sessionId));
     },
-    clearFinished: async (runtimeContextId) => {
-      await unwrap(commands.transferClearFinished(runtimeContextId));
+    clearFinished: async (runtimeContextId, sessionId) => {
+      await unwrap(commands.transferClearFinished(runtimeContextId, sessionId));
     },
     resolve: async (sessionId, id, action, applyToAll) => {
       await unwrap(commands.transferResolve(sessionId, id, action, applyToAll));

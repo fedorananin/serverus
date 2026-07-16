@@ -6,7 +6,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import UnlockScreen from "./UnlockScreen.svelte";
 
 const vaultMock = vi.hoisted(() => ({
-  info: { exists: true, quick_unlock_ready: false, path: "/current.serverus" },
+  info: {
+    exists: true,
+    quick_unlock_ready: false,
+    path: "/current.serverus",
+    scenario_build: true,
+  },
   busy: false,
   error: null as string | null,
   switchVault: vi.fn(async () => {}),
@@ -24,9 +29,10 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 describe("UnlockScreen vault path", () => {
   beforeEach(() => {
     vaultMock.switchVault.mockClear();
+    vaultMock.info.scenario_build = true;
   });
 
-  it("lets a user select a vault by typing its visible path", async () => {
+  it("lets a scenario build select a vault by typing its visible path", async () => {
     render(UnlockScreen);
 
     await fireEvent.input(screen.getByRole("textbox", { name: "Vault path" }), {
@@ -36,5 +42,17 @@ describe("UnlockScreen vault path", () => {
 
     expect(vaultMock.switchVault).toHaveBeenCalledOnce();
     expect(vaultMock.switchVault).toHaveBeenCalledWith("/tmp/scenario.serverus");
+  });
+
+  it("hides the typed path field outside scenario builds", () => {
+    vaultMock.info.scenario_build = false;
+
+    render(UnlockScreen);
+
+    expect(screen.queryByRole("textbox", { name: "Vault path" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Use path" })).toBeNull();
+    // The native pickers remain the user-facing way to re-point the app.
+    expect(screen.getByRole("button", { name: "Open another vault…" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "New vault…" })).toBeTruthy();
   });
 });

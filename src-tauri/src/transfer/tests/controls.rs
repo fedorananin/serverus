@@ -85,9 +85,9 @@ fn late_bulk_intent_cannot_mutate_a_new_runtime_context() {
     start(&transfer);
     insert(&manager, transfer);
 
-    assert!(!manager.pause_all(old_context));
-    assert_eq!(manager.snapshot().0[0].state, TransferState::Running);
+    assert!(!manager.pause_all(old_context, "new-session"));
+    assert_eq!(manager.snapshot().items[0].state, TransferState::Running);
 
-    assert!(manager.pause_all(new_context));
-    assert_eq!(manager.snapshot().0[0].state, TransferState::Paused);
+    assert!(manager.pause_all(new_context, "new-session"));
+    assert_eq!(manager.snapshot().items[0].state, TransferState::Paused);
 }

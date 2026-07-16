@@ -37,11 +37,11 @@ fn clear_finished_keeps_retry_backoff_observable_and_cancellable() {
     let id = transfer.id.clone();
     insert(&manager, transfer);
 
-    assert!(manager.clear_finished(context));
-    assert_eq!(manager.snapshot().0.len(), 1);
-    assert_eq!(manager.snapshot().0[0].state, TransferState::Error);
+    assert!(manager.clear_finished(context, "session"));
+    assert_eq!(manager.snapshot().items.len(), 1);
+    assert_eq!(manager.snapshot().items[0].state, TransferState::Error);
     manager.cancel(&id);
-    assert_eq!(manager.snapshot().0[0].state, TransferState::Cancelled);
+    assert_eq!(manager.snapshot().items[0].state, TransferState::Cancelled);
 }
 
 #[tokio::test]
@@ -62,5 +62,5 @@ async fn clear_all_interrupts_retry_backoff_without_waiting_for_its_delay() {
         .await
         .expect("backoff is interrupted immediately")
         .expect("pending timer receives cancellation");
-    assert!(manager.snapshot().0.is_empty());
+    assert!(manager.snapshot().items.is_empty());
 }

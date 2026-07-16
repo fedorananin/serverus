@@ -19,10 +19,19 @@ export interface DirectoryComparison {
   summary: DirectoryComparisonSummary;
 }
 
-function entriesMatch(local: RemoteEntry, remote: RemoteEntry): boolean {
+export interface DirectoryComparisonOptions {
+  /** Skip modification-time comparison. Set for backends whose listed mtime
+   *  is server-managed upload time (S3 LastModified) rather than a content
+   *  stamp transfers can preserve — comparing it would mark every uploaded
+   *  file "different" forever. */
+  ignoreMtime?: boolean;
+}
+
+function entriesMatch(local: RemoteEntry, remote: RemoteEntry, ignoreMtime: boolean): boolean {
   if (local.is_dir !== remote.is_dir || local.is_symlink !== remote.is_symlink) return false;
   if (local.is_dir) return true;
   if (local.size !== remote.size) return false;
+  if (ignoreMtime) return true;
   return local.mtime === null || remote.mtime === null || local.mtime === remote.mtime;
 }
 
@@ -35,7 +44,9 @@ function entriesMatch(local: RemoteEntry, remote: RemoteEntry): boolean {
 export function compareDirectoryEntries(
   localEntries: readonly RemoteEntry[],
   remoteEntries: readonly RemoteEntry[],
+  options: DirectoryComparisonOptions = {},
 ): DirectoryComparison {
+  const ignoreMtime = options.ignoreMtime ?? false;
   const localStatuses = new Map<string, DirectoryComparisonStatus>();
   const remoteStatuses = new Map<string, DirectoryComparisonStatus>();
   const remoteByName = new Map(remoteEntries.map((entry) => [entry.name, entry]));
@@ -54,7 +65,7 @@ export function compareDirectoryEntries(
       summary.localOnly += 1;
       continue;
     }
-    const status = entriesMatch(local, remote) ? "matching" : "different";
+    const status = entriesMatch(local, remote, ignoreMtime) ? "matching" : "different";
     localStatuses.set(name, status);
     remoteStatuses.set(name, status);
     summary[status] += 1;

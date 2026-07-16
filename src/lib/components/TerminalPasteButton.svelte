@@ -23,8 +23,8 @@
 </script>
 
 <div class="toolbar">
-  <button aria-label="Open terminal paste dialog" onclick={() => (open = true)}>Paste…</button>
-  <button aria-label="Open terminal find" onclick={onfind}>Find…</button>
+  <button aria-label="Open terminal paste dialog" title="Paste…" onclick={() => (open = true)}>📋</button>
+  <button aria-label="Open terminal find" title="Find…" onclick={onfind}>🔍</button>
 </div>
 
 {#if open}
@@ -42,19 +42,24 @@
 
 <style>
   .toolbar {
-    position: absolute;
-    top: 6px;
-    left: 8px;
-    z-index: 2;
     display: flex;
     gap: 4px;
   }
+  /* Same ghost look as the tab bar's ⚙/🔒, one step smaller and dimmed —
+     secondary actions that shouldn't draw the eye. */
   .toolbar button {
-    padding: 2px 7px;
+    padding: 3px 6px;
     font-size: 11px;
-    opacity: 0.72;
+    line-height: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-1);
+    opacity: 0.55;
   }
-  .toolbar button:hover { opacity: 1; }
+  .toolbar button:hover {
+    color: var(--text-0);
+    opacity: 1;
+  }
   label { display: grid; gap: 6px; }
   textarea { width: 100%; resize: vertical; }
 </style>

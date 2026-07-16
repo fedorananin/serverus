@@ -41,6 +41,7 @@ const vaultInfo = {
   biometry_available: true,
   quick_unlock_ready: false,
   quick_unlock_method: "Touch ID",
+  scenario_build: false,
 };
 
 const oldVault: PublicVault = {

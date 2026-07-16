@@ -24,7 +24,8 @@ mod worker;
 pub mod tar_stream;
 
 pub use contracts::{
-    ConflictAction, TransferKind, TransferSnapshot, TransferState, TransferSummary,
+    ConflictAction, TransferKind, TransferQueueSnapshot, TransferSnapshot, TransferState,
+    TransferSummary,
 };
 pub use manager::TransferManager;
 pub use requests::{DownloadRequest, UploadRequest};

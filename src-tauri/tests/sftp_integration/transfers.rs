@@ -50,7 +50,7 @@ pub(crate) async fn recursive_roundtrip_through_queue() {
         .unwrap();
     wait_for_drain(&manager).await;
     assert_all_done(&manager);
-    assert!(manager.clear_finished(context_id));
+    assert!(manager.clear_finished(context_id, "session-1"));
 
     let remote_tree = join_remote(&remote_base, "tree");
     let listing = fs_remote.list(&remote_tree).await.unwrap();

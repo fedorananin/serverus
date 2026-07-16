@@ -11,6 +11,7 @@
   import { vault } from "$lib/stores/vault.svelte";
   import FilePane from "./FilePane.svelte";
   import DirectoryComparisonBar from "./DirectoryComparisonBar.svelte";
+  import TransferQueue from "./TransferQueue.svelte";
   import UploadAclDialog from "./UploadAclDialog.svelte";
 
   import type { Tab } from "$lib/stores/tabs.svelte";
@@ -38,7 +39,10 @@
   const emptyComparison = compareDirectoryEntries([], []);
   const comparison = $derived.by(() =>
     comparisonActive
-      ? compareDirectoryEntries(local.entries, remote.entries)
+      ? // S3's listed mtime is server-managed upload time and can't be
+        // preserved by transfers — comparing it would flag every uploaded
+        // file as different forever.
+        compareDirectoryEntries(local.entries, remote.entries, { ignoreMtime: isS3 })
       : emptyComparison,
   );
 
@@ -141,10 +145,14 @@
     }
   }
 
-  async function upload(localPath: string) {
+  /** Batch upload with a single upload-ACL prompt in "ask" mode. The whole
+   *  selection goes down in one call so it shares one conflict batch and
+   *  "apply to all remaining conflicts" covers every file. */
+  async function uploadPaths(paths: string[]) {
+    if (paths.length === 0 || !(await ensureUploadAcl(paths.length))) return;
     transferError = null;
     try {
-      await transfers.upload(sessionId, localPath, remote.path);
+      await transfers.upload(sessionId, paths, remote.path);
       // Refresh once the queue settles is handled by the queue panel; do a
       // short delayed refresh for quick small files.
       setTimeout(() => void remote.refresh(), 800);
@@ -153,16 +161,11 @@
     }
   }
 
-  /** Batch upload with a single upload-ACL prompt in "ask" mode. */
-  async function uploadPaths(paths: string[]) {
-    if (paths.length === 0 || !(await ensureUploadAcl(paths.length))) return;
-    for (const p of paths) void upload(p);
-  }
-
-  async function download(remotePath: string) {
+  async function downloadPaths(paths: string[]) {
+    if (paths.length === 0) return;
     transferError = null;
     try {
-      await transfers.download(sessionId, remotePath, local.path);
+      await transfers.download(sessionId, paths, local.path);
       setTimeout(() => void local.refresh(), 800);
     } catch (e) {
       transferError = errorMessage(e);
@@ -174,7 +177,7 @@
   }
 
   function downloadSelection(entries: RemoteEntry[]) {
-    for (const entry of entries) void download(entry.path);
+    void downloadPaths(entries.map((e) => e.path));
   }
 
   // Remote edit (SPEC §5.3): double-click downloads to the edit cache and
@@ -226,6 +229,8 @@
       onuploadmode={(mode) => void setUploadMode(mode)}
     />
   </div>
+  <!-- Per-tab transfer panel: only this session's queue and history. -->
+  <TransferQueue {sessionId} />
 </div>
 
 {#if askUpload}

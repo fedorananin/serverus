@@ -2,6 +2,7 @@
   // Several terminals per connection tab — separate channels of one SSH
   // session (SPEC §5.5).
   import TerminalView from "./TerminalView.svelte";
+  import TerminalPasteButton from "./TerminalPasteButton.svelte";
 
   interface Props {
     sessionId: string;
@@ -12,6 +13,7 @@
   let nextSlot = 1;
   let slots = $state<{ id: number }[]>([{ id: 0 }]);
   let activeSlot = $state(0);
+  let views = $state<Record<number, TerminalView | undefined>>({});
 
   function addTerminal() {
     const id = nextSlot++;
@@ -57,11 +59,19 @@
       </div>
     {/each}
     <button class="add" onclick={addTerminal} title="New terminal" aria-label="New terminal">+</button>
+    {#if slots.length > 0}
+      <div class="strip-actions">
+        <TerminalPasteButton
+          onpaste={(text) => views[activeSlot]?.queuePaste(text)}
+          onfind={() => views[activeSlot]?.openSearch()}
+        />
+      </div>
+    {/if}
   </div>
   <div class="terms">
     {#each slots as slot (slot.id)}
       <div class="term" style:display={slot.id === activeSlot ? "block" : "none"}>
-        <TerminalView {sessionId} onexit={() => {}} />
+        <TerminalView bind:this={views[slot.id]} {sessionId} onexit={() => {}} />
       </div>
     {/each}
     {#if slots.length === 0}
@@ -82,10 +92,16 @@
 
   .strip {
     display: flex;
+    align-items: center;
     gap: 3px;
+    min-height: 28px;
     padding: 4px 8px;
     background: var(--bg-1);
     border-bottom: 1px solid var(--border);
+  }
+
+  .strip-actions {
+    margin-left: auto;
   }
 
   .term-tab {
@@ -108,8 +124,13 @@
   }
 
   .term-select {
-    padding: 2px 4px 2px 9px;
+    padding: 2px 9px;
     font-size: 11px;
+  }
+
+  /* When a close button follows, hand the right-side spacing over to it. */
+  .term-tab:has(.x) .term-select {
+    padding-right: 4px;
   }
 
   .x {

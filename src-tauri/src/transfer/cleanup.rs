@@ -97,16 +97,18 @@ impl TransferManager {
         }
     }
 
-    /// Remove domain-terminal transfers; retry backoff remains observable.
-    pub fn clear_finished(&self, context_id: RuntimeContextId) -> bool {
+    /// Remove one session's domain-terminal transfers; retry backoff remains
+    /// observable. Session-scoped: the panel is per tab.
+    pub fn clear_finished(&self, context_id: RuntimeContextId, session_id: &str) -> bool {
         self.mutate_items_for_context(context_id, |items| {
             items.retain(|item| {
-                !matches!(
-                    item.domain_state_kind(),
-                    DomainTransferStateKind::Completed
-                        | DomainTransferStateKind::Cancelled
-                        | DomainTransferStateKind::Failed
-                )
+                item.session_id != session_id
+                    || !matches!(
+                        item.domain_state_kind(),
+                        DomainTransferStateKind::Completed
+                            | DomainTransferStateKind::Cancelled
+                            | DomainTransferStateKind::Failed
+                    )
             });
         })
     }

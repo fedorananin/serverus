@@ -47,7 +47,7 @@ describe("DirectoryComparisonBar", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       "3 Local Only 2 Different 1 Remote Only 7 Same Metadata",
     );
-    expect(screen.getByText("Current Folders · Metadata Only")).toBeInTheDocument();
+    expect(screen.queryByText("Current Folders · Metadata Only")).not.toBeInTheDocument();
   });
 
   it("exposes a labelled differences-only filter", async () => {

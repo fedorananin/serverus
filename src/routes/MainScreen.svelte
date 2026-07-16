@@ -6,7 +6,6 @@
   import SessionView from "$lib/components/SessionView.svelte";
   import SessionTabBar from "$lib/components/SessionTabBar.svelte";
   import HostKeyDialog from "$lib/components/HostKeyDialog.svelte";
-  import TransferQueue from "$lib/components/TransferQueue.svelte";
   import ConflictDialog from "$lib/components/ConflictDialog.svelte";
   import Toasts from "$lib/components/Toasts.svelte";
   import DragGhost from "$lib/components/DragGhost.svelte";
@@ -83,8 +82,6 @@
           </div>
         {/if}
       </div>
-
-      <TransferQueue />
     </div>
   </div>
 

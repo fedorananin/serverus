@@ -140,13 +140,13 @@ async fn upload_one(
 /// backoff sleeps, so allow plenty of time).
 async fn wait_for_state(manager: &Arc<TransferManager>, state: TransferState) {
     for _ in 0..600 {
-        let (items, _) = manager.snapshot();
+        let items = manager.snapshot().items;
         if items.len() == 1 && items[0].state == state {
             return;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    let (items, _) = manager.snapshot();
+    let items = manager.snapshot().items;
     panic!("item never reached {state:?}: {items:#?}");
 }
 
@@ -184,7 +184,7 @@ async fn persistent_failures_stop_after_the_retry_budget() {
     // sure the run count stayed at 1 initial + 2 automatic retries.
     tokio::time::sleep(Duration::from_secs(5)).await;
     assert_eq!(fs.open_write_calls.load(Ordering::SeqCst), 3);
-    let (items, _) = manager.snapshot();
+    let items = manager.snapshot().items;
     assert_eq!(items[0].state, TransferState::Error);
 
     // A manual retry re-arms the automatic budget: 3 more runs.

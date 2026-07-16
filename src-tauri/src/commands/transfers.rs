@@ -36,7 +36,7 @@ pub async fn transfer_upload(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     session_id: String,
-    local_path: String,
+    local_paths: Vec<String>,
     remote_dir: String,
 ) -> ApiResult<()> {
     let lease = state.application.require_active().map_err(AppError::from)?;
@@ -45,20 +45,21 @@ pub async fn transfer_upload(
     let settings = transfer_settings(&state);
     let tar_ssh = entry.tar_ssh().await;
     let sink: std::sync::Arc<dyn crate::transfer::ProgressSink> = std::sync::Arc::new(app);
+    let requests = local_paths
+        .iter()
+        .map(|local_path| {
+            crate::transfer::UploadRequest::new(
+                fs.clone(),
+                &session_id,
+                local_path,
+                &remote_dir,
+                settings.clone(),
+            )
+        })
+        .collect();
     state
         .transfers
-        .enqueue_upload_accelerated(
-            lease.context_id(),
-            &sink,
-            crate::transfer::UploadRequest::new(
-                fs,
-                &session_id,
-                &local_path,
-                &remote_dir,
-                settings,
-            ),
-            tar_ssh,
-        )
+        .enqueue_uploads_accelerated(lease.context_id(), &sink, requests, tar_ssh)
         .await
         .map_err(Into::into)
 }
@@ -69,7 +70,7 @@ pub async fn transfer_download(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     session_id: String,
-    remote_path: String,
+    remote_paths: Vec<String>,
     local_dir: String,
 ) -> ApiResult<()> {
     let lease = state.application.require_active().map_err(AppError::from)?;
@@ -78,20 +79,21 @@ pub async fn transfer_download(
     let settings = transfer_settings(&state);
     let tar_ssh = entry.tar_ssh().await;
     let sink: std::sync::Arc<dyn crate::transfer::ProgressSink> = std::sync::Arc::new(app);
+    let requests = remote_paths
+        .iter()
+        .map(|remote_path| {
+            crate::transfer::DownloadRequest::new(
+                fs.clone(),
+                &session_id,
+                remote_path,
+                &local_dir,
+                settings.clone(),
+            )
+        })
+        .collect();
     state
         .transfers
-        .enqueue_download_accelerated(
-            lease.context_id(),
-            &sink,
-            crate::transfer::DownloadRequest::new(
-                fs,
-                &session_id,
-                &remote_path,
-                &local_dir,
-                settings,
-            ),
-            tar_ssh,
-        )
+        .enqueue_downloads_accelerated(lease.context_id(), &sink, requests, tar_ssh)
         .await
         .map_err(Into::into)
 }
@@ -100,12 +102,13 @@ pub async fn transfer_download(
 #[specta::specta]
 pub async fn transfer_list(state: State<'_, AppState>) -> ApiResult<TransferListDto> {
     let lease = state.application.require_active().map_err(AppError::from)?;
-    let (items, summary) = state.transfers.snapshot();
+    let snapshot = state.transfers.snapshot();
     lease.validate(&state.application).map_err(AppError::from)?;
     Ok(TransferListDto {
         runtime_context_id: lease.context_id().get().to_string(),
-        items,
-        summary,
+        items: snapshot.items,
+        summary: snapshot.summary,
+        session_summaries: snapshot.session_summaries,
     })
 }
 
@@ -135,9 +138,10 @@ pub async fn transfer_cancel(state: State<'_, AppState>, id: String) -> ApiResul
 pub async fn transfer_pause_all(
     state: State<'_, AppState>,
     runtime_context_id: String,
+    session_id: String,
 ) -> ApiResult<()> {
     let context_id = requested_context(&state, &runtime_context_id)?;
-    require_applied(state.transfers.pause_all(context_id)).map_err(Into::into)
+    require_applied(state.transfers.pause_all(context_id, &session_id)).map_err(Into::into)
 }
 
 #[tauri::command]
@@ -145,9 +149,10 @@ pub async fn transfer_pause_all(
 pub async fn transfer_resume_all(
     state: State<'_, AppState>,
     runtime_context_id: String,
+    session_id: String,
 ) -> ApiResult<()> {
     let context_id = requested_context(&state, &runtime_context_id)?;
-    require_applied(state.transfers.resume_all(context_id)).map_err(Into::into)
+    require_applied(state.transfers.resume_all(context_id, &session_id)).map_err(Into::into)
 }
 
 #[tauri::command]
@@ -155,9 +160,10 @@ pub async fn transfer_resume_all(
 pub async fn transfer_cancel_all(
     state: State<'_, AppState>,
     runtime_context_id: String,
+    session_id: String,
 ) -> ApiResult<()> {
     let context_id = requested_context(&state, &runtime_context_id)?;
-    require_applied(state.transfers.cancel_all(context_id)).map_err(Into::into)
+    require_applied(state.transfers.cancel_all(context_id, &session_id)).map_err(Into::into)
 }
 
 #[tauri::command]
@@ -165,9 +171,10 @@ pub async fn transfer_cancel_all(
 pub async fn transfer_clear_finished(
     state: State<'_, AppState>,
     runtime_context_id: String,
+    session_id: String,
 ) -> ApiResult<()> {
     let context_id = requested_context(&state, &runtime_context_id)?;
-    require_applied(state.transfers.clear_finished(context_id)).map_err(Into::into)
+    require_applied(state.transfers.clear_finished(context_id, &session_id)).map_err(Into::into)
 }
 
 #[tauri::command]

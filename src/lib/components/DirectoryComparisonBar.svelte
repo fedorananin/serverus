@@ -18,6 +18,7 @@
     class:active
     aria-label={active ? "Stop Comparing Folders" : "Compare Folders"}
     aria-pressed={active}
+    title="Compares names, types, sizes, and known modification times of the two open folders without scanning directory contents"
     onclick={ontoggle}
   >
     <span aria-hidden="true">⇄</span>
@@ -49,10 +50,6 @@
       </span>
     </div>
 
-    <span
-      class="scope"
-      title="Compares names, types, sizes, and known modification times without scanning directory contents"
-    >Current Folders · Metadata Only</span>
     <label class="filter">
       <input
         type="checkbox"
@@ -65,17 +62,17 @@
 </div>
 
 <style>
+  /* Flat bar, same recipe as the terminal session strip. The fixed
+     min-height keeps the bar from jumping when the summary and filter
+     appear in compare mode. */
   .comparison-bar {
-    min-height: 36px;
     display: flex;
     align-items: center;
     gap: 12px;
+    min-height: 28px;
     padding: 4px 8px;
-    margin: 8px 8px 0;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
     background: var(--bg-1);
-    overflow: hidden;
+    border-bottom: 1px solid var(--border);
   }
 
   .compare-toggle {
@@ -83,9 +80,9 @@
     align-items: center;
     gap: 6px;
     flex: none;
-    padding: 3px 9px;
+    padding: 2px 8px;
     color: var(--text-1);
-    font-size: 12px;
+    font-size: 11px;
   }
 
   .compare-toggle.active {
@@ -140,19 +137,12 @@
     --signal: var(--compare-remote);
   }
 
-  .scope {
-    flex: none;
-    color: var(--text-1);
-    font-size: 10px;
-    white-space: nowrap;
-  }
-
   .filter {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     flex: none;
-    padding: 3px 4px;
+    padding: 1px 4px;
     border-radius: var(--radius);
     color: var(--text-1);
     font-size: 11px;
@@ -170,9 +160,4 @@
     accent-color: var(--accent);
   }
 
-  @media (max-width: 980px) {
-    .scope {
-      display: none;
-    }
-  }
 </style>

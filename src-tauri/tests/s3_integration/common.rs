@@ -40,18 +40,21 @@ pub(crate) fn settings() -> TransferSettings {
 
 pub(crate) async fn wait_for_drain(manager: &Arc<TransferManager>) {
     for _ in 0..600 {
-        let (_, summary) = manager.snapshot();
+        let summary = manager.snapshot().summary;
         if summary.queued == 0 && summary.running == 0 {
             return;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    let (items, summary) = manager.snapshot();
+    let (items, summary) = {
+        let s = manager.snapshot();
+        (s.items, s.summary)
+    };
     panic!("queue did not drain: {summary:?}\n{items:#?}");
 }
 
 pub(crate) fn assert_all_done(manager: &Arc<TransferManager>) {
-    let (items, _) = manager.snapshot();
+    let items = manager.snapshot().items;
     for item in &items {
         assert!(
             matches!(item.state, TransferState::Done),

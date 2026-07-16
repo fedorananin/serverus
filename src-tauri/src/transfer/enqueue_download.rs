@@ -6,7 +6,7 @@ use serverus_domain::transfers::{
     FailureKind as DomainFailureKind, TransferEvent as DomainTransferEvent,
 };
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::session::remote_fs::{RemoteEntry, RemoteFs};
 use crate::session::ssh::SshSession;
 
@@ -25,12 +25,8 @@ impl TransferManager {
         app: &Arc<dyn ProgressSink>,
         request: DownloadRequest<'_>,
     ) -> AppResult<()> {
-        let session_id = request.session_id;
-        let batch = TransferBatch::new();
-        self.run_admitted(context_id, session_id, |admission| {
-            self.enqueue_download_inner(admission, app, request, None, batch)
-        })
-        .await
+        self.enqueue_downloads_accelerated(context_id, app, vec![request], None)
+            .await
     }
 
     pub async fn enqueue_download_accelerated(
@@ -40,12 +36,41 @@ impl TransferManager {
         request: DownloadRequest<'_>,
         tar_ssh: Option<Arc<SshSession>>,
     ) -> AppResult<()> {
-        let session_id = request.session_id;
+        self.enqueue_downloads_accelerated(context_id, app, vec![request], tar_ssh)
+            .await
+    }
+
+    /// Enqueue several remote paths as a single batch, so "apply to all
+    /// remaining conflicts" spans the whole selection (SPEC §6.1). A path
+    /// that fails to enqueue does not abort the rest; failures are
+    /// aggregated into one error.
+    pub async fn enqueue_downloads_accelerated(
+        self: &Arc<Self>,
+        context_id: RuntimeContextId,
+        app: &Arc<dyn ProgressSink>,
+        requests: Vec<DownloadRequest<'_>>,
+        tar_ssh: Option<Arc<SshSession>>,
+    ) -> AppResult<()> {
         let batch = TransferBatch::new();
-        self.run_admitted(context_id, session_id, |admission| {
-            self.enqueue_download_inner(admission, app, request, tar_ssh, batch)
-        })
-        .await
+        let mut failures = Vec::new();
+        for request in requests {
+            let session_id = request.session_id;
+            let tar_ssh = tar_ssh.clone();
+            let batch = batch.clone();
+            if let Err(error) = self
+                .run_admitted(context_id, session_id, |admission| {
+                    self.enqueue_download_inner(admission, app, request, tar_ssh, batch)
+                })
+                .await
+            {
+                failures.push(error.to_string());
+            }
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(AppError::Transfer(failures.join("; ")))
+        }
     }
 
     /// Keep an unsafe or colliding child visible as one failed queue item

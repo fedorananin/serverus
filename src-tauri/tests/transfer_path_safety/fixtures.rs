@@ -189,7 +189,7 @@ pub(super) async fn enqueue(
 
 pub(super) async fn wait_for_transfer(manager: &TransferManager) {
     for _ in 0..100 {
-        let (items, _) = manager.snapshot();
+        let items = manager.snapshot().items;
         if !items.is_empty()
             && items.iter().all(|item| {
                 matches!(
