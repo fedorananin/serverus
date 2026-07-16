@@ -31,19 +31,12 @@ export async function expectTerminalText(text: string): Promise<void> {
 
 export async function pasteTerminalText(text: string): Promise<void> {
   await (await displayedElement("aria/Open terminal paste dialog")).click();
-  const inputDialog = await displayedElement("[role='dialog'][aria-label='Paste into terminal']");
-  const input = await inputDialog.$("aria/Terminal paste text");
+  const dialog = await displayedElement("[role='dialog'][aria-label='Paste into terminal']");
+  const input = await dialog.$("aria/Terminal paste text");
   await input.setValue(text);
   await input.waitUntil(async () => (await input.getValue()) === text, {
     timeoutMsg: "The visible terminal paste field did not retain the entered text.",
   });
-  await inputDialog.$("button=Continue").click();
-  await inputDialog.waitForDisplayed({ reverse: true });
-  const dialog = await displayedElement("[role='dialog'][aria-label='Confirm terminal paste']");
-  const preview = await dialog.$("pre").getText();
-  if (!preview.includes(text.trim())) {
-    throw new Error("The visible terminal paste preview did not contain the entered text.");
-  }
   await dialog.$("button=Paste and run").click();
   await dialog.waitForDisplayed({ reverse: true });
 }

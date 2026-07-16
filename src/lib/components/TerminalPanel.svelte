@@ -21,6 +21,11 @@
     activeSlot = id;
   }
 
+  /** Focus the visible terminal — used when this session's tab becomes active. */
+  export function focusActive() {
+    views[activeSlot]?.focusTerminal();
+  }
+
   function closeSlot(id: number) {
     const idx = slots.findIndex((s) => s.id === id);
     if (idx === -1) return;
@@ -42,7 +47,10 @@
           class="term-select"
           aria-label={`Terminal ${i + 1}`}
           aria-pressed={slot.id === activeSlot}
-          onclick={() => (activeSlot = slot.id)}
+          onclick={() => {
+            activeSlot = slot.id;
+            views[slot.id]?.focusTerminal();
+          }}
         >
           <span aria-hidden="true">{i + 1}</span>
         </button>
@@ -62,7 +70,7 @@
     {#if slots.length > 0}
       <div class="strip-actions">
         <TerminalPasteButton
-          onpaste={(text) => views[activeSlot]?.queuePaste(text)}
+          onpaste={() => views[activeSlot]?.openPasteDialog()}
           onfind={() => views[activeSlot]?.openSearch()}
         />
       </div>

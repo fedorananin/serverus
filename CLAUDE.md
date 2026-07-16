@@ -132,7 +132,14 @@ vaults and imports open as before). v1.2.2: session tabs are reorderable —
 pointer-drag in `SessionTabBar` (live reorder by tab midpoints, edge
 autoscroll) plus `⌘⇧←/→`; the order is `tabs.tabs` array order only (nothing
 persisted, no backend), and the hotkey skips text fields except xterm's
-helper textarea. Also v1.1.0: cross-platform
+helper textarea. v1.2.3: the terminal paste flow is one dialog — 📋 opens the
+same editable multiline-confirmation dialog a clipboard paste goes through
+(`TerminalPasteConfirm`, ~720px, ⌘⏎/Ctrl+⏎ = Paste and run, Esc = cancel; the
+old two-step Continue modal is gone); the terminal auto-focuses when its tab
+or view becomes active (`SessionView` effect → `TerminalPanel.focusActive`);
+session tabs have tighter horizontal padding; the find bar lives in
+`terminal/TerminalFindBar.svelte` (split out for the 300-line limit). Also
+v1.1.0: cross-platform
 support — Windows Hello quick unlock (`quick_unlock.rs::windows_hello`,
 KeePassXC scheme: Hello-gated deterministic RSA signature → HKDF → AES-GCM
 wrapped DEK blob in the config dir), cfg-gated unix permissions / openers /

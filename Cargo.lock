@@ -5553,7 +5553,7 @@ dependencies = [
 
 [[package]]
 name = "serverus"
-version = "1.2.2"
+version = "1.2.3"
 dependencies = [
  "aes-gcm 0.10.3",
  "argon2 0.5.3",
@@ -5617,7 +5617,7 @@ dependencies = [
 
 [[package]]
 name = "serverus-adapters"
-version = "1.2.2"
+version = "1.2.3"
 dependencies = [
  "serverus-application",
  "serverus-domain",
@@ -5626,7 +5626,7 @@ dependencies = [
 
 [[package]]
 name = "serverus-application"
-version = "1.2.2"
+version = "1.2.3"
 dependencies = [
  "async-trait",
  "futures",
@@ -5637,11 +5637,11 @@ dependencies = [
 
 [[package]]
 name = "serverus-domain"
-version = "1.2.2"
+version = "1.2.3"
 
 [[package]]
 name = "serverus-e2e-fixtures"
-version = "1.2.2"
+version = "1.2.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5660,7 +5660,7 @@ dependencies = [
 
 [[package]]
 name = "serverus-runtime"
-version = "1.2.2"
+version = "1.2.3"
 dependencies = [
  "async-trait",
  "serverus-application",
@@ -5673,7 +5673,7 @@ dependencies = [
 
 [[package]]
 name = "serverus-testkit"
-version = "1.2.2"
+version = "1.2.3"
 dependencies = [
  "async-trait",
  "serverus-application",

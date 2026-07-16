@@ -13,7 +13,7 @@ A native macOS connection manager. Built with Tauri 2, a Rust backend and a Svel
 ![Built with Rust](https://img.shields.io/badge/backend-Rust-orange)
 ![Built with Tauri](https://img.shields.io/badge/shell-Tauri%202-24C8DB)
 ![Frontend Svelte](https://img.shields.io/badge/frontend-Svelte%205-FF3E00)
-![Version](https://img.shields.io/badge/version-1.2.2-brightgreen)
+![Version](https://img.shields.io/badge/version-1.2.3-brightgreen)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
@@ -146,8 +146,9 @@ suite runs against **real** SSH/FTP/S3 servers, not mocks.
 ### 🖥️ SSH sessions do triple duty
 One SSH connection is multiplexed into three roles over a single TCP session:
 - **Terminal** — xterm.js with 256‑color + truecolor, 10 000‑line scrollback,
-  search (`⌘F`), copy‑on‑select, multiline‑paste confirmation, configurable
-  font. Multiple terminals per tab as internal channels.
+  search (`⌘F`), copy‑on‑select, an editable paste dialog with multiline
+  confirmation (`⌘⏎` pastes and runs), configurable font. Multiple terminals
+  per tab as internal channels.
 - **Files** — SFTP file panel over the same session — no second login.
 - **Tunnels** — local port forwarding (`direct‑tcpip`).
 
@@ -488,7 +489,8 @@ modifiers for special keys and does not emit `contextmenu` for its
 secondary-button action.
 Shortcuts use `Command` on macOS versus `Control` on Linux/Windows for tab,
 Settings and file-selection actions. Terminal probes are entered in the visible
-Terminal **Paste…** field and sent through the multiline confirmation, rather
+Terminal paste dialog — the same editable confirmation a human paste passes
+through — and sent with **Paste and run**, rather
 than writing into xterm or dispatching DOM events. Builds
 default to one Cargo job to keep peak RAM predictable, with an explicit local
 override when needed. The WDIO plugins and global Tauri API are not present in
@@ -533,7 +535,7 @@ that matrix succeeds does it build and upload installers for all three OSes to
 a **draft** GitHub Release (`.github/workflows/release.yml`):
 
 ```bash
-git tag v1.2.2 && git push origin v1.2.2
+git tag v1.2.3 && git push origin v1.2.3
 ```
 
 Review the draft on the Releases page, then publish. No local builds needed.

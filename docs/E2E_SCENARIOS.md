@@ -63,8 +63,9 @@ override.
 `real-input` means WebDriver clicks, types and presses keys through visible,
 accessible WebView controls. This includes the SSH scenarios: WebKit WebDriver
 does not reliably deliver W3C key input to xterm, so each terminal probe is
-entered through the visible Terminal **Paste…** field. A multiline probe must pass
-the same visible confirmation dialog as a human paste. The suite does not type
+entered through the visible Terminal paste dialog — the same editable
+confirmation dialog a human paste passes through — and sent with **Paste and
+run**. The suite does not type
 into xterm's hidden helper textarea, inject DOM events, assign DOM values or
 bypass the Tauri command layer and SSH server.
 

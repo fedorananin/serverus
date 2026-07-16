@@ -12,6 +12,8 @@
 
   let { tab }: Props = $props();
 
+  let terminalPanel = $state<TerminalPanel>();
+
   const connection = $derived(vault.data?.connections[tab.connectionId] ?? null);
   // FTP and S3 sessions have no shell or tunnels — Files is the only view.
   const filesOnly = $derived(connection?.protocol === "ftp" || connection?.protocol === "s3");
@@ -23,6 +25,15 @@
   $effect(() => {
     if (tab.view === "terminal" && (filesOnly || terminalDisabled)) tab.view = "files";
     if (tab.view === "tunnels" && (filesOnly || !hasTunnels)) tab.view = "files";
+  });
+
+  // Typing must land in the shell right away when a terminal comes into view —
+  // both on session-tab switches and on Files→Terminal view switches. Runs
+  // after the DOM flush, so the pane is already visible when focus lands.
+  $effect(() => {
+    if (tabs.activeId === tab.id && tab.view === "terminal" && tab.state === "connected") {
+      terminalPanel?.focusActive();
+    }
   });
 
   // Elapsed-seconds ticker while connecting: a slow connect (DNS, far-away
@@ -96,7 +107,7 @@
              terminal would close its shell channel and lose the session. -->
         {#if !filesOnly && !terminalDisabled}
           <div class="view-pane" style:display={tab.view === "terminal" ? "flex" : "none"}>
-            <TerminalPanel sessionId={tab.sessionId} />
+            <TerminalPanel bind:this={terminalPanel} sessionId={tab.sessionId} />
           </div>
         {/if}
         <div class="view-pane" style:display={tab.view === "files" ? "flex" : "none"}>
