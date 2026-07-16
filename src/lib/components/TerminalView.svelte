@@ -9,6 +9,7 @@
   import { commands, unwrap, type TerminalStreamEvent } from "$lib/api";
   import { isMac } from "$lib/platform";
   import { vault } from "$lib/stores/vault.svelte";
+  import { needsPasteConfirmation } from "./terminal/paste";
   import { syncTerminalTheme, terminalThemeOptions } from "./terminal/terminal-theme";
   import TerminalPasteButton from "./TerminalPasteButton.svelte";
   import TerminalPasteConfirm from "./TerminalPasteConfirm.svelte";
@@ -44,7 +45,7 @@
 
   function queuePaste(text: string) {
     if (!text || !termId) return;
-    if (text.includes("\n")) pendingPaste = text;
+    if (needsPasteConfirmation(text)) pendingPaste = text;
     else term.paste(text);
   }
 

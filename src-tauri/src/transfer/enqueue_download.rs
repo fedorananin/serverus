@@ -14,7 +14,7 @@ use super::tar_stream;
 use super::{
     ensure_download_directory, open_download_root, remote_tree_size, safe_local_component,
     AdmissionToken, DownloadRequest, LocalDownloadTarget, ProgressSink, TransferBatch,
-    TransferKind, TransferManager,
+    TransferItem, TransferKind, TransferManager,
 };
 
 impl TransferManager {
@@ -78,14 +78,7 @@ impl TransferManager {
         ) else {
             return false;
         };
-        item.apply_and_dispatch(DomainTransferEvent::StartRequested, None, None)
-            .expect("a newly queued failed-download placeholder can start");
-        item.apply_and_dispatch(
-            DomainTransferEvent::PermanentFailure(DomainFailureKind::LocalIo),
-            Some(reason.to_string()),
-            None,
-        )
-        .expect("a started failed-download placeholder can fail permanently");
+        mark_placeholder_failed(&item, reason);
         self.ensure_emitter(app.clone());
         true
     }
@@ -230,4 +223,17 @@ impl TransferManager {
         }
         Ok(())
     }
+}
+
+/// `add_item` already published the placeholder, so a concurrent cancel
+/// ("Cancel all", tab close) can retire it before either transition lands.
+/// Losing that race is a legitimate outcome — a cancelled placeholder needs
+/// no failure mark — so both transitions must stay refusable, never panic.
+pub(super) fn mark_placeholder_failed(item: &TransferItem, reason: &str) {
+    let _ = item.apply_and_dispatch(DomainTransferEvent::StartRequested, None, None);
+    let _ = item.apply_and_dispatch(
+        DomainTransferEvent::PermanentFailure(DomainFailureKind::LocalIo),
+        Some(reason.to_string()),
+        None,
+    );
 }

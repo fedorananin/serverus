@@ -4,6 +4,7 @@ use serverus_domain::transfers::{
     TransferEvent as DomainTransferEvent, TransferStateKind as DomainTransferStateKind,
 };
 
+use super::super::enqueue_download::mark_placeholder_failed;
 use super::super::{open_download_root, LocalDownloadTarget, TransferState};
 use super::support::{item, start};
 
@@ -126,5 +127,53 @@ async fn cancel_after_copy_before_finalize_removes_the_completed_target() {
     assert!(
         !completed_target.exists(),
         "cancelled transfer left a completed target behind"
+    );
+}
+
+/// `add_failed_download` publishes its placeholder through `add_item` before
+/// `mark_placeholder_failed` runs, so "Cancel all" and tab close can retire
+/// the item between the two. These three tests pin the item into each state a
+/// cancel can leave it in; the marking must stay a refused transition rather
+/// than a panic (the pre-refactor code used an infallible `set_state` here).
+#[test]
+fn placeholder_marking_fails_an_untouched_item() {
+    let transfer = item("session");
+
+    mark_placeholder_failed(&transfer, "../escape: unsafe remote name");
+
+    assert_eq!(
+        transfer.domain_state_kind(),
+        DomainTransferStateKind::Failed
+    );
+}
+
+#[test]
+fn placeholder_marking_tolerates_a_cancel_that_won_before_start() {
+    let transfer = item("session");
+    transfer
+        .apply_and_dispatch(DomainTransferEvent::CancelRequested, None, None)
+        .unwrap();
+
+    mark_placeholder_failed(&transfer, "../escape: unsafe remote name");
+
+    assert_eq!(
+        transfer.domain_state_kind(),
+        DomainTransferStateKind::Cancelled
+    );
+}
+
+#[test]
+fn placeholder_marking_tolerates_a_cancel_that_won_mid_marking() {
+    let transfer = item("session");
+    start(&transfer);
+    transfer
+        .apply_and_dispatch(DomainTransferEvent::CancelRequested, None, None)
+        .unwrap();
+
+    mark_placeholder_failed(&transfer, "../escape: unsafe remote name");
+
+    assert_eq!(
+        transfer.domain_state_kind(),
+        DomainTransferStateKind::Cancelling
     );
 }
