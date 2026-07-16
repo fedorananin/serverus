@@ -13,7 +13,7 @@ A native macOS connection manager. Built with Tauri 2, a Rust backend and a Svel
 ![Built with Rust](https://img.shields.io/badge/backend-Rust-orange)
 ![Built with Tauri](https://img.shields.io/badge/shell-Tauri%202-24C8DB)
 ![Frontend Svelte](https://img.shields.io/badge/frontend-Svelte%205-FF3E00)
-![Version](https://img.shields.io/badge/version-1.1.2-brightgreen)
+![Version](https://img.shields.io/badge/version-1.2.0-brightgreen)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
@@ -227,6 +227,14 @@ Locks on an inactivity timeout (default 15 min; 0 = never) and when the Mac
 sleeps. Locking zeroizes the DEK and all decrypted secrets from memory — but
 **live sessions keep running** (the password was already handed to the
 server); you just can't pull new secrets from the vault until you unlock.
+
+### 🎨 Dark, light and system themes
+Follow the operating system automatically, or pin the app to the GitHub
+Light‑inspired light palette or the original dark palette. Theme changes apply
+immediately to the app chrome, dialogs, file panes, and live terminals —
+including a dedicated 16‑color ANSI palette so light terminals stay readable.
+The preference is stored in the vault and travels with it; native window
+chrome follows along.
 
 ---
 
@@ -522,14 +530,10 @@ that matrix succeeds does it build and upload installers for all three OSes to
 a **draft** GitHub Release (`.github/workflows/release.yml`):
 
 ```bash
-git tag v1.1.2 && git push origin v1.1.2
+git tag v1.2.0 && git push origin v1.2.0
 ```
 
 Review the draft on the Releases page, then publish. No local builds needed.
-
-Appearance can follow the operating system automatically or be pinned to the
-GitHub Light-inspired light palette or the original dark palette. Theme changes
-apply immediately to the app chrome, dialogs, file panes, and live terminals.
 
 ---
 
