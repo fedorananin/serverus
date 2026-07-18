@@ -84,6 +84,53 @@ describe("compareDirectoryEntries", () => {
     expect(comparison.localStatuses.get("shrunk.txt")).toBe("different");
   });
 
+  it("compares coarse remote mtimes at minute precision — FTP LIST has no seconds", () => {
+    const noon = 12 * 3600; // 12:00:00
+    const local = [
+      entry("same-minute.txt", { mtime: noon + 37 }), // 12:00:37 locally
+      entry("next-minute.txt", { mtime: noon + 61 }), // 12:01:01 locally
+    ];
+    const remote = [
+      entry("same-minute.txt", { mtime: noon }), // listed as 12:00
+      entry("next-minute.txt", { mtime: noon }), // listed as 12:00
+    ];
+
+    const comparison = compareDirectoryEntries(local, remote, { coarseRemoteMtime: true });
+
+    expect(comparison.localStatuses.get("same-minute.txt")).toBe("matching");
+    expect(comparison.localStatuses.get("next-minute.txt")).toBe("different");
+  });
+
+  it("compares date-only coarse remote mtimes at day precision", () => {
+    const day = 24 * 3600;
+    const local = [
+      entry("same-day.txt", { mtime: 5 * day + 15 * 3600 }), // afternoon of day 5
+      entry("other-day.txt", { mtime: 6 * day + 15 * 3600 }),
+      // Genuinely-midnight local mtime must not loosen a minute-precise stamp.
+      entry("midnight-local.txt", { mtime: 5 * day }),
+    ];
+    const remote = [
+      entry("same-day.txt", { mtime: 5 * day }), // listed as a bare date
+      entry("other-day.txt", { mtime: 5 * day }),
+      entry("midnight-local.txt", { mtime: 5 * day + 15 * 3600 + 60 }),
+    ];
+
+    const comparison = compareDirectoryEntries(local, remote, { coarseRemoteMtime: true });
+
+    expect(comparison.localStatuses.get("same-day.txt")).toBe("matching");
+    expect(comparison.localStatuses.get("other-day.txt")).toBe("different");
+    expect(comparison.localStatuses.get("midnight-local.txt")).toBe("different");
+  });
+
+  it("keeps exact mtime comparison when the remote listing is second-precise", () => {
+    const comparison = compareDirectoryEntries(
+      [entry("synced.txt", { mtime: 100 })],
+      [entry("synced.txt", { mtime: 130 })],
+    );
+
+    expect(comparison.localStatuses.get("synced.txt")).toBe("different");
+  });
+
   it("does not claim to compare directory contents from directory metadata", () => {
     const comparison = compareDirectoryEntries(
       [entry("assets", { is_dir: true, size: 0, mtime: 100 })],

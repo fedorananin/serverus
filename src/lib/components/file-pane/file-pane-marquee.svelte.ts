@@ -16,6 +16,7 @@ export class FilePaneMarquee {
   private from: { x: number; y: number } | null = null;
   private base: Set<string> | null = null;
   private pointer = { x: 0, y: 0 };
+  private pointerId = -1;
   private raf = 0;
 
   constructor(
@@ -48,7 +49,7 @@ export class FilePaneMarquee {
     const pane = this.getPane();
     this.base = isMod(event) || event.shiftKey ? new Set(pane.selected) : null;
     this.pointer = { x: event.clientX, y: event.clientY };
-    scroller.setPointerCapture(event.pointerId);
+    this.pointerId = event.pointerId;
     window.addEventListener("pointermove", this.onMove);
     window.addEventListener("pointerup", this.onUp);
   }
@@ -83,7 +84,13 @@ export class FilePaneMarquee {
     const bounds = scroller.getBoundingClientRect();
     const x = Math.max(0, Math.min(scroller.clientWidth, this.pointer.x - bounds.left));
     const y = this.pointer.y - bounds.top + scroller.scrollTop;
-    if (!this.rect && Math.hypot(x - this.from.x, y - this.from.y) < 4) return;
+    if (!this.rect) {
+      if (Math.hypot(x - this.from.x, y - this.from.y) < 4) return;
+      // Capture only once a real drag starts: capturing on pointerdown makes
+      // WebKit retarget the trailing click to the scroller, so a plain click
+      // on a row's size/date/permissions cells would never select the row.
+      scroller.setPointerCapture(this.pointerId);
+    }
     this.rect = {
       x0: Math.min(this.from.x, x),
       y0: Math.min(this.from.y, y),

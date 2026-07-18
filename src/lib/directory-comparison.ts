@@ -25,14 +25,36 @@ export interface DirectoryComparisonOptions {
    *  stamp transfers can preserve — comparing it would mark every uploaded
    *  file "different" forever. */
   ignoreMtime?: boolean;
+  /** Compare mtime at the precision the remote listing actually carries.
+   *  Set for FTP: LIST timestamps have no seconds for recent files, and
+   *  only a date for files older than ~6 months — comparing them exactly
+   *  against a second-precise local mtime flags nearly every synced file
+   *  "different". */
+  coarseRemoteMtime?: boolean;
 }
 
-function entriesMatch(local: RemoteEntry, remote: RemoteEntry, ignoreMtime: boolean): boolean {
+const MINUTE = 60;
+const DAY = 24 * 60 * 60;
+
+function mtimesMatch(local: number, remote: number, coarseRemote: boolean): boolean {
+  if (!coarseRemote) return local === remote;
+  // A midnight-exact remote stamp is a date-only LIST entry; anything else
+  // came with minute precision.
+  const precision = remote % DAY === 0 ? DAY : MINUTE;
+  return Math.floor(local / precision) === Math.floor(remote / precision);
+}
+
+function entriesMatch(
+  local: RemoteEntry,
+  remote: RemoteEntry,
+  options: DirectoryComparisonOptions,
+): boolean {
   if (local.is_dir !== remote.is_dir || local.is_symlink !== remote.is_symlink) return false;
   if (local.is_dir) return true;
   if (local.size !== remote.size) return false;
-  if (ignoreMtime) return true;
-  return local.mtime === null || remote.mtime === null || local.mtime === remote.mtime;
+  if (options.ignoreMtime) return true;
+  if (local.mtime === null || remote.mtime === null) return true;
+  return mtimesMatch(local.mtime, remote.mtime, options.coarseRemoteMtime ?? false);
 }
 
 /** Compare the entries already loaded for two open folders.
@@ -46,7 +68,6 @@ export function compareDirectoryEntries(
   remoteEntries: readonly RemoteEntry[],
   options: DirectoryComparisonOptions = {},
 ): DirectoryComparison {
-  const ignoreMtime = options.ignoreMtime ?? false;
   const localStatuses = new Map<string, DirectoryComparisonStatus>();
   const remoteStatuses = new Map<string, DirectoryComparisonStatus>();
   const remoteByName = new Map(remoteEntries.map((entry) => [entry.name, entry]));
@@ -65,7 +86,7 @@ export function compareDirectoryEntries(
       summary.localOnly += 1;
       continue;
     }
-    const status = entriesMatch(local, remote, ignoreMtime) ? "matching" : "different";
+    const status = entriesMatch(local, remote, options) ? "matching" : "different";
     localStatuses.set(name, status);
     remoteStatuses.set(name, status);
     summary[status] += 1;

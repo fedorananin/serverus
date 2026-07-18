@@ -6,6 +6,7 @@
   import { s3PublicUrl } from "$lib/format";
   import { useAppModel } from "$lib/app/model.svelte";
   import { compareDirectoryEntries } from "$lib/directory-comparison";
+  import { queueActivity, queueSettled } from "$lib/transfer-settle";
   import { PaneController } from "$lib/stores/pane.svelte";
   import { isMod } from "$lib/platform";
   import { vault } from "$lib/stores/vault.svelte";
@@ -29,6 +30,7 @@
   const connection = $derived(vault.data?.connections[tab.connectionId] ?? null);
   const showHidden = vault.data?.settings.panels.show_hidden ?? false;
   const isS3 = vault.data?.connections[tab.connectionId]?.protocol === "s3";
+  const isFtp = vault.data?.connections[tab.connectionId]?.protocol === "ftp";
 
   const local = new PaneController("local", null, showHidden);
   const remote = new PaneController("remote", sessionId, showHidden, isS3);
@@ -41,8 +43,12 @@
     comparisonActive
       ? // S3's listed mtime is server-managed upload time and can't be
         // preserved by transfers — comparing it would flag every uploaded
-        // file as different forever.
-        compareDirectoryEntries(local.entries, remote.entries, { ignoreMtime: isS3 })
+        // file as different forever. FTP's LIST mtime is real but coarse
+        // (minutes, or date-only past ~6 months).
+        compareDirectoryEntries(local.entries, remote.entries, {
+          ignoreMtime: isS3,
+          coarseRemoteMtime: isFtp,
+        })
       : emptyComparison,
   );
 
@@ -51,6 +57,20 @@
     remote.comparisonStatuses = comparisonActive ? comparison.remoteStatuses : null;
     local.comparisonDifferencesOnly = comparisonActive && differencesOnly;
     remote.comparisonDifferencesOnly = comparisonActive && differencesOnly;
+  });
+
+  // Refresh both panes when this session's transfer queue settles — the
+  // destination listing (and the comparison built from it) stays stale until
+  // relisted.
+  let previousActivity = queueActivity(transfers.summaryFor(sessionId));
+  $effect(() => {
+    const activity = queueActivity(transfers.summaryFor(sessionId));
+    const settled = queueSettled(previousActivity, activity);
+    previousActivity = activity;
+    if (settled) {
+      void local.refresh();
+      void remote.refresh();
+    }
   });
 
   function toggleComparison() {
@@ -153,9 +173,6 @@
     transferError = null;
     try {
       await transfers.upload(sessionId, paths, remote.path);
-      // Refresh once the queue settles is handled by the queue panel; do a
-      // short delayed refresh for quick small files.
-      setTimeout(() => void remote.refresh(), 800);
     } catch (e) {
       transferError = errorMessage(e);
     }
@@ -166,7 +183,6 @@
     transferError = null;
     try {
       await transfers.download(sessionId, paths, local.path);
-      setTimeout(() => void local.refresh(), 800);
     } catch (e) {
       transferError = errorMessage(e);
     }
