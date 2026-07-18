@@ -1,13 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
-  import type { RemoteEntry, S3UploadAcl } from "$lib/api";
+  import type { RemoteEntry } from "$lib/api";
   import { commands, errorMessage, unwrap } from "$lib/api";
   import { s3PublicUrl } from "$lib/format";
   import { useAppModel } from "$lib/app/model.svelte";
   import { compareDirectoryEntries } from "$lib/directory-comparison";
   import { queueActivity, queueSettled } from "$lib/transfer-settle";
   import { PaneController } from "$lib/stores/pane.svelte";
+  import { UploadAclController } from "$lib/stores/upload-acl.svelte";
   import { isMod } from "$lib/platform";
   import { vault } from "$lib/stores/vault.svelte";
   import FilePane from "./FilePane.svelte";
@@ -78,40 +79,10 @@
     if (!comparisonActive) differencesOnly = false;
   }
 
-  // -- S3 upload ACL (SPEC §4.4): pane switch + the "ask" dialog --
-
-  const uploadMode = $derived(isS3 ? (connection?.s3?.upload_acl ?? "private") : null);
-  let askUpload = $state<{
-    count: number;
-    resolve: (choice: "private" | "public_read" | null) => void;
-  } | null>(null);
-
-  async function setUploadMode(mode: S3UploadAcl) {
-    try {
-      const updated = await unwrap(commands.s3SetUploadAcl(sessionId, mode, true));
-      if (updated) vault.data = updated;
-    } catch (e) {
-      transferError = errorMessage(e);
-    }
-  }
-
-  /** In "ask" mode, resolve the batch ACL before enqueueing; false = cancel. */
-  async function ensureUploadAcl(count: number): Promise<boolean> {
-    if (!isS3 || uploadMode !== "ask") return true;
-    const choice = await new Promise<"private" | "public_read" | null>((resolve) => {
-      askUpload = { count, resolve };
-    });
-    askUpload = null;
-    if (!choice) return false;
-    try {
-      // Applies to this session only — the stored mode stays "ask".
-      await unwrap(commands.s3SetUploadAcl(sessionId, choice, false));
-      return true;
-    } catch (e) {
-      transferError = errorMessage(e);
-      return false;
-    }
-  }
+  // S3 upload ACL (SPEC §4.4): pane mode switch + the "ask" dialog.
+  const uploadAcl = new UploadAclController(sessionId, tab.connectionId, isS3, (message) => {
+    transferError = message;
+  });
 
   // Remember the remote dir so a reconnect restores it (SPEC §4.1).
   $effect(() => {
@@ -169,7 +140,7 @@
    *  selection goes down in one call so it shares one conflict batch and
    *  "apply to all remaining conflicts" covers every file. */
   async function uploadPaths(paths: string[]) {
-    if (paths.length === 0 || !(await ensureUploadAcl(paths.length))) return;
+    if (paths.length === 0 || !(await uploadAcl.ensure(paths.length))) return;
     transferError = null;
     try {
       await transfers.upload(sessionId, paths, remote.path);
@@ -241,16 +212,16 @@
       ontransfer={downloadSelection}
       onopenfile={(entry) => void openForEdit(entry)}
       publicUrl={isS3 && connection ? (entry) => s3PublicUrl(connection, entry.path) : undefined}
-      {uploadMode}
-      onuploadmode={(mode) => void setUploadMode(mode)}
+      uploadMode={uploadAcl.mode}
+      onuploadmode={(mode) => void uploadAcl.setMode(mode)}
     />
   </div>
   <!-- Per-tab transfer panel: only this session's queue and history. -->
   <TransferQueue {sessionId} />
 </div>
 
-{#if askUpload}
-  <UploadAclDialog count={askUpload.count} onchoice={(choice) => askUpload?.resolve(choice)} />
+{#if uploadAcl.ask}
+  <UploadAclDialog count={uploadAcl.ask.count} onchoice={(choice) => uploadAcl.ask?.resolve(choice)} />
 {/if}
 
 {#if transferError}

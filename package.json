@@ -1,6 +1,6 @@
 {
   "name": "serverus",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "private": true,
   "description": "SSH/SFTP/FTP connection manager for macOS",
   "type": "module",
