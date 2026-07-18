@@ -205,13 +205,13 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 5px 4px 6px 7px;
+    padding: 5px 3px 6px 7px;
     border: 1px solid transparent;
     border-bottom: none;
     border-radius: var(--radius) var(--radius) 0 0;
-    flex: 0 1 180px;
-    min-width: 96px;
-    max-width: 180px;
+    flex: 0 1 150px;
+    min-width: 84px;
+    max-width: 150px;
     cursor: default;
   }
 

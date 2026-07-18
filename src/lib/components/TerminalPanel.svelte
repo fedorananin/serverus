@@ -37,26 +37,31 @@
 </script>
 
 <div class="panel">
-  <div class="strip">
+  <div class="strip" role="tablist">
     {#each slots as slot, i (slot.id)}
       <div
         class="term-tab"
         class:active={slot.id === activeSlot}
+        role="tab"
+        tabindex="0"
+        aria-selected={slot.id === activeSlot}
+        aria-label={`Terminal ${i + 1}`}
+        onclick={() => {
+          activeSlot = slot.id;
+          views[slot.id]?.focusTerminal();
+        }}
+        onauxclick={(e) => e.button === 1 && slots.length > 1 && closeSlot(slot.id)}
+        onkeydown={(e) => {
+          if (e.key !== "Enter") return;
+          activeSlot = slot.id;
+          views[slot.id]?.focusTerminal();
+        }}
       >
-        <button
-          class="term-select"
-          aria-label={`Terminal ${i + 1}`}
-          aria-pressed={slot.id === activeSlot}
-          onclick={() => {
-            activeSlot = slot.id;
-            views[slot.id]?.focusTerminal();
-          }}
-        >
-          <span aria-hidden="true">{i + 1}</span>
-        </button>
+        <span aria-hidden="true">{i + 1}</span>
         {#if slots.length > 1}
           <button
             class="x"
+            tabindex="-1"
             aria-label={`Close terminal ${i + 1}`}
             onclick={(e) => {
               e.stopPropagation();
@@ -115,40 +120,51 @@
   .term-tab {
     display: flex;
     align-items: center;
-    background: transparent;
+    gap: 2px;
+    padding: 2px 9px 2px 9px;
     border: 1px solid transparent;
+    border-radius: var(--radius);
+    color: var(--text-1);
+    font-size: 11px;
+    cursor: default;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* When a close button is present it carries the right-side spacing. */
+  .term-tab:has(.x) {
+    padding-right: 3px;
+  }
+
+  .term-tab:hover {
+    background: var(--bg-2);
+    color: var(--text-0);
   }
 
   .term-tab.active {
     background: var(--bg-3);
     border-color: var(--border);
+    color: var(--text-0);
   }
 
-  .term-select,
   .x {
     background: transparent;
     border: none;
-    color: inherit;
-  }
-
-  .term-select {
-    padding: 2px 9px;
-    font-size: 11px;
-  }
-
-  /* When a close button follows, hand the right-side spacing over to it. */
-  .term-tab:has(.x) .term-select {
-    padding-right: 4px;
-  }
-
-  .x {
     color: var(--text-2);
     font-size: 9px;
-    padding: 2px 7px 2px 2px;
+    padding: 2px 4px;
+    border-radius: 3px;
+    visibility: hidden;
+  }
+
+  .term-tab:hover .x,
+  .term-tab.active .x {
+    visibility: visible;
   }
 
   .x:hover {
     color: var(--text-0);
+    background: var(--bg-1);
   }
 
   .add {
@@ -156,7 +172,13 @@
     font-size: 12px;
     background: transparent;
     border: none;
+    border-radius: var(--radius);
     color: var(--text-1);
+  }
+
+  .add:hover {
+    background: var(--bg-2);
+    color: var(--text-0);
   }
 
   .terms {
