@@ -29,7 +29,9 @@ async function displayedElement(
 }
 
 async function sessionTabs(): Promise<WebdriverIO.Element[]> {
-  return (await $$("[role='tab']").getElements()) as unknown as WebdriverIO.Element[];
+  return (await $$(
+    "[role='tablist'][aria-label='Session tabs'] [role='tab']",
+  ).getElements()) as unknown as WebdriverIO.Element[];
 }
 
 async function activeTabIndex(): Promise<number> {

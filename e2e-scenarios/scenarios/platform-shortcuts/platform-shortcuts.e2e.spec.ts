@@ -6,7 +6,7 @@ import { fixtures } from "../../support/fixtures";
 import { pressPrimaryShortcut } from "../../support/keyboard";
 
 async function activeTabIndex(): Promise<number> {
-  const sessionTabs = await $$("[role='tab']").getElements();
+  const sessionTabs = await $$("[role='tablist'][aria-label='Session tabs'] [role='tab']").getElements();
   for (let index = 0; index < sessionTabs.length; index += 1) {
     const tab = sessionTabs[index];
     if ((await tab.getAttribute("aria-selected")) === "true") return index;
@@ -15,7 +15,7 @@ async function activeTabIndex(): Promise<number> {
 }
 
 async function waitForTabCount(count: number): Promise<void> {
-  await browser.waitUntil(async () => (await $$("[role='tab']").getElements()).length === count, {
+  await browser.waitUntil(async () => (await $$("[role='tablist'][aria-label='Session tabs'] [role='tab']").getElements()).length === count, {
     timeoutMsg: `Expected ${count} visible session tab${count === 1 ? "" : "s"}.`,
   });
 }

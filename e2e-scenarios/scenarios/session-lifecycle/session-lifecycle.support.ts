@@ -14,6 +14,10 @@ import {
 
 const EDIT_CACHE = join(tmpdir(), "serverus-edit");
 
+// Terminal tabs are also role='tab' (in the "Terminals" tablist), so session
+// tab queries must stay scoped to the session tab bar.
+export const SESSION_TABS = "[role='tablist'][aria-label='Session tabs'] [role='tab']";
+
 export async function displayedElement(selector: string): Promise<WebdriverIO.Element> {
   let displayed: WebdriverIO.Element | undefined;
   await browser.waitUntil(
@@ -133,13 +137,13 @@ export async function waitForConnected(): Promise<void> {
 }
 
 export async function waitForSessionTabCount(count: number): Promise<void> {
-  await browser.waitUntil(async () => (await $$("[role='tab']").getElements()).length === count, {
+  await browser.waitUntil(async () => (await $$(SESSION_TABS).getElements()).length === count, {
     timeoutMsg: `Expected ${count} session tab(s).`,
   });
 }
 
 export async function activateSessionTab(index: number): Promise<void> {
-  const tabs = await $$("[role='tab']").getElements();
+  const tabs = await $$(SESSION_TABS).getElements();
   const tab = tabs[index];
   if (!tab) throw new Error(`Session tab ${index + 1} does not exist.`);
   await tab.click();
@@ -147,7 +151,7 @@ export async function activateSessionTab(index: number): Promise<void> {
 }
 
 export async function closeActiveSessionTab(): Promise<void> {
-  const tabs = await $$("[role='tab']").getElements();
+  const tabs = await $$(SESSION_TABS).getElements();
   for (const tab of tabs) {
     if ((await tab.getAttribute("aria-selected")) === "true") {
       await tab.$("aria/Close tab").click();
@@ -155,6 +159,16 @@ export async function closeActiveSessionTab(): Promise<void> {
     }
   }
   throw new Error("No active session tab exists.");
+}
+
+export async function closeTerminalTab(index: number): Promise<void> {
+  // Close buttons reveal on hover or on the active tab, and the embedded
+  // driver's pointer moves do not trigger CSS hover — activate first.
+  const tab = await displayedElement(`[role='tab'][aria-label='Terminal ${index}']`);
+  await tab.click();
+  const close = await tab.$(`[aria-label='Close terminal ${index}']`);
+  await close.waitForDisplayed();
+  await close.click();
 }
 
 export async function runTerminalMarker(marker: string): Promise<void> {

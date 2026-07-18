@@ -37,7 +37,7 @@
 </script>
 
 <div class="panel">
-  <div class="strip" role="tablist">
+  <div class="strip" role="tablist" aria-label="Terminals">
     {#each slots as slot, i (slot.id)}
       <div
         class="term-tab"

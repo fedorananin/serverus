@@ -103,6 +103,7 @@
       onscroll={updateFades}
       onwheel={scrollHorizontally}
       role="tablist"
+      aria-label="Session tabs"
       tabindex="-1"
     >
       {#each tabs.tabs as tab (tab.id)}

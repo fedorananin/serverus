@@ -11,6 +11,7 @@ import {
   acceptUnknownHost,
   activateSessionTab,
   closeActiveSessionTab,
+  closeTerminalTab,
   configureOneMinuteAutoLock,
   configureScenarioEditor,
   createScenarioSshConnection,
@@ -33,7 +34,9 @@ import {
 async function waitForTerminalCount(count: number): Promise<void> {
   await browser.waitUntil(
     async () => {
-      const terminals = await $$(`button[aria-label^='Terminal ']`).getElements();
+      const terminals = await $$(
+        "[role='tablist'][aria-label='Terminals'] [role='tab']",
+      ).getElements();
       const visibility = await terminals.map((terminal) => terminal.isDisplayed());
       return visibility.filter(Boolean).length === count;
     },
@@ -88,7 +91,7 @@ describe("@session-lifecycle", () => {
       await runTerminalMarker("TAB_B_TERMINAL_3");
       await displayedElement("aria/Terminal 1").then((button) => button.click());
       await runTerminalMarker("TAB_B_TERMINAL_1_STILL_RUNNING");
-      await displayedElement("aria/Close terminal 2").then((button) => button.click());
+      await closeTerminalTab(2);
       await waitForTerminalCount(2);
       await displayedElement("aria/Terminal 2").then((button) => button.click());
       await runTerminalMarker("TAB_B_TERMINAL_3_SURVIVED_REINDEX");
@@ -181,7 +184,7 @@ describe("@session-lifecycle", () => {
       await waitForConnected();
       await displayedElement("aria/Terminal 2").then((button) => button.click());
       await runTerminalMarker("TAB_B_SURVIVED_TAB_A_CLEANUP");
-      await displayedElement("aria/Close terminal 1").then((button) => button.click());
+      await closeTerminalTab(1);
       await waitForTerminalCount(1);
       await runTerminalMarker("TAB_B_REMAINING_TERMINAL_WORKS");
 
