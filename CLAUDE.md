@@ -164,6 +164,16 @@ the repo is written to open-source quality (MIT, CI in
   it via `.cargo/config.toml` (machine-local, gitignored) to
   `~/.cache/serverus-target` — do not remove that file, and never place
   `target/` inside the project tree. `node_modules/` stays gitignored.
+- **The build cache grows without bound.** Cargo never garbage-collects stale
+  artifacts, and this workspace amplifies that: 8 integration tests each link
+  the whole library statically, so a week of active work left 69 GB behind
+  once. Mitigated by `[profile.dev] debug = "line-tables-only"` plus
+  `[profile.dev.package."*"] debug = false` in the root `Cargo.toml` (~2× less
+  per build, backtraces and panic locations still resolve). Run
+  `npm run cache:clean` every few weeks anyway — it wipes the target dir
+  resolved from `cargo metadata`, including the nested `scenario-tests` tree
+  that plain `cargo clean` misses. A full cold `--workspace --all-targets`
+  build is ~4.6 GB and ~1 minute.
 - Integration tests run against a local unprivileged `sshd` (bundled with
   macOS/CI) and an in-process libunftp server — no docker. See
   `src-tauri/tests/support/mod.rs`.

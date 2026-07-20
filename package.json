@@ -20,7 +20,8 @@
     "scenarios:check": "npm run scenarios:test && npm run scenarios:typecheck && npm run scenarios:layout",
     "test:scenarios": "tsx e2e-scenarios/src/run-scenarios.ts",
     "verify": "npm run architecture:check && npm run bindings:check && npm run scenarios:check && npm run check && npm run test && npm run build && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
-    "tauri": "node scripts/with-signing-env.mjs"
+    "tauri": "node scripts/with-signing-env.mjs",
+    "cache:clean": "node scripts/clean-cache.mjs"
   },
   "dependencies": {
     "@crabnebula/tauri-plugin-drag": "^2.1.0",
