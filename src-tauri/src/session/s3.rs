@@ -11,30 +11,30 @@
 //! `RemoteFs` trait — the UI reaches them through dedicated `s3_*` commands
 //! so the protocol abstraction stays intact.
 
-use std::pin::Pin;
-use std::sync::{Arc, Mutex, RwLock};
-use std::task::{Context, Poll};
+mod content_type;
+mod writer;
+
+use std::sync::{Arc, RwLock};
 
 use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
 use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::types::{
-    BucketLocationConstraint, CompletedMultipartUpload, CompletedPart, CreateBucketConfiguration,
-    ObjectCannedAcl, Permission,
+    BucketLocationConstraint, CreateBucketConfiguration, MetadataDirective, ObjectCannedAcl,
+    Permission,
 };
 use aws_sdk_s3::Client;
-use futures::future::BoxFuture;
-use futures::{FutureExt, StreamExt};
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use tokio::io::AsyncWrite;
 use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
 use crate::session::remote_fs::{join_remote, BoxRead, BoxWrite, RemoteEntry, RemoteFs};
 use crate::vault::model::{Connection, S3UploadAcl};
 
-/// Multipart part size. Must be ≥ 5 MiB (S3 minimum for non-final parts).
-const PART_SIZE: usize = 8 * 1024 * 1024;
+use content_type::guess_content_type;
+use writer::S3Writer;
+
 /// Parallelism for per-object ACL requests (batch status + bulk set).
 const ACL_CONCURRENCY: usize = 8;
 /// Grantee URI meaning "everyone" — its READ grant is what "public" means.
@@ -653,7 +653,8 @@ impl RemoteFs for S3Fs {
             .put_object()
             .bucket(&bucket)
             .key(&key)
-            .body(Vec::new().into());
+            .body(Vec::new().into())
+            .set_content_type(guess_content_type(&key).map(str::to_string));
         if let Some(acl) = self.upload_canned_acl() {
             req = req.acl(acl);
         }
@@ -696,7 +697,13 @@ impl RemoteFs for S3Fs {
             .copy_object()
             .copy_source(encode_copy_source(&source_bucket, &source_key))
             .bucket(&target_bucket)
-            .key(&target_key);
+            .key(&target_key)
+            // CopyObject defaults to MetadataDirective::Copy, which would
+            // publish whatever the staging object happened to carry. The
+            // published object's type is derived from its own name here so
+            // it cannot depend on how staging was written.
+            .metadata_directive(MetadataDirective::Replace)
+            .set_content_type(guess_content_type(&target_key).map(str::to_string));
         request = match target_acl {
             S3AclStatus::Public => request.acl(ObjectCannedAcl::PublicRead),
             // The provider default is private. Omitting the header also keeps
@@ -763,15 +770,17 @@ impl RemoteFs for S3Fs {
             ));
         }
         let (bucket, key) = self.object(path)?;
+        let content_type = guess_content_type(&key);
         Ok(Box::new(S3Writer::new(
             self.client.clone(),
             bucket,
             key,
             self.upload_canned_acl(),
+            content_type,
         )))
     }
 
-    async fn open_write_replacement(&self, staged: &str, _target: &str) -> AppResult<BoxWrite> {
+    async fn open_write_replacement(&self, staged: &str, target: &str) -> AppResult<BoxWrite> {
         let (bucket, key) = self.object(staged)?;
         // Remote-edit staging may contain sensitive data and must never use a
         // session-wide PublicRead policy. Omitting the ACL keeps the provider
@@ -781,6 +790,9 @@ impl RemoteFs for S3Fs {
             bucket,
             key,
             None,
+            // The staging key is a `.tmp` sibling; only the target's name
+            // says what the bytes actually are.
+            guess_content_type(target),
         )))
     }
 
@@ -794,265 +806,5 @@ impl RemoteFs for S3Fs {
 
     fn supports_write_resume(&self) -> bool {
         false
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Streaming upload: buffered multipart with a plain PutObject fast path
-// ---------------------------------------------------------------------------
-
-struct WriterInner {
-    client: Client,
-    bucket: String,
-    key: String,
-    acl: Option<ObjectCannedAcl>,
-    abort: Arc<AbortSlot>,
-    upload_id: Option<String>,
-    parts: Vec<CompletedPart>,
-    next_part: i32,
-    buf: Vec<u8>,
-}
-
-impl WriterInner {
-    /// Upload the buffered bytes as the next part (creates the multipart
-    /// upload lazily on the first call).
-    async fn flush_part(mut self: Box<Self>) -> std::io::Result<Box<Self>> {
-        if self.upload_id.is_none() {
-            let mut req = self
-                .client
-                .create_multipart_upload()
-                .bucket(&self.bucket)
-                .key(&self.key);
-            if let Some(acl) = &self.acl {
-                req = req.acl(acl.clone());
-            }
-            let out = req
-                .send()
-                .await
-                .map_err(|e| std::io::Error::other(sdk_err_msg(&e)))?;
-            let upload_id = out
-                .upload_id()
-                .ok_or_else(|| std::io::Error::other("no upload id"))?
-                .to_string();
-            *self.abort.upload_id.lock().unwrap() = Some(upload_id.clone());
-            self.upload_id = Some(upload_id);
-        }
-        let body = std::mem::take(&mut self.buf);
-        let part_number = self.next_part;
-        self.next_part += 1;
-        let out = self
-            .client
-            .upload_part()
-            .bucket(&self.bucket)
-            .key(&self.key)
-            .upload_id(self.upload_id.as_deref().unwrap_or_default())
-            .part_number(part_number)
-            .body(body.into())
-            .send()
-            .await
-            .map_err(|e| std::io::Error::other(sdk_err_msg(&e)))?;
-        self.parts.push(
-            CompletedPart::builder()
-                .part_number(part_number)
-                .set_e_tag(out.e_tag().map(str::to_string))
-                .build(),
-        );
-        Ok(self)
-    }
-
-    async fn finish(mut self: Box<Self>) -> std::io::Result<()> {
-        match self.upload_id.clone() {
-            // Small object: everything still buffered — one PutObject.
-            None => {
-                let mut req = self
-                    .client
-                    .put_object()
-                    .bucket(&self.bucket)
-                    .key(&self.key)
-                    .body(std::mem::take(&mut self.buf).into());
-                if let Some(acl) = &self.acl {
-                    req = req.acl(acl.clone());
-                }
-                req.send()
-                    .await
-                    .map(|_| ())
-                    .map_err(|e| std::io::Error::other(sdk_err_msg(&e)))
-            }
-            Some(upload_id) => {
-                if !self.buf.is_empty() {
-                    self = self.flush_part().await?;
-                }
-                self.client
-                    .complete_multipart_upload()
-                    .bucket(&self.bucket)
-                    .key(&self.key)
-                    .upload_id(&upload_id)
-                    .multipart_upload(
-                        CompletedMultipartUpload::builder()
-                            .set_parts(Some(std::mem::take(&mut self.parts)))
-                            .build(),
-                    )
-                    .send()
-                    .await
-                    .map(|_| ())
-                    .map_err(|e| std::io::Error::other(sdk_err_msg(&e)))
-            }
-        }
-    }
-}
-
-enum WriterState {
-    Ready(Box<WriterInner>),
-    /// A part upload in flight; the inner state comes back when it lands.
-    Busy(BoxFuture<'static, std::io::Result<Box<WriterInner>>>),
-    Finishing(BoxFuture<'static, std::io::Result<()>>),
-    Done,
-    Failed,
-}
-
-/// Info needed to abort an incomplete multipart upload if the writer is
-/// dropped mid-transfer (cancel / error) — otherwise orphaned parts linger
-/// (and bill) on the provider.
-struct AbortSlot {
-    client: Client,
-    bucket: String,
-    key: String,
-    upload_id: Mutex<Option<String>>,
-}
-
-pub struct S3Writer {
-    state: WriterState,
-    abort: Arc<AbortSlot>,
-}
-
-impl S3Writer {
-    fn new(client: Client, bucket: String, key: String, acl: Option<ObjectCannedAcl>) -> S3Writer {
-        let abort = Arc::new(AbortSlot {
-            client: client.clone(),
-            bucket: bucket.clone(),
-            key: key.clone(),
-            upload_id: Mutex::new(None),
-        });
-        S3Writer {
-            state: WriterState::Ready(Box::new(WriterInner {
-                client,
-                bucket,
-                key,
-                acl,
-                abort: abort.clone(),
-                upload_id: None,
-                parts: Vec::new(),
-                next_part: 1,
-                buf: Vec::new(),
-            })),
-            abort,
-        }
-    }
-
-    /// Drive a Busy state to completion; returns Pending while in flight.
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        loop {
-            match &mut self.state {
-                WriterState::Ready(_) | WriterState::Done => return Poll::Ready(Ok(())),
-                WriterState::Busy(fut) => match futures::ready!(fut.as_mut().poll(cx)) {
-                    Ok(inner) => {
-                        *self.abort.upload_id.lock().unwrap() = inner.upload_id.clone();
-                        self.state = WriterState::Ready(inner);
-                    }
-                    Err(e) => {
-                        self.state = WriterState::Failed;
-                        return Poll::Ready(Err(e));
-                    }
-                },
-                WriterState::Finishing(_) => {
-                    return Poll::Ready(Err(std::io::Error::other("write after shutdown")))
-                }
-                WriterState::Failed => {
-                    return Poll::Ready(Err(std::io::Error::other("upload already failed")))
-                }
-            }
-        }
-    }
-}
-
-impl AsyncWrite for S3Writer {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<std::io::Result<usize>> {
-        futures::ready!(self.poll_ready(cx))?;
-        let WriterState::Ready(inner) = &mut self.state else {
-            return Poll::Ready(Err(std::io::Error::other("write after shutdown")));
-        };
-        inner.buf.extend_from_slice(buf);
-        if inner.buf.len() >= PART_SIZE {
-            let WriterState::Ready(inner) = std::mem::replace(&mut self.state, WriterState::Done)
-            else {
-                unreachable!()
-            };
-            self.state = WriterState::Busy(inner.flush_part().boxed());
-            // Kick the upload off; the bytes are accepted either way and the
-            // next poll_* call continues driving it.
-            let _ = self.poll_ready(cx)?;
-        }
-        Poll::Ready(Ok(buf.len()))
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        // Buffered bytes below the part threshold can only go out on
-        // shutdown; "flush" just drains any in-flight part.
-        self.poll_ready(cx)
-    }
-
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        loop {
-            match &mut self.state {
-                WriterState::Ready(_) => {
-                    let WriterState::Ready(inner) =
-                        std::mem::replace(&mut self.state, WriterState::Done)
-                    else {
-                        unreachable!()
-                    };
-                    self.state = WriterState::Finishing(inner.finish().boxed());
-                }
-                WriterState::Busy(_) => futures::ready!(self.poll_ready(cx))?,
-                WriterState::Finishing(fut) => {
-                    let result = futures::ready!(fut.as_mut().poll(cx));
-                    self.state = if result.is_ok() {
-                        *self.abort.upload_id.lock().unwrap() = None;
-                        WriterState::Done
-                    } else {
-                        WriterState::Failed
-                    };
-                    return Poll::Ready(result);
-                }
-                WriterState::Done => return Poll::Ready(Ok(())),
-                WriterState::Failed => {
-                    return Poll::Ready(Err(std::io::Error::other("upload already failed")))
-                }
-            }
-        }
-    }
-}
-
-impl Drop for S3Writer {
-    fn drop(&mut self) {
-        // A multipart upload that never completed leaves billable orphaned
-        // parts — abort it in the background.
-        let upload_id = self.abort.upload_id.lock().unwrap().take();
-        if let Some(upload_id) = upload_id {
-            let slot = self.abort.clone();
-            tokio::spawn(async move {
-                let _ = slot
-                    .client
-                    .abort_multipart_upload()
-                    .bucket(&slot.bucket)
-                    .key(&slot.key)
-                    .upload_id(upload_id)
-                    .send()
-                    .await;
-            });
-        }
     }
 }

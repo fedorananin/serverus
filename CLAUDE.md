@@ -109,6 +109,24 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
   no global transfer panel.
 - `Connection.disable_terminal` = SFTP-only SSH servers (no shell); the UI hides
   the terminal view and the backend never opens a shell channel.
+- **S3 uploads must declare a `Content-Type`.** `aws-sdk-s3` labels every body
+  `application/octet-stream` and never infers a type from the key, which
+  silently breaks any site published through the panel (browsers reject CSS
+  and ES modules under that type). Every request that creates an object
+  declares one — `PutObject`, `CreateMultipartUpload` (the parts and the
+  completion carry no type), `create_file`, and the `CopyObject` that
+  publishes a remote edit (with `MetadataDirective::Replace`, and typed after
+  the *target*, since staging uses a `.tmp` name).
+  **The name is authoritative, bytes are the fallback — never the reverse.**
+  `s3/content_type/table.rs` maps the extension; only when that yields nothing
+  does `s3/content_type/sniff.rs` read the object's head (free — the writer
+  has it buffered). Sniffing must never resolve to HTML/SVG/XML/script: doing
+  so would turn an inert upload into a document executing in the bucket's
+  origin. And it must never override the name — CSS/JS have no signature, so
+  content-first would resurrect the original bug. Extensions omitted on
+  purpose live in `ABSENT_BY_DESIGN` with their reason, and a test keeps them
+  out. `rename` deliberately keeps standard S3 copy semantics and preserves
+  the existing type.
 
 ## Project status
 
@@ -138,7 +156,14 @@ same editable multiline-confirmation dialog a clipboard paste goes through
 old two-step Continue modal is gone); the terminal auto-focuses when its tab
 or view becomes active (`SessionView` effect → `TerminalPanel.focusActive`);
 session tabs have tighter horizontal padding; the find bar lives in
-`terminal/TerminalFindBar.svelte` (split out for the 300-line limit). Also
+`terminal/TerminalFindBar.svelte` (split out for the 300-line limit).
+v1.3.0: S3 uploads declare a real `Content-Type` instead of the SDK's
+`application/octet-stream` — 293 extensions in `s3/content_type/table/`
+(web, images incl. raw camera formats, A/V incl. HLS/DASH, documents,
+archives, certificates, 3D), with magic-byte detection in
+`s3/content_type/sniff.rs` as a fallback for names that resolve to nothing.
+The S3 writer split into `s3/writer.rs` (the `AsyncWrite` state machine) and
+`s3/writer/inner.rs` (the upload requests + multipart abort slot). Also
 v1.1.0: cross-platform
 support — Windows Hello quick unlock (`quick_unlock.rs::windows_hello`,
 KeePassXC scheme: Hello-gated deterministic RSA signature → HKDF → AES-GCM
@@ -149,7 +174,7 @@ WKWebView, WebKitGTK and WebView2, but this is not representative physical
 Windows/Linux hardware validation.
 Known gaps: no Linux quick unlock; lock-on-sleep detection (monotonic vs wall
 clock divergence) may not fire on Windows; local chmod is hidden on Windows.
-Integration tests (32) run against a local unprivileged `sshd`, an in-process
+Integration tests (40) run against a local unprivileged `sshd`, an in-process
 libunftp FTP server and an in-process `s3s` S3 server — no docker needed
 (macOS + Linux; Windows runs `cargo test --workspace --lib`, plus supported
 non-SSH desktop scenarios). Releases are built by

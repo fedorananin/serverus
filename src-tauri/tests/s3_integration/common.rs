@@ -29,6 +29,35 @@ pub(crate) fn fs_for(port: u16, bucket: Option<&str>) -> Arc<S3Fs> {
     })
 }
 
+/// The `Content-Type` the server actually stored for an object, read with a
+/// plain SDK client so the assertion does not go back through the code under
+/// test.
+pub(crate) async fn head_content_type(port: u16, bucket: &str, key: &str) -> Option<String> {
+    let credentials = aws_sdk_s3::config::Credentials::new(
+        ACCESS_KEY,
+        SECRET_KEY,
+        None,
+        None,
+        "serverus-content-type-test",
+    );
+    let config = aws_sdk_s3::Config::builder()
+        .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
+        .region(aws_sdk_s3::config::Region::new("us-east-1"))
+        .endpoint_url(format!("http://127.0.0.1:{port}"))
+        .credentials_provider(credentials)
+        .force_path_style(true)
+        .build();
+    aws_sdk_s3::Client::from_conf(config)
+        .head_object()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .await
+        .unwrap_or_else(|error| panic!("head {bucket}/{key}: {error}"))
+        .content_type()
+        .map(str::to_string)
+}
+
 pub(crate) fn settings() -> TransferSettings {
     TransferSettings {
         max_parallel_per_server: 4,

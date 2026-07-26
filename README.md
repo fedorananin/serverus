@@ -13,7 +13,7 @@ A native macOS connection manager. Built with Tauri 2, a Rust backend and a Svel
 ![Built with Rust](https://img.shields.io/badge/backend-Rust-orange)
 ![Built with Tauri](https://img.shields.io/badge/shell-Tauri%202-24C8DB)
 ![Frontend Svelte](https://img.shields.io/badge/frontend-Svelte%205-FF3E00)
-![Version](https://img.shields.io/badge/version-1.2.4-brightgreen)
+![Version](https://img.shields.io/badge/version-1.3.0-brightgreen)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
@@ -211,6 +211,15 @@ DigitalOcean Spaces, Cloudflare R2, Backblaze B2, Wasabi, MinIO, and more.
   transfer queue don't know it's S3.
 - **Multipart uploads** (8 MiB parts), with unfinished multiparts aborted on
   cancel/error.
+- **Correct `Content-Type` on upload**, so a site uploaded through the panel
+  serves its CSS as `text/css` and its modules as `text/javascript` instead of
+  the `application/octet-stream` browsers refuse. ~300 extensions are covered:
+  web assets, Office and OpenDocument, images down to raw camera formats,
+  audio/video, HLS and DASH manifests, archives, fonts, certificates and 3D.
+  Files whose name says nothing are identified by their magic bytes instead —
+  never the other way round, since a stylesheet has no signature to find and
+  sniffing an unnamed upload into HTML or SVG would let it execute in the
+  bucket's own origin. What neither answers keeps the octet-stream default.
 - **ACLs instead of chmod**: a public/private Mode column, loaded **in the
   background** after listing and cached; bulk **Make public / Make private**
   (recursive over a prefix for folders); an **upload‑ACL mode switch**
@@ -535,7 +544,7 @@ that matrix succeeds does it build and upload installers for all three OSes to
 a **draft** GitHub Release (`.github/workflows/release.yml`):
 
 ```bash
-git tag v1.2.4 && git push origin v1.2.4
+git tag v1.3.0 && git push origin v1.3.0
 ```
 
 Review the draft on the Releases page, then publish. No local builds needed.

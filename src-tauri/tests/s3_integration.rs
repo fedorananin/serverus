@@ -8,6 +8,8 @@ mod transfer_context;
 mod acl_backend;
 #[path = "s3_integration/common.rs"]
 mod common;
+#[path = "s3_integration/content_type.rs"]
+mod content_type;
 #[path = "s3_integration/multipart.rs"]
 mod multipart;
 #[path = "s3_integration/operations.rs"]
@@ -45,6 +47,46 @@ async fn completed_multipart_upload_is_not_aborted() {
 #[tokio::test]
 async fn small_writer_still_uses_put_object_without_multipart() {
     multipart::small_writer_uses_put_object_without_multipart().await;
+}
+
+#[tokio::test]
+async fn s3_uploads_declare_content_type_from_the_object_name() {
+    content_type::put_object_uploads_declare_the_type().await;
+}
+
+#[tokio::test]
+async fn s3_uploads_of_unknown_extensions_leave_the_sdk_default() {
+    content_type::unknown_extensions_leave_the_sdk_default().await;
+}
+
+#[tokio::test]
+async fn s3_multipart_uploads_declare_content_type() {
+    content_type::multipart_uploads_declare_the_type().await;
+}
+
+#[tokio::test]
+async fn s3_uploads_without_a_usable_name_are_identified_by_content() {
+    content_type::nameless_files_are_identified_by_their_bytes().await;
+}
+
+#[tokio::test]
+async fn s3_upload_content_type_prefers_the_name_over_the_bytes() {
+    content_type::the_name_outranks_the_bytes().await;
+}
+
+#[tokio::test]
+async fn s3_multipart_uploads_sniff_their_head() {
+    content_type::multipart_uploads_sniff_their_head().await;
+}
+
+#[tokio::test]
+async fn s3_created_empty_files_declare_content_type() {
+    content_type::created_empty_files_declare_the_type().await;
+}
+
+#[tokio::test]
+async fn s3_remote_edit_publishes_the_target_content_type() {
+    content_type::remote_edit_publishes_the_targets_type_not_the_staging_name().await;
 }
 
 #[tokio::test]

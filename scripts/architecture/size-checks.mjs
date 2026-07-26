@@ -9,7 +9,7 @@ export const SOURCE_LINE_LIMIT = 300;
 const LEGACY_OVERSIZED_FILES = new Map([
   // Protocol adapters remain intact until the capability-based endpoint
   // migration, so the current phase does not mix a move with a redesign.
-  ["src-tauri/src/session/s3.rs", 1058],
+  ["src-tauri/src/session/s3.rs", 810],
   ["src-tauri/src/session/ssh.rs", 359],
   // Platform unlock split remains in migration phase 3.
   ["src-tauri/src/vault/quick_unlock.rs", 431],
