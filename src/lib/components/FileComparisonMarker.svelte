@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { DirectoryComparisonStatus } from "$lib/directory-comparison";
+  import type { EntryComparisonStatus } from "$lib/directory-comparison";
 
   interface Props {
-    status?: DirectoryComparisonStatus;
+    status?: EntryComparisonStatus;
     id?: string;
   }
 
@@ -16,6 +16,10 @@
         return { label: "Remote Only", text: "R" };
       case "different":
         return { label: "Different", text: "≠" };
+      case "comparing":
+        return { label: "Comparing Contents", text: "…" };
+      case "unknown":
+        return { label: "Not Compared", text: "?" };
       default:
         return null;
     }
@@ -64,6 +68,9 @@
     --marker: var(--compare-different);
     --marker-bg: var(--compare-different-subtle);
   }
+
+  /* "comparing" and "unknown" keep the neutral defaults — the walk is
+     pending or gave no verdict, so no colored signal is honest. */
 
   .sr-only {
     position: absolute;

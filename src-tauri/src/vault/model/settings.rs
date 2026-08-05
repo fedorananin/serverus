@@ -123,6 +123,10 @@ pub const SIDEBAR_WIDTH_MIN: u16 = 200;
 pub const SIDEBAR_WIDTH_MAX: u16 = 380;
 pub const SIDEBAR_WIDTH_DEFAULT: u16 = 230;
 
+fn default_hide_local_junk() -> bool {
+    true
+}
+
 fn default_sidebar_width() -> u16 {
     SIDEBAR_WIDTH_DEFAULT
 }
@@ -130,6 +134,13 @@ fn default_sidebar_width() -> u16 {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct PanelSettings {
     pub show_hidden: bool,
+    /// Never show OS metadata junk (`.DS_Store`, `Thumbs.db`) in the local
+    /// pane — regardless of `show_hidden` — and keep it out of the local
+    /// side of folder comparison. The remote pane still shows such files so
+    /// stray uploads can be found and deleted. On by default (also for
+    /// vaults saved before the setting existed).
+    #[serde(default = "default_hide_local_junk")]
+    pub hide_local_junk: bool,
     pub size_format: SizeFormat,
     pub default_local_dir: Option<String>,
     /// Sidebar width in CSS pixels, always within
@@ -142,6 +153,7 @@ impl Default for PanelSettings {
     fn default() -> Self {
         PanelSettings {
             show_hidden: false,
+            hide_local_junk: true,
             size_format: SizeFormat::Kib,
             default_local_dir: None,
             sidebar_width: SIDEBAR_WIDTH_DEFAULT,

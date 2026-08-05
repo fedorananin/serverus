@@ -10,6 +10,8 @@ const summary = {
   different: 2,
   localOnly: 3,
   remoteOnly: 1,
+  comparing: 0,
+  unknown: 0,
 };
 
 describe("DirectoryComparisonBar", () => {
@@ -48,6 +50,19 @@ describe("DirectoryComparisonBar", () => {
       "3 Local Only 2 Different 1 Remote Only 7 Same Metadata",
     );
     expect(screen.queryByText("Current Folders · Metadata Only")).not.toBeInTheDocument();
+  });
+
+  it("shows in-flight and unverified folder counts only when present", () => {
+    render(DirectoryComparisonBar, {
+      active: true,
+      summary: { ...summary, comparing: 2, unknown: 1 },
+      differencesOnly: false,
+      ontoggle: vi.fn(),
+      onfilterchange: vi.fn(),
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("2 Comparing…");
+    expect(screen.getByRole("status")).toHaveTextContent("1 Not Compared");
   });
 
   it("exposes a labelled differences-only filter", async () => {

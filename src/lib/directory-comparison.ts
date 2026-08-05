@@ -1,4 +1,4 @@
-import type { RemoteEntry } from "$lib/api";
+import type { RemoteEntry, SubtreeStatus } from "$lib/api";
 
 export type DirectoryComparisonStatus =
   | "matching"
@@ -6,16 +6,37 @@ export type DirectoryComparisonStatus =
   | "local-only"
   | "remote-only";
 
+/** OS metadata junk the "hide local junk" panel setting suppresses in the
+ *  local pane and on the local side of comparison (case-insensitive —
+ *  Windows writes both `Thumbs.db` and `thumbs.db` in the wild). Mirrored
+ *  by `is_local_junk` in `serverus-domain::fs_compare` — keep in lockstep. */
+export function isLocalJunk(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower === ".ds_store" || lower === "thumbs.db";
+}
+
+/** Status of one directory pair while (or after) its contents are compared
+ *  by the backend walk: a `SubtreeStatus`, or "comparing" while in flight. */
+export type DeepDirectoryStatus = SubtreeStatus | "comparing";
+
+/** What a pane row can display: the flat metadata statuses plus the deep
+ *  folder states ("unknown" = could not be verified, e.g. tree too large). */
+export type EntryComparisonStatus = DirectoryComparisonStatus | DeepDirectoryStatus;
+
 export interface DirectoryComparisonSummary {
   matching: number;
   different: number;
   localOnly: number;
   remoteOnly: number;
+  /** Directory pairs whose contents are still being compared. */
+  comparing: number;
+  /** Directory pairs that could not be verified (too large, unreadable). */
+  unknown: number;
 }
 
 export interface DirectoryComparison {
-  localStatuses: Map<string, DirectoryComparisonStatus>;
-  remoteStatuses: Map<string, DirectoryComparisonStatus>;
+  localStatuses: Map<string, EntryComparisonStatus>;
+  remoteStatuses: Map<string, EntryComparisonStatus>;
   summary: DirectoryComparisonSummary;
 }
 
@@ -68,14 +89,16 @@ export function compareDirectoryEntries(
   remoteEntries: readonly RemoteEntry[],
   options: DirectoryComparisonOptions = {},
 ): DirectoryComparison {
-  const localStatuses = new Map<string, DirectoryComparisonStatus>();
-  const remoteStatuses = new Map<string, DirectoryComparisonStatus>();
+  const localStatuses = new Map<string, EntryComparisonStatus>();
+  const remoteStatuses = new Map<string, EntryComparisonStatus>();
   const remoteByName = new Map(remoteEntries.map((entry) => [entry.name, entry]));
   const summary: DirectoryComparisonSummary = {
     matching: 0,
     different: 0,
     localOnly: 0,
     remoteOnly: 0,
+    comparing: 0,
+    unknown: 0,
   };
 
   for (const local of localEntries) {
@@ -99,5 +122,32 @@ export function compareDirectoryEntries(
     summary.remoteOnly += 1;
   }
 
+  return { localStatuses, remoteStatuses, summary };
+}
+
+/** Overlay deep folder-walk results onto a flat comparison.
+ *
+ * `deep` is keyed by directory name and only ever contains names that are a
+ * directory pair in the flat comparison (where the flat status is always
+ * "matching" — flat rules cannot see directory contents). A deep "matching"
+ * therefore upgrades nothing; "comparing", "different" and "unknown" replace
+ * the flat status on both sides.
+ */
+export function applyDeepStatuses(
+  flat: DirectoryComparison,
+  deep: ReadonlyMap<string, DeepDirectoryStatus>,
+): DirectoryComparison {
+  if (deep.size === 0) return flat;
+  const localStatuses = new Map(flat.localStatuses);
+  const remoteStatuses = new Map(flat.remoteStatuses);
+  const summary = { ...flat.summary };
+  for (const [name, status] of deep) {
+    if (localStatuses.get(name) !== "matching") continue;
+    if (status === "matching") continue;
+    localStatuses.set(name, status);
+    remoteStatuses.set(name, status);
+    summary.matching -= 1;
+    summary[status] += 1;
+  }
   return { localStatuses, remoteStatuses, summary };
 }

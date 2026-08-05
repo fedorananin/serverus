@@ -2,6 +2,7 @@
 //! (SPEC §7.1). One SSH session multiplexes terminals, SFTP and tunnels.
 
 mod admission;
+pub mod compare;
 mod connection;
 mod entry;
 mod manager;

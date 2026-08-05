@@ -5,9 +5,13 @@
   import { commands, errorMessage, unwrap } from "$lib/api";
   import { s3PublicUrl } from "$lib/format";
   import { useAppModel } from "$lib/app/model.svelte";
-  import { compareDirectoryEntries } from "$lib/directory-comparison";
+  import { applyDeepStatuses, compareDirectoryEntries } from "$lib/directory-comparison";
   import { queueActivity, queueSettled } from "$lib/transfer-settle";
   import { PaneController } from "$lib/stores/pane.svelte";
+  import {
+    directoryPairs,
+    SubtreeComparisonController,
+  } from "$lib/stores/subtree-comparison.svelte";
   import { UploadAclController } from "$lib/stores/upload-acl.svelte";
   import { isMod } from "$lib/platform";
   import { vault } from "$lib/stores/vault.svelte";
@@ -30,10 +34,11 @@
 
   const connection = $derived(vault.data?.connections[tab.connectionId] ?? null);
   const showHidden = vault.data?.settings.panels.show_hidden ?? false;
+  const hideLocalJunk = vault.data?.settings.panels.hide_local_junk ?? true;
   const isS3 = vault.data?.connections[tab.connectionId]?.protocol === "s3";
   const isFtp = vault.data?.connections[tab.connectionId]?.protocol === "ftp";
 
-  const local = new PaneController("local", null, showHidden);
+  const local = new PaneController("local", null, showHidden, false, hideLocalJunk);
   const remote = new PaneController("remote", sessionId, showHidden, isS3);
 
   let transferError = $state<string | null>(null);
@@ -53,9 +58,27 @@
       : emptyComparison,
   );
 
+  // Directory pairs get their contents compared by a backend walk; the flat
+  // comparison above can only see their metadata.
+  const subtree = new SubtreeComparisonController(sessionId);
   $effect(() => {
-    local.comparisonStatuses = comparisonActive ? comparison.localStatuses : null;
-    remote.comparisonStatuses = comparisonActive ? comparison.remoteStatuses : null;
+    if (!comparisonActive) {
+      void subtree.stop();
+      return;
+    }
+    void subtree.run({
+      pairs: directoryPairs(local.entries, remote.entries),
+      ignoreMtime: isS3,
+      coarseRemoteMtime: isFtp,
+      includeHidden: showHidden,
+      hideLocalJunk,
+    });
+  });
+  const merged = $derived(applyDeepStatuses(comparison, subtree.statuses));
+
+  $effect(() => {
+    local.comparisonStatuses = comparisonActive ? merged.localStatuses : null;
+    remote.comparisonStatuses = comparisonActive ? merged.remoteStatuses : null;
     local.comparisonDifferencesOnly = comparisonActive && differencesOnly;
     remote.comparisonDifferencesOnly = comparisonActive && differencesOnly;
   });
@@ -123,7 +146,10 @@
         void localCopy(paths);
       }
     });
-    return () => void unlisten.then((f) => f());
+    return () => {
+      void subtree.stop();
+      void unlisten.then((f) => f());
+    };
   });
 
   async function localCopy(paths: string[]) {
@@ -199,7 +225,7 @@
 <div class="files-view" bind:this={root}>
   <DirectoryComparisonBar
     active={comparisonActive}
-    summary={comparison.summary}
+    summary={merged.summary}
     {differencesOnly}
     ontoggle={toggleComparison}
     onfilterchange={(checked) => (differencesOnly = checked)}

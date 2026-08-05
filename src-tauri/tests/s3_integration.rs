@@ -8,6 +8,8 @@ mod transfer_context;
 mod acl_backend;
 #[path = "s3_integration/common.rs"]
 mod common;
+#[path = "s3_integration/compare.rs"]
+mod compare;
 #[path = "s3_integration/content_type.rs"]
 mod content_type;
 #[path = "s3_integration/multipart.rs"]
@@ -97,4 +99,9 @@ async fn s3_acl_public_private_flow() {
 #[tokio::test]
 async fn s3_replacement_staging_is_private_under_public_upload_mode() {
     operations::replacement_staging_is_private_under_public_upload_mode().await;
+}
+
+#[tokio::test]
+async fn s3_subtree_compare() {
+    compare::subtree_compare().await;
 }

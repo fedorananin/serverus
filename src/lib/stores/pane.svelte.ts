@@ -3,7 +3,8 @@
 
 import { commands, errorMessage, unwrap } from "$lib/api";
 import type { RemoteEntry, S3AclStatus } from "$lib/api";
-import type { DirectoryComparisonStatus } from "$lib/directory-comparison";
+import { isLocalJunk } from "$lib/directory-comparison";
+import type { EntryComparisonStatus } from "$lib/directory-comparison";
 import { joinPath, parentPath } from "$lib/format";
 import { isMod } from "$lib/platform";
 
@@ -32,16 +33,27 @@ export class PaneController {
   anchor = $state<string | null>(null);
   /** Lazily loaded public/private badge per entry path (S3 only). */
   acl = $state<Record<string, S3AclStatus>>({});
-  comparisonStatuses = $state<Map<string, DirectoryComparisonStatus> | null>(null);
+  comparisonStatuses = $state<ReadonlyMap<string, EntryComparisonStatus> | null>(null);
   comparisonDifferencesOnly = $state(false);
   /** Invalidates in-flight ACL fetches when the listing changes. */
   private aclGeneration = 0;
 
-  constructor(side: PaneSide, sessionId: string | null, showHidden: boolean, s3 = false) {
+  /** Local pane only: drop `.DS_Store`/`Thumbs.db` from listings entirely,
+   *  so neither the view nor the comparison ever sees them. */
+  hideJunk = false;
+
+  constructor(
+    side: PaneSide,
+    sessionId: string | null,
+    showHidden: boolean,
+    s3 = false,
+    hideJunk = false,
+  ) {
     this.side = side;
     this.sessionId = sessionId;
     this.showHidden = showHidden;
     this.s3 = s3;
+    this.hideJunk = side === "local" && hideJunk;
   }
 
   readonly visible = $derived.by(() => {
@@ -77,7 +89,8 @@ export class PaneController {
 
   private async list(path: string): Promise<RemoteEntry[]> {
     if (this.side === "local") {
-      return unwrap(commands.localList(path));
+      const entries = await unwrap(commands.localList(path));
+      return this.hideJunk ? entries.filter((entry) => !isLocalJunk(entry.name)) : entries;
     }
     return unwrap(commands.remoteList(this.sessionId!, path));
   }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { RemoteEntry, S3AclStatus, SizeFormat } from "$lib/api";
-  import type { DirectoryComparisonStatus } from "$lib/directory-comparison";
+  import type { EntryComparisonStatus } from "$lib/directory-comparison";
   import { formatMtime, formatPermissions, formatSize } from "$lib/format";
   import FileComparisonMarker from "../FileComparisonMarker.svelte";
 
@@ -9,7 +9,7 @@
     selected: boolean;
     s3: boolean;
     aclStatus?: S3AclStatus;
-    comparisonStatus?: DirectoryComparisonStatus;
+    comparisonStatus?: EntryComparisonStatus;
     comparisonDescriptionId?: string;
     sizeFormat: SizeFormat;
     onclick: (event: MouseEvent) => void;

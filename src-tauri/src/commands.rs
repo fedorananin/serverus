@@ -3,6 +3,7 @@
 //! Command groups live in `commands/`; this module preserves the public
 //! `commands::name` surface used by Tauri, Specta, and existing call sites.
 
+mod compare;
 mod helpers;
 mod local_copy;
 mod local_files;
@@ -20,6 +21,7 @@ mod vault_io;
 mod vault_location;
 mod vault_tree;
 
+pub use compare::*;
 pub use local_copy::*;
 pub use local_files::*;
 pub use misc::*;

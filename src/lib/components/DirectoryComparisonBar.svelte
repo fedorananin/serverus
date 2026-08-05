@@ -18,7 +18,7 @@
     class:active
     aria-label={active ? "Stop Comparing Folders" : "Compare Folders"}
     aria-pressed={active}
-    title="Compares names, types, sizes, and known modification times of the two open folders without scanning directory contents"
+    title="Compares names, types, sizes, and known modification times of the two open folders; folders present on both sides are compared by walking their contents"
     onclick={ontoggle}
   >
     <span aria-hidden="true">⇄</span>
@@ -35,6 +35,8 @@
       data-different={summary.different}
       data-remote-only={summary.remoteOnly}
       data-matching={summary.matching}
+      data-comparing={summary.comparing}
+      data-unknown={summary.unknown}
     >
       <span class="result local-only">
         <span class="signal" aria-hidden="true"></span>{summary.localOnly} Local Only
@@ -48,6 +50,16 @@
       <span class="result matching">
         <span class="signal" aria-hidden="true"></span>{summary.matching} Same Metadata
       </span>
+      {#if summary.comparing > 0}
+        <span class="result pending">
+          <span class="signal" aria-hidden="true"></span>{summary.comparing} Comparing…
+        </span>
+      {/if}
+      {#if summary.unknown > 0}
+        <span class="result pending" title="Folder contents could not be verified (too many files, or unreadable)">
+          <span class="signal" aria-hidden="true"></span>{summary.unknown} Not Compared
+        </span>
+      {/if}
     </div>
 
     <label class="filter">

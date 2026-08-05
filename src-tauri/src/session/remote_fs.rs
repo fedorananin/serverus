@@ -67,6 +67,35 @@ pub trait RemoteFs: Send + Sync {
     fn supports_write_resume(&self) -> bool {
         true
     }
+    /// One-shot recursive snapshot of everything under `path`, when the
+    /// protocol has a way to produce it that is cheaper than per-directory
+    /// `list` calls (S3: a single un-delimited `ListObjectsV2` page loop).
+    /// `Ok(None)` means "no cheap path — walk with `list` instead", which is
+    /// the default for every connection-oriented protocol.
+    async fn tree_snapshot(&self, _path: &str, _limit: usize) -> AppResult<Option<TreeSnapshot>> {
+        Ok(None)
+    }
+}
+
+/// Result of [`RemoteFs::tree_snapshot`].
+#[derive(Debug, Default)]
+pub struct TreeSnapshot {
+    pub items: Vec<TreeSnapshotItem>,
+    /// The listing was cut off at the requested limit; the snapshot must not
+    /// be treated as a complete picture of the subtree.
+    pub truncated: bool,
+}
+
+/// One file or explicit directory marker inside a [`TreeSnapshot`]. Parent
+/// directories implied by `rel_path` need not be listed separately.
+#[derive(Debug)]
+pub struct TreeSnapshotItem {
+    /// `/`-separated path relative to the snapshot root, e.g. `a/b.txt`.
+    pub rel_path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    /// Unix seconds, when known.
+    pub mtime: Option<i64>,
 }
 
 /// Replace a file using only baseline [`RemoteFs`] operations.

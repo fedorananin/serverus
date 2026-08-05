@@ -11,6 +11,18 @@ fn sidebar_width_defaults_when_absent() {
 }
 
 #[test]
+fn hide_local_junk_defaults_on_for_older_vaults() {
+    // Vaults written before the junk filter existed get it enabled — junk
+    // hiding is the intended out-of-the-box behavior.
+    let panels: PanelSettings = serde_json::from_str(
+        r#"{"show_hidden":false,"size_format":"kib","default_local_dir":null}"#,
+    )
+    .unwrap();
+    assert!(panels.hide_local_junk);
+    assert!(PanelSettings::default().hide_local_junk);
+}
+
+#[test]
 fn appearance_defaults_to_system_for_older_vaults() {
     let mut value = serde_json::to_value(Settings::default()).unwrap();
     value.as_object_mut().unwrap().remove("appearance");

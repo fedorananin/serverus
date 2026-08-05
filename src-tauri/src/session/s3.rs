@@ -11,6 +11,7 @@
 //! `RemoteFs` trait — the UI reaches them through dedicated `s3_*` commands
 //! so the protocol abstraction stays intact.
 
+mod bulk;
 mod content_type;
 mod writer;
 
@@ -29,7 +30,9 @@ use specta::Type;
 use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
-use crate::session::remote_fs::{join_remote, BoxRead, BoxWrite, RemoteEntry, RemoteFs};
+use crate::session::remote_fs::{
+    join_remote, BoxRead, BoxWrite, RemoteEntry, RemoteFs, TreeSnapshot,
+};
 use crate::vault::model::{Connection, S3UploadAcl};
 
 use content_type::guess_content_type;
@@ -305,32 +308,6 @@ impl S3Fs {
             .collect())
     }
 
-    /// All object keys under a prefix (no delimiter — full recursive set).
-    async fn list_all_keys(&self, bucket: &str, prefix: &str) -> AppResult<Vec<String>> {
-        let mut keys = Vec::new();
-        let mut token: Option<String> = None;
-        loop {
-            let mut req = self.client.list_objects_v2().bucket(bucket);
-            if !prefix.is_empty() {
-                req = req.prefix(prefix);
-            }
-            if let Some(t) = token.take() {
-                req = req.continuation_token(t);
-            }
-            let out = req.send().await.map_err(|e| sdk_err(prefix, e))?;
-            keys.extend(
-                out.contents()
-                    .iter()
-                    .filter_map(|o| o.key().map(str::to_string)),
-            );
-            match out.next_continuation_token() {
-                Some(t) if out.is_truncated() == Some(true) => token = Some(t.to_string()),
-                _ => break,
-            }
-        }
-        Ok(keys)
-    }
-
     async fn acl_status_one(&self, bucket: &str, key: &str) -> S3AclStatus {
         match self
             .client
@@ -412,7 +389,7 @@ impl S3Fs {
         for target in &targets {
             if target.is_dir {
                 let (bucket, prefix) = self.dir_prefix(&target.path)?;
-                for key in self.list_all_keys(&bucket, &prefix).await? {
+                for key in bulk::list_all_keys(self, &bucket, &prefix).await? {
                     objects.push((bucket.clone(), key));
                 }
             } else {
@@ -581,6 +558,20 @@ impl RemoteFs for S3Fs {
         Ok(entries)
     }
 
+    /// See [`bulk::tree_snapshot`] — one request per 1000 objects instead
+    /// of one `list` per directory.
+    async fn tree_snapshot(&self, path: &str, limit: usize) -> AppResult<Option<TreeSnapshot>> {
+        let (bucket, prefix) = match self.resolve(path)? {
+            // The bucket list has no single-prefix listing; walk it.
+            Loc::Root => return Ok(None),
+            Loc::Bucket(b) => (b, String::new()),
+            Loc::Key(b, k) => (b, format!("{k}/")),
+        };
+        bulk::tree_snapshot(self, path, &bucket, &prefix, limit)
+            .await
+            .map(Some)
+    }
+
     async fn stat(&self, path: &str) -> AppResult<RemoteEntry> {
         match self.resolve(path)? {
             Loc::Root => Ok(Self::dir_entry("/", "/")),
@@ -671,7 +662,7 @@ impl RemoteFs for S3Fs {
         }
         // Directory: move every object under the prefix.
         let from_prefix = format!("{fk}/");
-        let keys = self.list_all_keys(&fb, &from_prefix).await?;
+        let keys = bulk::list_all_keys(self, &fb, &from_prefix).await?;
         if keys.is_empty() {
             return Err(AppError::RemoteFs(format!("{from}: not found")));
         }

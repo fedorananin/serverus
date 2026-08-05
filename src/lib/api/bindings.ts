@@ -80,6 +80,17 @@ export const commands = {
 	remoteDelete: (sessionId: string, path: string, isDir: boolean) => typedError<null, ApiError>(__TAURI_INVOKE("remote_delete", { sessionId, path, isDir })),
 	remoteChmod: (sessionId: string, path: string, mode: number) => typedError<null, ApiError>(__TAURI_INVOKE("remote_chmod", { sessionId, path, mode })),
 	/**
+	 *  Compare the local tree under `local_path` with the remote tree under
+	 *  `remote_path`. Returns as soon as a difference is found; `unknown` means
+	 *  the tree could not be verified (too large, or unreadable locally).
+	 */
+	remoteCompareSubtree: (sessionId: string, localPath: string, remotePath: string, ignoreMtime: boolean, coarseRemoteMtime: boolean, includeHidden: boolean, hideLocalJunk: boolean) => typedError<SubtreeStatus, ApiError>(__TAURI_INVOKE("remote_compare_subtree", { sessionId, localPath, remotePath, ignoreMtime, coarseRemoteMtime, includeHidden, hideLocalJunk })),
+	/**
+	 *  Cancel every in-flight subtree comparison for a session. Walks notice at
+	 *  their next directory boundary.
+	 */
+	remoteCompareCancel: (sessionId: string) => typedError<null, ApiError>(__TAURI_INVOKE("remote_compare_cancel", { sessionId })),
+	/**
 	 *  Public/private status for a batch of objects — fetched in the background
 	 *  after a listing; failures come back as `unknown`, never as an error.
 	 */
@@ -263,6 +274,14 @@ export type ImportReport = {
 
 export type PanelSettings = {
 	show_hidden: boolean,
+	/**
+	 *  Never show OS metadata junk (`.DS_Store`, `Thumbs.db`) in the local
+	 *  pane — regardless of `show_hidden` — and keep it out of the local
+	 *  side of folder comparison. The remote pane still shows such files so
+	 *  stray uploads can be found and deleted. On by default (also for
+	 *  vaults saved before the setting existed).
+	 */
+	hide_local_junk?: boolean,
 	size_format: SizeFormat,
 	default_local_dir: string | null,
 	/**
@@ -415,6 +434,13 @@ export type SizeFormat =
 "kb" | 
 /**  Powers of 1024 (KiB). */
 "kib";
+
+export type SubtreeStatus = "matching" | "different" | 
+/**
+ *  Could not be verified: the tree is over [`MAX_COMPARED_ENTRIES`] or a
+ *  local directory was unreadable. Deliberately not "matching".
+ */
+"unknown";
 
 export type TerminalSettings = {
 	font_family: string,

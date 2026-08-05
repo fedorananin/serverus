@@ -67,6 +67,7 @@
       {passwordStatus}
     </div>
   {/if}
+  <hr class="divider" />
   <div class="export">
     <button type="button" onclick={onexport}>Export config (no secrets)…</button>
     <button type="button" onclick={onimport}>Import config…</button>

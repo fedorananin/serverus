@@ -71,7 +71,12 @@ function initialSettings(): Settings {
       scrollback: 10_000,
       copy_on_select: false,
     },
-    panels: { show_hidden: false, size_format: "kib", default_local_dir: null },
+    panels: {
+      show_hidden: false,
+      hide_local_junk: true,
+      size_format: "kib",
+      default_local_dir: null,
+    },
   };
 }
 

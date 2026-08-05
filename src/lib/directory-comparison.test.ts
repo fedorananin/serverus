@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { RemoteEntry } from "$lib/api";
-import { compareDirectoryEntries } from "$lib/directory-comparison";
+import {
+  applyDeepStatuses,
+  compareDirectoryEntries,
+  isLocalJunk,
+} from "$lib/directory-comparison";
 
 function entry(
   name: string,
@@ -41,6 +45,8 @@ describe("compareDirectoryEntries", () => {
       different: 1,
       localOnly: 1,
       remoteOnly: 1,
+      comparing: 0,
+      unknown: 0,
     });
   });
 
@@ -149,6 +155,8 @@ describe("compareDirectoryEntries", () => {
       different: 0,
       localOnly: 1,
       remoteOnly: 1,
+      comparing: 0,
+      unknown: 0,
     });
   });
 
@@ -173,5 +181,68 @@ describe("compareDirectoryEntries", () => {
 
     expect(comparison.summary.matching).toBe(count);
     expect(nameReads).toBeLessThanOrEqual(count * 4);
+  });
+});
+
+describe("applyDeepStatuses", () => {
+  const flat = () =>
+    compareDirectoryEntries(
+      [entry("assets", { is_dir: true }), entry("docs", { is_dir: true }), entry("a.txt")],
+      [entry("assets", { is_dir: true }), entry("docs", { is_dir: true }), entry("a.txt")],
+    );
+
+  it("overlays walk results onto flat directory pairs and recounts", () => {
+    const merged = applyDeepStatuses(
+      flat(),
+      new Map([
+        ["assets", "different"],
+        ["docs", "comparing"],
+      ]),
+    );
+
+    expect(merged.localStatuses.get("assets")).toBe("different");
+    expect(merged.remoteStatuses.get("assets")).toBe("different");
+    expect(merged.localStatuses.get("docs")).toBe("comparing");
+    expect(merged.localStatuses.get("a.txt")).toBe("matching");
+    expect(merged.summary).toEqual({
+      matching: 1,
+      different: 1,
+      localOnly: 0,
+      remoteOnly: 0,
+      comparing: 1,
+      unknown: 0,
+    });
+  });
+
+  it("keeps a deep-matching pair as matching and reports unverified pairs", () => {
+    const merged = applyDeepStatuses(
+      flat(),
+      new Map([
+        ["assets", "matching"],
+        ["docs", "unknown"],
+      ]),
+    );
+
+    expect(merged.localStatuses.get("assets")).toBe("matching");
+    expect(merged.localStatuses.get("docs")).toBe("unknown");
+    expect(merged.summary.matching).toBe(2);
+    expect(merged.summary.unknown).toBe(1);
+  });
+
+  it("returns the flat comparison untouched when there is nothing deep", () => {
+    const comparison = flat();
+    expect(applyDeepStatuses(comparison, new Map())).toBe(comparison);
+  });
+});
+
+describe("isLocalJunk", () => {
+  it("matches OS metadata junk case-insensitively and nothing else", () => {
+    expect(isLocalJunk(".DS_Store")).toBe(true);
+    expect(isLocalJunk(".ds_store")).toBe(true);
+    expect(isLocalJunk("Thumbs.db")).toBe(true);
+    expect(isLocalJunk("thumbs.db")).toBe(true);
+    expect(isLocalJunk(".htaccess")).toBe(false);
+    expect(isLocalJunk(".gitignore")).toBe(false);
+    expect(isLocalJunk("data.db")).toBe(false);
   });
 });

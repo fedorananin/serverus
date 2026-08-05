@@ -252,3 +252,6 @@ async fn ftp_read_with_offset() {
     reader.read_to_end(&mut buf).await.unwrap();
     assert_eq!(buf, b"456789");
 }
+
+#[path = "ftp_integration/compare.rs"]
+mod compare;

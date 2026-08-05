@@ -165,6 +165,15 @@ textarea {
   user-select: text;
 }
 
+/* Selects keep native intrinsic metrics and end up a few pixels off the
+   text inputs they sit beside — pin one shared height (border-box). */
+input[type="text"],
+input[type="password"],
+input[type="number"],
+select {
+  height: 30px;
+}
+
 input:focus,
 select:focus,
 textarea:focus {

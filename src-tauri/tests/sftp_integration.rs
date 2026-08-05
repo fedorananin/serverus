@@ -7,6 +7,8 @@ mod transfer_context;
 
 #[path = "sftp_integration/common.rs"]
 mod common;
+#[path = "sftp_integration/compare.rs"]
+mod compare;
 #[path = "sftp_integration/conflicts.rs"]
 mod conflicts;
 #[path = "sftp_integration/operations.rs"]
@@ -32,4 +34,9 @@ async fn conflict_policies() {
 #[tokio::test]
 async fn conflict_apply_to_all_spans_selection() {
     conflicts::apply_to_all_spans_selection().await;
+}
+
+#[tokio::test]
+async fn sftp_subtree_compare() {
+    compare::subtree_compare().await;
 }

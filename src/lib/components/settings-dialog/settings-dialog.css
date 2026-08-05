@@ -48,10 +48,19 @@
   max-width: 90px;
 }
 
-.settings-dialog-form .checkbox {
+/* Specificity must beat the `> .row > label` column rule above, or a
+   checkbox placed inside a .row renders as a centered column (box floating
+   above its text). */
+.settings-dialog-form fieldset label.checkbox {
   flex-direction: row;
   align-items: center;
   gap: 6px;
+}
+
+/* Optically align the box with the text baseline of neighbouring inputs in
+   the same bottom-aligned row. */
+.settings-dialog-form .row > label.checkbox {
+  padding-bottom: 4px;
 }
 
 .settings-dialog-form .checkbox > span {
@@ -83,10 +92,22 @@
   font-size: 11px;
 }
 
+/* Separates the export/import block from the password-change controls
+   above it, which otherwise read as one group. */
+.settings-dialog-form .divider {
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
+
+/* Export/import stack in their own rows — side by side they squeeze each
+   other's captions. */
 .settings-dialog-form .export {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
 }
 
 .settings-dialog-form .export .hint {

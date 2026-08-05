@@ -141,6 +141,9 @@ impl AppEventSink for DesktopContextEvents {
 
 pub struct AppState {
     pub application: DesktopApplication,
+    /// Folder-comparison cancellation epochs — UI-scoped, so it lives beside
+    /// the application handle rather than inside it.
+    pub(crate) compare: Arc<crate::session::compare::CompareRegistry>,
 }
 
 #[cfg(feature = "scenario-tests")]
@@ -217,6 +220,7 @@ impl AppState {
                 edits,
                 activity,
             },
+            compare: Arc::default(),
         }
     }
 }

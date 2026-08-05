@@ -163,7 +163,29 @@ v1.3.0: S3 uploads declare a real `Content-Type` instead of the SDK's
 archives, certificates, 3D), with magic-byte detection in
 `s3/content_type/sniff.rs` as a fallback for names that resolve to nothing.
 The S3 writer split into `s3/writer.rs` (the `AsyncWrite` state machine) and
-`s3/writer/inner.rs` (the upload requests + multipart abort slot). Also
+`s3/writer/inner.rs` (the upload requests + multipart abort slot).
+v1.4.0: folder comparison goes deep — directory pairs in compare mode get
+their contents compared by a backend walk (`session/compare.rs`, breadth-first
+over `RemoteFs::list` with early exit on the first difference, 50k-entry cap
+→ honest "unknown", never a guess; S3 short-circuits via
+`RemoteFs::tree_snapshot` = one un-delimited `ListObjectsV2` in `s3/bulk.rs`).
+Per-entry match rules live in `serverus-domain::fs_compare` and are mirrored
+by the flat TS comparison in `src/lib/directory-comparison.ts` — keep the two
+in lockstep. The frontend (`stores/subtree-comparison.svelte.ts`) runs 3
+walks at a time per session, shows "…"/"?" markers, and cancels via
+`remote_compare_cancel` (per-session epoch registry in `AppState.compare`);
+hidden-file handling follows the panes' dot-file filter at every level, and
+symlinked directories are compared as symlinks, never descended. The
+"hide local junk" panel setting (on by default, incl. pre-existing vaults)
+drops `.DS_Store`/`Thumbs.db` (case-insensitive) from the local pane and the
+local side of comparison only — junk on the server stays visible so stray
+uploads surface and can be deleted; the name list lives in
+`serverus-domain::fs_compare::is_local_junk` + `isLocalJunk` in
+`directory-comparison.ts` (lockstep). Also v1.4.0: settings-dialog polish —
+checkboxes render inline everywhere (a `.row > label` specificity bug stacked
+them as centered columns), Panels puts each checkbox on its own row,
+input/select share a fixed 30px height globally, and Vault separates
+export/import from password change with a divider and stacks the buttons. Also
 v1.1.0: cross-platform
 support — Windows Hello quick unlock (`quick_unlock.rs::windows_hello`,
 KeePassXC scheme: Hello-gated deterministic RSA signature → HKDF → AES-GCM

@@ -13,7 +13,7 @@ A native macOS connection manager. Built with Tauri 2, a Rust backend and a Svel
 ![Built with Rust](https://img.shields.io/badge/backend-Rust-orange)
 ![Built with Tauri](https://img.shields.io/badge/shell-Tauri%202-24C8DB)
 ![Frontend Svelte](https://img.shields.io/badge/frontend-Svelte%205-FF3E00)
-![Version](https://img.shields.io/badge/version-1.3.0-brightgreen)
+![Version](https://img.shields.io/badge/version-1.4.0-brightgreen)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
@@ -175,7 +175,17 @@ Plus:
   with confirmation, refresh, copy path, and chmod.
 - **Read-only folder comparison** marks Local Only, Remote Only, Different and
   Same Metadata entries in the two open folders, summarizes the result, and
-  can hide matches. It compares the loaded level only and never synchronizes.
+  can hide matches. **Folders present on both sides are compared by their
+  contents**: a background walk descends both trees pair by pair (S3 answers
+  from a single bulk listing), stops at the first difference, and marks each
+  folder matching, different, or — past a 50 000-entry cap or an unreadable
+  directory — an honest "not compared", never a guess. Symlinked directories
+  are compared as symlinks and never descended. Comparison never synchronizes
+  anything.
+- **Local junk files** (`.DS_Store`, `Thumbs.db`) are hidden from the local
+  pane and from the local side of comparison — even with hidden files shown
+  (on by default, Settings → Panels). Copies that strayed onto the server
+  stay visible so they can be found and deleted.
 - **chmod dialog**: rwx × owner/group/others checkboxes synced with an octal
   field, plus recursive apply (files / dirs / both). Works over SFTP and FTP
   (`SITE CHMOD`).
@@ -544,7 +554,7 @@ that matrix succeeds does it build and upload installers for all three OSes to
 a **draft** GitHub Release (`.github/workflows/release.yml`):
 
 ```bash
-git tag v1.3.0 && git push origin v1.3.0
+git tag v1.4.0 && git push origin v1.4.0
 ```
 
 Review the draft on the Releases page, then publish. No local builds needed.
