@@ -181,7 +181,12 @@ drops `.DS_Store`/`Thumbs.db` (case-insensitive) from the local pane and the
 local side of comparison only — junk on the server stays visible so stray
 uploads surface and can be deleted; the name list lives in
 `serverus-domain::fs_compare::is_local_junk` + `isLocalJunk` in
-`directory-comparison.ts` (lockstep). Also v1.4.0: settings-dialog polish —
+`directory-comparison.ts` (lockstep). v1.4.1: sessions whose uploads
+can't preserve mtime compare size-only — S3 always, FTP when the server's
+FEAT lacks MFMT (`RemoteFs::preserves_mtime`; FTP probes FEAT once at
+connect in `FtpPool::probe` and also skips the pointless MFMT after uploads;
+the frontend seeds by protocol and refines via `remote_preserves_mtime`
+through `stores/compare-rules.svelte.ts`). Also v1.4.0: settings-dialog polish —
 checkboxes render inline everywhere (a `.row > label` specificity bug stacked
 them as centered columns), Panels puts each checkbox on its own row,
 input/select share a fixed 30px height globally, and Vault separates

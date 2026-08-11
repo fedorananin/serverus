@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use suppaftp::tokio::{AsyncRustlsConnector, AsyncRustlsFtpStream};
 use suppaftp::types::FileType;
@@ -17,6 +17,10 @@ pub struct FtpPool {
     idle: AsyncMutex<Vec<FtpConn>>,
     /// Bounds total simultaneous connections to the server.
     limit: Arc<Semaphore>,
+    /// Whether the server advertises MFMT (probed via FEAT at connect).
+    /// Unset when FEAT itself failed — treated as "assume yes" so a quirky
+    /// server degrades to today's best-effort behavior, not a worse one.
+    mfmt: OnceLock<bool>,
 }
 
 pub(super) fn ftp_err(op: &str, error: suppaftp::FtpError) -> AppError {
@@ -46,6 +50,7 @@ impl FtpPool {
             config,
             idle: AsyncMutex::new(Vec::new()),
             limit: Arc::new(Semaphore::new(max_connections.max(2))),
+            mfmt: OnceLock::new(),
         })
     }
 
@@ -106,12 +111,26 @@ impl FtpPool {
         self.idle.lock().await.push(conn);
     }
 
-    /// Verify credentials/reachability once at session-connect time.
+    /// Verify credentials/reachability once at session-connect time, and
+    /// learn whether the server can preserve upload mtimes (FEAT → MFMT).
     pub async fn probe(&self) -> AppResult<()> {
         let mut checked_out = self.checkout().await?;
+        let conn = checked_out.conn.as_mut().unwrap();
+        if let Ok(features) = conn.feat().await {
+            let supported = features
+                .keys()
+                .any(|name| name.eq_ignore_ascii_case("MFMT"));
+            let _ = self.mfmt.set(supported);
+        }
         let conn = checked_out.conn.take().unwrap();
         self.give_back(conn).await;
         Ok(())
+    }
+
+    /// Whether uploads can preserve mtime on this server. Optimistic when
+    /// the FEAT probe never answered.
+    pub(super) fn supports_mfmt(&self) -> bool {
+        *self.mfmt.get().unwrap_or(&true)
     }
 }
 

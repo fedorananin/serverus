@@ -61,6 +61,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::remote_chmod,
             commands::remote_compare_subtree,
             commands::remote_compare_cancel,
+            commands::remote_preserves_mtime,
             commands::s3_acl_status,
             commands::s3_set_acl,
             commands::s3_set_upload_acl,

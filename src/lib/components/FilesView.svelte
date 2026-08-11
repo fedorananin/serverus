@@ -7,6 +7,7 @@
   import { useAppModel } from "$lib/app/model.svelte";
   import { applyDeepStatuses, compareDirectoryEntries } from "$lib/directory-comparison";
   import { queueActivity, queueSettled } from "$lib/transfer-settle";
+  import { CompareRulesController } from "$lib/stores/compare-rules.svelte";
   import { PaneController } from "$lib/stores/pane.svelte";
   import {
     directoryPairs,
@@ -44,17 +45,13 @@
   let transferError = $state<string | null>(null);
   let comparisonActive = $state(false);
   let differencesOnly = $state(false);
+  // Whether mtime participates (and at what precision) depends on the
+  // session's protocol and server — see CompareRulesController.
+  const compareRules = new CompareRulesController(sessionId, isS3, isFtp);
   const emptyComparison = compareDirectoryEntries([], []);
   const comparison = $derived.by(() =>
     comparisonActive
-      ? // S3's listed mtime is server-managed upload time and can't be
-        // preserved by transfers — comparing it would flag every uploaded
-        // file as different forever. FTP's LIST mtime is real but coarse
-        // (minutes, or date-only past ~6 months).
-        compareDirectoryEntries(local.entries, remote.entries, {
-          ignoreMtime: isS3,
-          coarseRemoteMtime: isFtp,
-        })
+      ? compareDirectoryEntries(local.entries, remote.entries, compareRules.options)
       : emptyComparison,
   );
 
@@ -68,8 +65,7 @@
     }
     void subtree.run({
       pairs: directoryPairs(local.entries, remote.entries),
-      ignoreMtime: isS3,
-      coarseRemoteMtime: isFtp,
+      ...compareRules.options,
       includeHidden: showHidden,
       hideLocalJunk,
     });

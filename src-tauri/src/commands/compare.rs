@@ -52,6 +52,26 @@ pub async fn remote_compare_subtree(
     .await
 }
 
+/// Whether uploads on this session preserve the local modification time
+/// (`RemoteFs::preserves_mtime`). When they cannot — S3 always, FTP servers
+/// without MFMT — the comparison UI falls back to size-only matching.
+#[tauri::command]
+#[specta::specta]
+pub async fn remote_preserves_mtime(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> ApiResult<bool> {
+    run_session_operation(
+        &state.application,
+        &session_id,
+        move |entry, _lease| async move {
+            let fs = entry.remote_fs().await?;
+            Ok(fs.preserves_mtime())
+        },
+    )
+    .await
+}
+
 /// Cancel every in-flight subtree comparison for a session. Walks notice at
 /// their next directory boundary.
 #[tauri::command]

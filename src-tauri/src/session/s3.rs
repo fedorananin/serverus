@@ -739,6 +739,10 @@ impl RemoteFs for S3Fs {
         ))
     }
 
+    fn preserves_mtime(&self) -> bool {
+        false
+    }
+
     async fn set_mtime(&self, _path: &str, _mtime_unix: i64) -> AppResult<()> {
         // S3 has no settable mtime; LastModified is server-managed.
         Ok(())

@@ -91,6 +91,12 @@ export const commands = {
 	 */
 	remoteCompareCancel: (sessionId: string) => typedError<null, ApiError>(__TAURI_INVOKE("remote_compare_cancel", { sessionId })),
 	/**
+	 *  Whether uploads on this session preserve the local modification time
+	 *  (`RemoteFs::preserves_mtime`). When they cannot — S3 always, FTP servers
+	 *  without MFMT — the comparison UI falls back to size-only matching.
+	 */
+	remotePreservesMtime: (sessionId: string) => typedError<boolean, ApiError>(__TAURI_INVOKE("remote_preserves_mtime", { sessionId })),
+	/**
 	 *  Public/private status for a batch of objects — fetched in the background
 	 *  after a listing; failures come back as `unknown`, never as an error.
 	 */

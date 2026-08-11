@@ -67,6 +67,14 @@ pub trait RemoteFs: Send + Sync {
     fn supports_write_resume(&self) -> bool {
         true
     }
+    /// Whether uploads can preserve the source modification time, i.e.
+    /// `set_mtime` actually takes effect. S3 never can (`LastModified` is
+    /// server-managed); FTP only when the server advertises MFMT. Folder
+    /// comparison drops mtime matching when this is false — otherwise every
+    /// uploaded file would count as "different" forever.
+    fn preserves_mtime(&self) -> bool {
+        true
+    }
     /// One-shot recursive snapshot of everything under `path`, when the
     /// protocol has a way to produce it that is cheaper than per-directory
     /// `list` calls (S3: a single un-delimited `ListObjectsV2` page loop).

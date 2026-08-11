@@ -4,7 +4,25 @@ use std::path::Path;
 use serverus_domain::fs_compare::CompareRules;
 use serverus_lib::session::compare::{compare_subtree, CompareFilter, SubtreeStatus};
 
+use serverus_lib::session::remote_fs::RemoteFs;
+
 use super::{pool_for, spawn_ftp};
+
+/// The connect-time FEAT probe drives `preserves_mtime`: libunftp does not
+/// advertise MFMT, so a probed pool must report that uploads cannot keep
+/// their mtime (the comparison UI then falls back to size-only matching).
+/// Before the probe the pool stays optimistic — best-effort MFMT, exactly
+/// the pre-probe behavior.
+#[tokio::test]
+async fn ftp_feat_probe_drives_preserves_mtime() {
+    let server_root = tempfile::tempdir().unwrap();
+    let port = spawn_ftp(server_root.path()).await;
+    let pool = pool_for(port);
+
+    assert!(pool.preserves_mtime());
+    pool.probe().await.unwrap();
+    assert!(!pool.preserves_mtime());
+}
 
 /// Deep folder comparison over FTP: the same walker the panes use, with the
 /// coarse-mtime rules the frontend passes for FTP listings.

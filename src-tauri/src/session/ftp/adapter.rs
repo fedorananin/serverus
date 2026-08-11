@@ -142,8 +142,15 @@ impl RemoteFs for FtpPool {
         result
     }
 
+    fn preserves_mtime(&self) -> bool {
+        self.supports_mfmt()
+    }
+
     async fn set_mtime(&self, path: &str, mtime_unix: i64) -> AppResult<()> {
         // MFMT is a common extension; best-effort (SPEC §6.1 mtime option).
+        if !self.supports_mfmt() {
+            return Ok(());
+        }
         let Some(datetime) = chrono::DateTime::from_timestamp(mtime_unix, 0) else {
             return Ok(());
         };
