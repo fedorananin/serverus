@@ -177,6 +177,10 @@ fn seed_directory_comparison(local_root: &Path, ftp_root: &Path) -> Result<()> {
         remote.join("different-size.txt"),
         "a deliberately longer remote fixture\n",
     )?;
+    // Same size, different date. libunftp has no MFMT, so uploads to it can
+    // never preserve mtime and comparison ignores dates entirely: this pair
+    // pins the size-only fallback ("matching"), not date detection — that
+    // lives in `serverus-domain::fs_compare` unit tests.
     write_at(
         &local.join("different-date.txt"),
         "same-size fixture\n",

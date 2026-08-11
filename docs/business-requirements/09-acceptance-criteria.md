@@ -195,7 +195,9 @@ an application restart or a theme-transition animation.
 **when** the operator enables Compare,
 
 **then** each current-level name is classified as Local Only, Remote Only,
-Different, or Matching from its type, size, and available modification time,
+Different, or Matching from its type, size, and — only where uploads can
+preserve it (never on S3, nor on FTP servers without MFMT) — modification
+time,
 
 **and** the summary and Differences Only filter expose the result without
 creating, deleting, renaming, or transferring any entry.

@@ -58,7 +58,7 @@ override.
 | `s3-buckets` | AC-010 | macOS, Linux, Windows | `real-input` | List and create buckets against an in-process S3-compatible server. |
 | `s3-sharing` | AC-011, AC-012 | macOS, Linux, Windows | `real-input` | Exercise Ask/private/public upload ACLs, publish an object and copy its custom public URL. |
 | `platform-shortcuts` | AC-017 | macOS, Linux, Windows | `real-input` | Exercise `T`, `W`, `1`, `2`, comma and `A` with the platform's real modifier key, then open selected-file actions through the visible **Actions** button. |
-| `directory-comparison` | AC-019 | macOS, Linux, Windows | `real-input` | Compare isolated local and FTP folders, verify every classification and the Differences Only filter, then prove both fixture trees retain their content and metadata. |
+| `directory-comparison` | AC-019 | macOS, Linux, Windows | `real-input` | Compare isolated local and FTP folders, verify every classification — including the size-only fallback on a server whose uploads cannot preserve mtime (no MFMT) — and the Differences Only filter, then prove both fixture trees retain their content and metadata. |
 
 `real-input` means WebDriver clicks, types and presses keys through visible,
 accessible WebView controls. This includes the SSH scenarios: WebKit WebDriver

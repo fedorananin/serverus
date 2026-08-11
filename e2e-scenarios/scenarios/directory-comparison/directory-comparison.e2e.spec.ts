@@ -77,12 +77,15 @@ describe("@directory-comparison", () => {
 
     const summary = await $("[data-testid='directory-comparison-summary']");
     await summary.waitForDisplayed();
+    // The fixture FTP server (libunftp) has no MFMT, so uploads there can
+    // never preserve mtime and comparison ignores it: the same-size,
+    // different-date pair counts as matching, not different.
     await summary.waitUntil(
       async () =>
         (await summary.getAttribute("data-local-only")) === "1" &&
-        (await summary.getAttribute("data-different")) === "3" &&
+        (await summary.getAttribute("data-different")) === "2" &&
         (await summary.getAttribute("data-remote-only")) === "1" &&
-        (await summary.getAttribute("data-matching")) === "2",
+        (await summary.getAttribute("data-matching")) === "3",
       { timeoutMsg: "The comparison summary did not reach the expected fixture totals." },
     );
 
@@ -92,8 +95,8 @@ describe("@directory-comparison", () => {
     await expectStatus("remote", "shared-folder", "matching");
     await expectStatus("local", "different-size.txt", "different");
     await expectStatus("remote", "different-size.txt", "different");
-    await expectStatus("local", "different-date.txt", "different");
-    await expectStatus("remote", "different-date.txt", "different");
+    await expectStatus("local", "different-date.txt", "matching");
+    await expectStatus("remote", "different-date.txt", "matching");
     await expectStatus("local", "type-changed", "different");
     await expectStatus("remote", "type-changed", "different");
     await expectStatus("local", "only-local.txt", "local-only");
@@ -102,6 +105,7 @@ describe("@directory-comparison", () => {
     await $("aria/Differences Only").click();
     await fileOption("local", "identical.txt").waitForDisplayed({ reverse: true });
     await fileOption("remote", "shared-folder").waitForDisplayed({ reverse: true });
+    await fileOption("local", "different-date.txt").waitForDisplayed({ reverse: true });
     await fileOption("local", "different-size.txt").waitForDisplayed();
     await fileOption("remote", "only-remote.txt").waitForDisplayed();
 
