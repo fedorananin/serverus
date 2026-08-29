@@ -227,7 +227,12 @@
   }
   .terminal {
     height: 100%;
-    padding: 4px 0 0 6px;
+  }
+  /* Padding must live on .xterm itself, not on the container: FitAddon
+     subtracts only the .xterm element's own padding when sizing rows, so
+     container padding made the last row overflow the bottom edge. */
+  .terminal :global(.xterm) {
+    padding: 4px 0 8px 6px;
   }
   .opening {
     position: absolute;

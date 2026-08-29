@@ -186,7 +186,11 @@ can't preserve mtime compare size-only — S3 always, FTP when the server's
 FEAT lacks MFMT (`RemoteFs::preserves_mtime`; FTP probes FEAT once at
 connect in `FtpPool::probe` and also skips the pointless MFMT after uploads;
 the frontend seeds by protocol and refines via `remote_preserves_mtime`
-through `stores/compare-rules.svelte.ts`). Also v1.4.0: settings-dialog polish —
+through `stores/compare-rules.svelte.ts`). v1.4.2: the terminal's last row no
+longer gets clipped — the padding moved from the `.terminal` container onto
+the `.xterm` element itself (FitAddon only subtracts the `.xterm` element's
+own padding when sizing rows), with an 8px bottom inset added for breathing
+room. Also v1.4.0: settings-dialog polish —
 checkboxes render inline everywhere (a `.row > label` specificity bug stacked
 them as centered columns), Panels puts each checkbox on its own row,
 input/select share a fixed 30px height globally, and Vault separates
