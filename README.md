@@ -13,7 +13,7 @@ A native macOS connection manager. Built with Tauri 2, a Rust backend and a Svel
 ![Built with Rust](https://img.shields.io/badge/backend-Rust-orange)
 ![Built with Tauri](https://img.shields.io/badge/shell-Tauri%202-24C8DB)
 ![Frontend Svelte](https://img.shields.io/badge/frontend-Svelte%205-FF3E00)
-![Version](https://img.shields.io/badge/version-1.4.2-brightgreen)
+![Version](https://img.shields.io/badge/version-1.5.0-brightgreen)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
@@ -127,6 +127,13 @@ hard warning on key change, keep‑alive and auto‑reconnect.
 - **tar‑stream acceleration**: when the remote host has `tar`, a folder of
   thousands of small files moves as a single tar stream over the SSH channel
   instead of per‑file round‑trips — with a "force plain transfer" escape hatch.
+- **Deletes and recursive chmod run in the same queue**: a live
+  "412 / 1,318 items" counter after a quick scan, cancel/retry, and a finished
+  entry that tells you the folder is really gone. Rows being deleted are dimmed
+  in the pane. One failing entry never stops the rest — the item reports what
+  could not be removed. Fast paths: parallel SFTP/FTP requests, S3
+  `DeleteObjects` (1000 keys per request), and a server‑side `rm -rf` over SSH
+  when available.
 
 ### 🪣 S3‑compatible storage
 Works with any S3‑compatible provider through a custom endpoint — AWS,
@@ -237,7 +244,7 @@ cargo test --workspace # unit + integration against real local sshd/FTP/S3 — n
   certificate and put `APPLE_SIGNING_IDENTITY="Local Dev"` in a git‑ignored
   `.env.local`; `npm run tauri build` picks it up. Distribution without the
   Gatekeeper prompt still needs a paid Developer ID and notarization.
-- **Releases** are fully automated: `git tag v1.4.2 && git push origin v1.4.2`
+- **Releases** are fully automated: `git tag v1.5.0 && git push origin v1.5.0`
   runs the full cross‑OS gate, then uploads installers to a draft GitHub
   Release. Review and publish — no local builds.
 

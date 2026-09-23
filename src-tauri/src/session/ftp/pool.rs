@@ -17,6 +17,8 @@ pub struct FtpPool {
     idle: AsyncMutex<Vec<FtpConn>>,
     /// Bounds total simultaneous connections to the server.
     limit: Arc<Semaphore>,
+    /// The bound itself; recursive operations leave one connection free.
+    pub(super) max_connections: usize,
     /// Whether the server advertises MFMT (probed via FEAT at connect).
     /// Unset when FEAT itself failed — treated as "assume yes" so a quirky
     /// server degrades to today's best-effort behavior, not a worse one.
@@ -50,6 +52,7 @@ impl FtpPool {
             config,
             idle: AsyncMutex::new(Vec::new()),
             limit: Arc::new(Semaphore::new(max_connections.max(2))),
+            max_connections: max_connections.max(2),
             mfmt: OnceLock::new(),
         })
     }

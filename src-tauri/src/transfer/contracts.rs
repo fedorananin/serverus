@@ -6,6 +6,28 @@ use specta::Type;
 pub enum TransferKind {
     Upload,
     Download,
+    /// Recursive delete of a remote entry (no bytes move).
+    Delete,
+    /// Recursive chmod of a remote directory (no bytes move).
+    Chmod,
+}
+
+/// Which way the bytes of a byte transfer move.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Direction {
+    Upload,
+    Download,
+}
+
+impl TransferKind {
+    /// `None` for tree operations, which never run as byte transfers.
+    pub(super) fn direction(self) -> Option<Direction> {
+        match self {
+            Self::Upload => Some(Direction::Upload),
+            Self::Download => Some(Direction::Download),
+            Self::Delete | Self::Chmod => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -41,6 +63,9 @@ pub struct TransferSnapshot {
     pub local_path: String,
     pub remote_path: String,
     pub accelerated: bool,
+    /// Tree operations: still discovering entries, `total` keeps growing.
+    pub scanning: bool,
+    /// Bytes for transfers, entries for tree operations.
     #[specta(type = specta_typescript::Number)]
     pub done: u64,
     #[specta(type = specta_typescript::Number)]

@@ -35,6 +35,8 @@ export class PaneController {
   acl = $state<Record<string, S3AclStatus>>({});
   comparisonStatuses = $state<ReadonlyMap<string, EntryComparisonStatus> | null>(null);
   comparisonDifferencesOnly = $state(false);
+  /** Remote pane: paths with a queued or running delete (shown dimmed). */
+  deleting = $state<ReadonlySet<string>>(new Set());
   /** Invalidates in-flight ACL fetches when the listing changes. */
   private aclGeneration = 0;
 
@@ -213,15 +215,24 @@ export class PaneController {
     await this.refresh();
   }
 
-  async deleteEntries(entries: RemoteEntry[]) {
+  /** Local pane only — remote deletes go through the transfer queue. One
+   *  failing entry does not stop the others, and the listing is always
+   *  refreshed so it never shows entries that are already gone. */
+  async deleteLocalEntries(entries: RemoteEntry[]) {
+    const failures: string[] = [];
     for (const entry of entries) {
-      if (this.side === "local") {
+      try {
         await unwrap(commands.localDelete(entry.path));
-      } else {
-        await unwrap(commands.remoteDelete(this.sessionId!, entry.path, entry.is_dir));
+      } catch (e) {
+        failures.push(`${entry.name}: ${errorMessage(e)}`);
       }
     }
     await this.refresh();
+    if (failures.length > 0) {
+      throw new Error(
+        `${failures.length} of ${entries.length} could not be deleted — ${failures.join("; ")}`,
+      );
+    }
   }
 
   async chmod(entry: RemoteEntry, mode: number) {

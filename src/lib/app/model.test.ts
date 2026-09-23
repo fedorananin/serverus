@@ -16,6 +16,8 @@ function fakeApi(): AppApi {
       })),
       upload: vi.fn(async () => {}),
       download: vi.fn(async () => {}),
+      delete: vi.fn(async () => {}),
+      chmod: vi.fn(async () => {}),
       pause: vi.fn(async () => {}),
       retry: vi.fn(async () => {}),
       resume: vi.fn(async () => {}),

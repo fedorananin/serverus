@@ -76,8 +76,6 @@ export const commands = {
 	remoteMkdir: (sessionId: string, path: string) => typedError<null, ApiError>(__TAURI_INVOKE("remote_mkdir", { sessionId, path })),
 	remoteCreateFile: (sessionId: string, path: string) => typedError<null, ApiError>(__TAURI_INVOKE("remote_create_file", { sessionId, path })),
 	remoteRename: (sessionId: string, from: string, to: string) => typedError<null, ApiError>(__TAURI_INVOKE("remote_rename", { sessionId, from, to })),
-	/**  Recursive delete — works identically for SFTP and FTP (SPEC §4.3). */
-	remoteDelete: (sessionId: string, path: string, isDir: boolean) => typedError<null, ApiError>(__TAURI_INVOKE("remote_delete", { sessionId, path, isDir })),
 	remoteChmod: (sessionId: string, path: string, mode: number) => typedError<null, ApiError>(__TAURI_INVOKE("remote_chmod", { sessionId, path, mode })),
 	/**
 	 *  Compare the local tree under `local_path` with the remote tree under
@@ -124,6 +122,8 @@ export const commands = {
 	transferClearFinished: (runtimeContextId: string, sessionId: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_clear_finished", { runtimeContextId, sessionId })),
 	transferResolve: (sessionId: string, id: string, action: ConflictAction, applyToAll: boolean) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_resolve", { sessionId, id, action, applyToAll })),
 	transferRetry: (id: string) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_retry", { id })),
+	transferDelete: (sessionId: string, targets: TreeTarget[]) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_delete", { sessionId, targets })),
+	transferChmod: (sessionId: string, targets: TreeTarget[], mode: number, scope: ChmodScope) => typedError<null, ApiError>(__TAURI_INVOKE("transfer_chmod", { sessionId, targets, mode, scope })),
 	/**
 	 *  Download a remote file into the isolated edit cache, open it in the
 	 *  configured editor and auto-upload every save (SPEC §5.3).
@@ -193,6 +193,9 @@ export type Badge = {
 };
 
 export type BadgeKind = "emoji" | "color";
+
+/**  Which entries below the selected directories a recursive chmod touches. */
+export type ChmodScope = "files" | "dirs" | "both";
 
 export type ConflictAction = "overwrite" | "skip" | "rename";
 
@@ -463,7 +466,11 @@ export type TerminalStreamEvent = { kind: "data"; data: string } | { kind: "exit
 
 export type ThemePreference = "system" | "light" | "dark";
 
-export type TransferKind = "upload" | "download";
+export type TransferKind = "upload" | "download" | 
+/**  Recursive delete of a remote entry (no bytes move). */
+"delete" | 
+/**  Recursive chmod of a remote directory (no bytes move). */
+"chmod";
 
 export type TransferListDto = {
 	runtime_context_id: string,
@@ -499,6 +506,9 @@ export type TransferSnapshot = {
 	local_path: string,
 	remote_path: string,
 	accelerated: boolean,
+	/**  Tree operations: still discovering entries, `total` keeps growing. */
+	scanning: boolean,
+	/**  Bytes for transfers, entries for tree operations. */
 	done: number,
 	total: number,
 	speed_bps: number,
@@ -526,6 +536,15 @@ export type TreeNode = { type: "folder"; id: string; name: string; badge?: Badge
  *  also the right value for vaults written before this existed.
  */
 collapsed?: boolean } | { type: "connection"; id: string };
+
+/**
+ *  One selected entry. `is_dir` means a real directory: a symlink to one is
+ *  removed as a link, never descended.
+ */
+export type TreeTarget = {
+	path: string,
+	is_dir: boolean,
+};
 
 export type TunnelConfig = {
 	name: string,

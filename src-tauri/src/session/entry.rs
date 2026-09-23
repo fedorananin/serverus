@@ -20,6 +20,8 @@ pub struct SessionEntry {
     pub s3: Option<Arc<s3::S3Fs>>,
     /// Whether the remote side has `tar` (probed once, SPEC §6.2).
     pub(super) tar_available: tokio::sync::OnceCell<bool>,
+    /// Whether the remote side has `rm` and `find` (probed once).
+    pub(super) rm_available: tokio::sync::OnceCell<bool>,
 }
 
 impl SessionEntry {
@@ -39,6 +41,7 @@ impl SessionEntry {
             ftp,
             s3,
             tar_available: tokio::sync::OnceCell::new(),
+            rm_available: tokio::sync::OnceCell::new(),
         }
     }
 
@@ -52,28 +55,36 @@ impl SessionEntry {
             ftp: None,
             s3: None,
             tar_available: tokio::sync::OnceCell::new(),
+            rm_available: tokio::sync::OnceCell::new(),
         }
     }
 
     /// SSH handle + tar availability for accelerated dir transfers.
     pub async fn tar_ssh(&self) -> Option<Arc<ssh::SshSession>> {
+        self.shell_with(&self.tar_available, "command -v tar >/dev/null 2>&1")
+            .await
+    }
+
+    /// SSH handle + `rm`/`find` availability for server-side dir deletes.
+    pub async fn rm_ssh(&self) -> Option<Arc<ssh::SshSession>> {
+        let probe = "command -v rm >/dev/null 2>&1 && command -v find >/dev/null 2>&1";
+        self.shell_with(&self.rm_available, probe).await
+    }
+
+    /// The SSH handle when `probe` (run once per session) succeeds.
+    async fn shell_with(
+        &self,
+        available: &tokio::sync::OnceCell<bool>,
+        probe: &str,
+    ) -> Option<Arc<ssh::SshSession>> {
         let ssh = self.ssh.clone()?;
-        let available = self
-            .tar_available
+        let available = available
             .get_or_init(|| {
                 let ssh = ssh.clone();
-                async move {
-                    ssh.exec_check("command -v tar >/dev/null 2>&1")
-                        .await
-                        .unwrap_or(false)
-                }
+                async move { ssh.exec_check(probe).await.unwrap_or(false) }
             })
             .await;
-        if *available {
-            Some(ssh)
-        } else {
-            None
-        }
+        available.then_some(ssh)
     }
 
     /// The protocol-agnostic file backend for this session (SPEC §7.1).

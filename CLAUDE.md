@@ -107,6 +107,20 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
   summaries + bulk actions scoped by `session_id`); cleared on tab
   close/disconnect (`TransferManager::clear_session`) and on app exit. There is
   no global transfer panel.
+- **Remote deletes and recursive chmods are transfer-queue items**
+  (`TransferKind::Delete` / `Chmod`, `transfer/tree_job.rs`), never a
+  blocking command. The walk is protocol-neutral in
+  `session/remote_fs/tree_op/`: scan first (real total; S3 via
+  `tree_snapshot`), then files (S3 `delete_files_bulk` = `DeleteObjects`,
+  others `parallel_ops` requests in flight) and directories deepest-first.
+  Per-entry failures are collected, never abort the rest; a directory with a
+  failed descendant is skipped. `done`/`total` count entries for these kinds.
+  SSH directory deletes use server-side `find` + `rm -rfv` when
+  `SessionEntry::rm_ssh` probes OK and `tar_acceleration` is on — no pause
+  for those (only cancel). Symlinks are removed as links, never descended,
+  and never chmodded. The frontend dims rows being deleted and relists the
+  pane per finished item (`stores/remote-tree-ops.svelte.ts`,
+  `lib/tree-ops.ts`).
 - `Connection.disable_terminal` = SFTP-only SSH servers (no shell); the UI hides
   the terminal view and the backend never opens a shell channel.
 - **S3 uploads must declare a `Content-Type`.** `aws-sdk-s3` labels every body
@@ -190,7 +204,11 @@ through `stores/compare-rules.svelte.ts`). v1.4.2: the terminal's last row no
 longer gets clipped — the padding moved from the `.terminal` container onto
 the `.xterm` element itself (FitAddon only subtracts the `.xterm` element's
 own padding when sizing rows), with an 8px bottom inset added for breathing
-room. Also v1.4.0: settings-dialog polish —
+room. v1.5.0: remote deletes and recursive chmods run as transfer-queue items
+with live progress, cancel/retry and a finished entry (see Gotchas); one
+failing entry no longer aborts the rest; SFTP/FTP requests go out in
+parallel, S3 deletes use `DeleteObjects`, SSH dirs use server-side `rm`;
+deleting a symlink to a directory no longer empties its target. Also v1.4.0: settings-dialog polish —
 checkboxes render inline everywhere (a `.row > label` specificity bug stacked
 them as centered columns), Panels puts each checkbox on its own row,
 input/select share a fixed 30px height globally, and Vault separates
@@ -205,7 +223,7 @@ WKWebView, WebKitGTK and WebView2, but this is not representative physical
 Windows/Linux hardware validation.
 Known gaps: no Linux quick unlock; lock-on-sleep detection (monotonic vs wall
 clock divergence) may not fire on Windows; local chmod is hidden on Windows.
-Integration tests (40) run against a local unprivileged `sshd`, an in-process
+Integration tests (44) run against a local unprivileged `sshd`, an in-process
 libunftp FTP server and an in-process `s3s` S3 server — no docker needed
 (macOS + Linux; Windows runs `cargo test --workspace --lib`, plus supported
 non-SSH desktop scenarios). Releases are built by

@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
   AppApi,
+  ChmodScope,
   TransferListDto,
   TransferSnapshot,
+  TreeTarget,
 } from "$lib/app/contracts/api";
 import type { AppEventSource } from "$lib/app/contracts/events";
 import type { RemoteEditUploadedEvent } from "$lib/api";
@@ -57,6 +59,7 @@ function transfer(id: string, state: TransferSnapshot["state"]): TransferSnapsho
     local_path: `/local/${id}.txt`,
     remote_path: `/remote/${id}.txt`,
     accelerated: false,
+    scanning: false,
     done: 0,
     total: 100,
     speed_bps: 0,
@@ -77,6 +80,10 @@ class FakeAppApi implements AppApi {
       list: vi.fn(async () => this.current),
       upload: vi.fn(async (_sessionId: string, _localPaths: string[], _remoteDir: string) => {}),
       download: vi.fn(async (_sessionId: string, _remotePaths: string[], _localDir: string) => {}),
+      delete: vi.fn(async (_sessionId: string, _targets: TreeTarget[]) => {}),
+      chmod: vi.fn(
+        async (_sessionId: string, _targets: TreeTarget[], _mode: number, _scope: ChmodScope) => {},
+      ),
       pause: vi.fn(async (_id: string) => {}),
       retry: vi.fn(async (_id: string) => {}),
       resume: vi.fn(async (_id: string) => {}),

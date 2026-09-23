@@ -9,6 +9,7 @@
   import { queueActivity, queueSettled } from "$lib/transfer-settle";
   import { CompareRulesController } from "$lib/stores/compare-rules.svelte";
   import { PaneController } from "$lib/stores/pane.svelte";
+  import { trackRemoteTreeOps } from "$lib/stores/remote-tree-ops.svelte";
   import {
     directoryPairs,
     SubtreeComparisonController,
@@ -92,6 +93,8 @@
       void remote.refresh();
     }
   });
+
+  const remoteTree = trackRemoteTreeOps(remote, transfers, sessionId);
 
   function toggleComparison() {
     comparisonActive = !comparisonActive;
@@ -233,6 +236,7 @@
       title={connection?.name ?? "Remote"}
       ontransfer={downloadSelection}
       onopenfile={(entry) => void openForEdit(entry)}
+      treeActions={remoteTree}
       publicUrl={isS3 && connection ? (entry) => s3PublicUrl(connection, entry.path) : undefined}
       uploadMode={uploadAcl.mode}
       onuploadmode={(mode) => void uploadAcl.setMode(mode)}

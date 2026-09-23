@@ -31,6 +31,6 @@
   </label>
   <label class="checkbox">
     <input type="checkbox" bind:checked={value.tar_acceleration} />
-    <span>Accelerate folder transfers via tar stream when available</span>
+    <span>Accelerate folder transfers (tar) and deletes (rm) on the server when available</span>
   </label>
 </fieldset>

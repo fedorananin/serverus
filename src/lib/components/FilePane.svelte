@@ -4,7 +4,9 @@
   import { copyPublicUrl } from "$lib/public-url-clipboard";
   import { dnd } from "$lib/stores/dnd.svelte";
   import type { PaneController } from "$lib/stores/pane.svelte";
+  import type { RemoteTreeActions } from "$lib/stores/remote-tree-ops.svelte";
   import { vault } from "$lib/stores/vault.svelte";
+  import { enclosingDeletion } from "$lib/tree-ops";
   import type { MenuItem } from "./ContextMenu.svelte";
   import FilePaneOverlays from "./file-pane/FilePaneOverlays.svelte";
   import FilePaneStatus from "./file-pane/FilePaneStatus.svelte";
@@ -24,10 +26,20 @@
     /** Remote S3 pane: ACL mode for uploads, shown as a header switch. */
     uploadMode?: S3UploadAcl | null;
     onuploadmode?: (mode: S3UploadAcl) => void;
+    /** Remote pane: recursive delete/chmod through the transfer panel. */
+    treeActions?: RemoteTreeActions;
   }
 
-  let { pane, title, ontransfer, onopenfile, publicUrl, uploadMode, onuploadmode }: Props =
-    $props();
+  let {
+    pane,
+    title,
+    ontransfer,
+    onopenfile,
+    publicUrl,
+    uploadMode,
+    onuploadmode,
+    treeActions,
+  }: Props = $props();
   let notice = $state<FilePaneNotice | null>(null);
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
   let menu = $state<FilePaneMenu | null>(null);
@@ -161,11 +173,13 @@
     total={pane.visible.length}
     selectedCount={pane.selected.size}
     {notice}
+    deletion={enclosingDeletion(pane.path, pane.deleting)}
   />
 </div>
 
 <FilePaneOverlays
   {pane}
+  {treeActions}
   {menu}
   {dialog}
   onclosemenu={() => (menu = null)}

@@ -13,7 +13,7 @@ use crate::error::AppResult;
 use crate::session::remote_fs::parent_remote;
 
 use super::{
-    run_single, DownloadRequest, ProgressSink, TransferItem, TransferKind, TransferManager,
+    run_single, Direction, DownloadRequest, ProgressSink, TransferItem, TransferManager,
     TransferState, UploadRequest,
 };
 
@@ -70,9 +70,10 @@ impl TransferManager {
                     return;
                 };
             }
-            let result = match &item.tar {
-                Some(job) => super::tar_stream::run(&item, job).await,
-                None => run_single(&manager, &queue, &item).await,
+            let result = match (&item.tree, &item.tar) {
+                (Some(job), _) => super::tree_job::run(&item, job).await,
+                (None, Some(job)) => super::tar_stream::run(&item, job).await,
+                (None, None) => run_single(&manager, &queue, &item).await,
             };
             manager.finish_worker(&app, item, result).await;
         });
@@ -160,8 +161,8 @@ impl TransferManager {
             let _ = item.apply_and_dispatch(DomainTransferEvent::CancelRequested, None, None);
             let mut settings = item.settings.clone();
             settings.tar_acceleration = false;
-            match item.kind {
-                TransferKind::Upload => {
+            match item.kind.direction() {
+                Some(Direction::Upload) => {
                     let local = item.local_path.to_string_lossy().into_owned();
                     let remote_dir = parent_remote(&item.remote_path);
                     self.enqueue_upload_inner(
@@ -179,7 +180,7 @@ impl TransferManager {
                     )
                     .await?;
                 }
-                TransferKind::Download => {
+                Some(Direction::Download) => {
                     let local_dir = item
                         .local_path
                         .parent()
@@ -200,6 +201,7 @@ impl TransferManager {
                     )
                     .await?;
                 }
+                None => {}
             }
             return Ok(());
         }

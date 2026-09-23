@@ -58,6 +58,8 @@ fn entry_from(path: String, name: String, attrs: &FileAttributes) -> RemoteEntry
     }
 }
 
+const SFTP_PARALLEL_OPS: usize = 16;
+
 fn map_err(op: &str, e: russh_sftp::client::error::Error) -> AppError {
     AppError::RemoteFs(format!("{op}: {e}"))
 }
@@ -158,6 +160,12 @@ impl RemoteFs for SftpFs {
             .remove_dir(path)
             .await
             .map_err(|e| map_err(path, e))
+    }
+
+    /// SFTP requests carry ids and pipeline over the one channel, so
+    /// recursive deletes stop paying a full round trip per file.
+    fn parallel_ops(&self) -> usize {
+        SFTP_PARALLEL_OPS
     }
 
     async fn chmod(&self, path: &str, mode: u32) -> AppResult<()> {

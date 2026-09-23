@@ -10,6 +10,7 @@ pub struct MultipartProbe {
     pub complete_calls: AtomicUsize,
     pub abort_calls: AtomicUsize,
     pub put_object_calls: AtomicUsize,
+    pub delete_objects_calls: AtomicUsize,
     pub upload_part_started: tokio::sync::Notify,
     pub release_upload_part: tokio::sync::Notify,
     pub abort_seen: tokio::sync::Notify,

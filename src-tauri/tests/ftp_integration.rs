@@ -12,9 +12,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serverus_lib::session::ftp::{FtpConfig, FtpPool};
-use serverus_lib::session::remote_fs::{delete_recursive, RemoteFs};
+use serverus_lib::session::remote_fs::{RemoteFs, TreeAction};
 use serverus_lib::transfer::{
-    DownloadRequest, ProgressSink, TransferManager, TransferState, UploadRequest,
+    DownloadRequest, ProgressSink, TransferKind, TransferManager, TransferState, TreeRequest,
+    UploadRequest,
 };
 use serverus_lib::vault::model::{ConflictPolicy, FtpTlsMode, TransferSettings};
 use unftp_sbe_fs::Filesystem;
@@ -229,10 +230,33 @@ async fn ftp_recursive_directory_roundtrip() {
     }
     assert!(dst_root.path().join("site/empty").is_dir());
 
-    // Recursive delete of the whole tree on the server.
-    delete_recursive(pool.as_ref(), "/site", true)
+    // Recursive delete of the whole tree, as the panel runs it: a queue
+    // item with progress, requests spread over the connection pool.
+    assert!(manager.clear_finished(context_id, "ftp-1"));
+    manager
+        .enqueue_tree_ops(
+            context_id,
+            &sink,
+            vec![TreeRequest {
+                fs: pool.clone(),
+                session_id: "ftp-1",
+                path: "/site",
+                is_dir: true,
+                action: TreeAction::Delete,
+                settings: settings(),
+                shell: None,
+            }],
+        )
         .await
         .unwrap();
+    wait_for_drain(&manager).await;
+    assert_all_done(&manager);
+    let deleted = &manager.snapshot().items[0];
+    assert_eq!(deleted.kind, TransferKind::Delete);
+    assert!(
+        deleted.total > 0 && deleted.done == deleted.total,
+        "{deleted:#?}"
+    );
     assert!(!pool.exists("/site").await.unwrap());
     // The server root must actually be empty on disk.
     assert_eq!(fs::read_dir(server_root.path()).unwrap().count(), 0);

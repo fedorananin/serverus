@@ -7,6 +7,8 @@
   interface Props {
     entry: RemoteEntry;
     selected: boolean;
+    /** A queued or running delete covers this entry. */
+    deleting?: boolean;
     s3: boolean;
     aclStatus?: S3AclStatus;
     comparisonStatus?: EntryComparisonStatus;
@@ -21,6 +23,7 @@
   let {
     entry,
     selected,
+    deleting = false,
     s3,
     aclStatus,
     comparisonStatus,
@@ -49,6 +52,8 @@
 <div
   class="row mono"
   class:selected
+  class:deleting
+  title={deleting ? "Being deleted — see the transfer panel" : undefined}
   role="option"
   aria-label={entry.name}
   aria-selected={selected}
@@ -96,6 +101,14 @@
 
   .row.selected {
     background: var(--accent-subtle);
+  }
+
+  .row.deleting {
+    opacity: 0.45;
+  }
+
+  .row.deleting .name {
+    text-decoration: line-through;
   }
 
   .cell {

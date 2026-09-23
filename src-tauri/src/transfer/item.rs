@@ -37,6 +37,8 @@ pub struct TransferItem {
     pub(super) settings: TransferSettings,
     pub(super) resume: AtomicBool,
     pub(super) tar: Option<tar_stream::TarJob>,
+    /// Recursive delete/chmod instead of a byte transfer.
+    pub(super) tree: Option<super::tree_job::TreeJob>,
     pub(super) local_target: Option<LocalDownloadTarget>,
     pub(super) partial_target: Mutex<Option<PartialTransferTarget>>,
 }

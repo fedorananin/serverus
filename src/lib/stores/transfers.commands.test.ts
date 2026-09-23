@@ -15,6 +15,8 @@ function dependencies() {
     list: vi.fn(async () => initialSnapshot),
     upload: vi.fn(async () => {}),
     download: vi.fn(async () => {}),
+    delete: vi.fn(async () => {}),
+    chmod: vi.fn(async () => {}),
     pause: vi.fn(async () => {}),
     retry: vi.fn(async () => {}),
     resume: vi.fn(async () => {}),
@@ -43,6 +45,8 @@ it("delegates transfer commands to AppApi", async () => {
 
   await store.upload("session-a", ["/local/a.txt"], "/remote");
   await store.download("session-a", ["/remote/b.txt"], "/local");
+  await store.delete("session-a", [{ path: "/remote/old", is_dir: true }]);
+  await store.chmod("session-a", [{ path: "/remote/www", is_dir: true }], 0o755, "dirs");
   await store.pause("transfer-1");
   await store.retry("transfer-2");
   await store.resume("transfer-3");
@@ -55,6 +59,13 @@ it("delegates transfer commands to AppApi", async () => {
 
   expect(transfers.upload).toHaveBeenCalledWith("session-a", ["/local/a.txt"], "/remote");
   expect(transfers.download).toHaveBeenCalledWith("session-a", ["/remote/b.txt"], "/local");
+  expect(transfers.delete).toHaveBeenCalledWith("session-a", [{ path: "/remote/old", is_dir: true }]);
+  expect(transfers.chmod).toHaveBeenCalledWith(
+    "session-a",
+    [{ path: "/remote/www", is_dir: true }],
+    0o755,
+    "dirs",
+  );
   expect(transfers.pause).toHaveBeenCalledWith("transfer-1");
   expect(transfers.retry).toHaveBeenCalledWith("transfer-2");
   expect(transfers.resume).toHaveBeenCalledWith("transfer-3");

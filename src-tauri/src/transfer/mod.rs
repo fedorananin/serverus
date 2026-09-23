@@ -18,11 +18,13 @@ mod progress;
 mod requests;
 mod single_transfer;
 mod sink;
+mod tree_job;
 mod tree_size;
 mod worker;
 
 pub mod tar_stream;
 
+use contracts::Direction;
 pub use contracts::{
     ConflictAction, TransferKind, TransferQueueSnapshot, TransferSnapshot, TransferState,
     TransferSummary,
@@ -30,6 +32,7 @@ pub use contracts::{
 pub use manager::TransferManager;
 pub use requests::{DownloadRequest, UploadRequest};
 pub use sink::ProgressSink;
+pub use tree_job::{TreeJob, TreeRequest};
 
 pub(crate) use local_target::safe_local_component;
 #[cfg(test)]

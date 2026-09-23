@@ -13,8 +13,8 @@ use crate::session::remote_fs::join_remote;
 use crate::vault::model::ConflictPolicy;
 
 use super::{
-    domain_conflict_decision, local_target_exists, open_local_download, ConflictAction,
-    ServerQueue, TransferItem, TransferKind, TransferManager, TransferState,
+    domain_conflict_decision, local_target_exists, open_local_download, ConflictAction, Direction,
+    ServerQueue, TransferItem, TransferManager, TransferState,
 };
 
 fn renamed_variant(name: &str, attempt: u32) -> String {
@@ -31,12 +31,15 @@ pub(super) async fn run_single(
     _queue: &Arc<ServerQueue>,
     item: &Arc<TransferItem>,
 ) -> AppResult<TransferState> {
+    let Some(direction) = item.kind.direction() else {
+        return Err(AppError::Transfer("not a byte transfer".into()));
+    };
     let fs = item.fs.as_ref();
     let settings = &item.settings;
     let mut local_target = item.local_target.clone();
     // Failed-name placeholders intentionally have no writable capability.
     // A manual retry must fail explicitly instead of probing the display path.
-    if item.kind == TransferKind::Download && local_target.is_none() && item.tar.is_none() {
+    if direction == Direction::Download && local_target.is_none() && item.tar.is_none() {
         return Err(AppError::Transfer(
             "this entry's remote name cannot be stored locally".into(),
         ));
@@ -46,15 +49,15 @@ pub(super) async fn run_single(
     let mut offset = 0_u64;
     if resuming {
         let total = item.total.load(Ordering::Relaxed);
-        offset = match item.kind {
-            TransferKind::Download => local_target
+        offset = match direction {
+            Direction::Download => local_target
                 .as_ref()
                 .and_then(|target| target.root.symlink_metadata(&target.relative).ok())
                 .filter(|metadata| metadata.is_file() && !metadata.is_symlink())
                 .map(|metadata| metadata.len())
                 .unwrap_or(0),
-            TransferKind::Upload if !fs.supports_write_resume() => 0,
-            TransferKind::Upload => fs
+            Direction::Upload if !fs.supports_write_resume() => 0,
+            Direction::Upload => fs
                 .stat(&item.remote_path)
                 .await
                 .map_or(0, |entry| entry.size),
@@ -66,9 +69,9 @@ pub(super) async fn run_single(
     }
 
     let target_exists = !resuming
-        && match item.kind {
-            TransferKind::Upload => fs.exists(&item.remote_path).await?,
-            TransferKind::Download => local_target
+        && match direction {
+            Direction::Upload => fs.exists(&item.remote_path).await?,
+            Direction::Download => local_target
                 .as_ref()
                 .map(local_target_exists)
                 .unwrap_or_else(|| item.local_path.exists()),
@@ -135,8 +138,8 @@ pub(super) async fn run_single(
             ConflictAction::Skip => return Ok(TransferState::Skipped),
             ConflictAction::Rename => {
                 for attempt in 1_u32.. {
-                    match item.kind {
-                        TransferKind::Upload => {
+                    match direction {
+                        Direction::Upload => {
                             let directory = crate::session::remote_fs::parent_remote(&remote_path);
                             let candidate =
                                 join_remote(&directory, &renamed_variant(&item.name, attempt));
@@ -145,7 +148,7 @@ pub(super) async fn run_single(
                                 break;
                             }
                         }
-                        TransferKind::Download => {
+                        Direction::Download => {
                             let renamed = renamed_variant(&item.name, attempt);
                             let candidate = local_path.with_file_name(&renamed);
                             let exists = if let Some(target) = &mut local_target {
@@ -167,8 +170,8 @@ pub(super) async fn run_single(
 
     let mut control = item.control.subscribe();
     let mtime;
-    match item.kind {
-        TransferKind::Upload => {
+    match direction {
+        Direction::Upload => {
             let metadata = tokio::fs::metadata(&local_path)
                 .await
                 .map_err(|error| AppError::Transfer(error.to_string()))?;
@@ -201,7 +204,7 @@ pub(super) async fn run_single(
                 }
             }
         }
-        TransferKind::Download => {
+        Direction::Download => {
             let entry = fs.stat(&remote_path).await?;
             mtime = entry.mtime;
             let mut source = fs.open_read(&remote_path, offset).await?;

@@ -96,6 +96,7 @@ impl TransferManager {
         settings: TransferSettings,
         local_target: Option<LocalDownloadTarget>,
         tar: Option<tar_stream::TarJob>,
+        tree: Option<super::tree_job::TreeJob>,
     ) -> Option<Arc<TransferItem>> {
         debug_assert_eq!(admission.session_id, session_id);
         let name = match kind {
@@ -103,7 +104,7 @@ impl TransferManager {
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_default(),
-            TransferKind::Download => remote_path
+            TransferKind::Download | TransferKind::Delete | TransferKind::Chmod => remote_path
                 .trim_end_matches('/')
                 .rsplit('/')
                 .next()
@@ -137,6 +138,7 @@ impl TransferManager {
             settings,
             resume: AtomicBool::new(false),
             tar,
+            tree,
             local_target,
             partial_target: Mutex::new(None),
         });

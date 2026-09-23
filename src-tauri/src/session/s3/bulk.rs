@@ -1,11 +1,63 @@
-//! Un-delimited (whole-subtree) listings: the raw key sweep used by
-//! recursive delete/rename, and the tree snapshot behind deep folder
-//! comparison.
+//! Whole-subtree requests: the raw key sweep used by recursive rename and
+//! ACL changes, the tree snapshot behind deep folder comparison and
+//! recursive delete, and the batched `DeleteObjects` that delete runs on.
 
-use crate::error::AppResult;
-use crate::session::remote_fs::{TreeSnapshot, TreeSnapshotItem};
+use std::collections::BTreeMap;
 
-use super::{sdk_err, S3Fs};
+use aws_sdk_s3::types::{Delete, ObjectIdentifier};
+
+use crate::error::{AppError, AppResult};
+use crate::session::remote_fs::{EntryFailure, TreeSnapshot, TreeSnapshotItem};
+
+use super::{sdk_err, Loc, S3Fs};
+
+/// Delete files through `DeleteObjects` (at most 1000 keys per request, as
+/// S3 allows), grouped per bucket. Quiet mode: the answer lists only the
+/// keys that failed. An error means a request was refused as a whole —
+/// e.g. by a provider without `DeleteObjects` — and the caller falls back.
+pub(super) async fn delete_files(fs: &S3Fs, paths: &[String]) -> AppResult<Vec<EntryFailure>> {
+    let mut by_bucket: BTreeMap<String, Vec<(String, &str)>> = BTreeMap::new();
+    for path in paths {
+        let (bucket, key) = fs.object(path)?;
+        by_bucket.entry(bucket).or_default().push((key, path));
+    }
+    let mut failures = Vec::new();
+    for (bucket, objects) in by_bucket {
+        for chunk in objects.chunks(crate::session::remote_fs::BULK_DELETE_MAX) {
+            let identifiers = chunk
+                .iter()
+                .map(|(key, _)| ObjectIdentifier::builder().key(key).build())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| AppError::RemoteFs(format!("{bucket}: {e}")))?;
+            let delete = Delete::builder()
+                .set_objects(Some(identifiers))
+                .quiet(true)
+                .build()
+                .map_err(|e| AppError::RemoteFs(format!("{bucket}: {e}")))?;
+            let out = fs
+                .client
+                .delete_objects()
+                .bucket(&bucket)
+                .delete(delete)
+                .send()
+                .await
+                .map_err(|e| sdk_err(&bucket, e))?;
+            for error in out.errors() {
+                let key = error.key().unwrap_or_default();
+                let path = chunk
+                    .iter()
+                    .find(|(candidate, _)| candidate == key)
+                    .map_or(key, |(_, path)| *path);
+                let reason = error.message().or(error.code()).unwrap_or("delete failed");
+                failures.push(EntryFailure {
+                    path: path.to_string(),
+                    message: format!("{path}: {reason}"),
+                });
+            }
+        }
+    }
+    Ok(failures)
+}
 
 /// All object keys under a prefix (no delimiter — full recursive set).
 pub(super) async fn list_all_keys(fs: &S3Fs, bucket: &str, prefix: &str) -> AppResult<Vec<String>> {
@@ -39,23 +91,27 @@ pub(super) async fn list_all_keys(fs: &S3Fs, bucket: &str, prefix: &str) -> AppR
 pub(super) async fn tree_snapshot(
     fs: &S3Fs,
     path: &str,
-    bucket: &str,
-    prefix: &str,
     limit: usize,
-) -> AppResult<TreeSnapshot> {
+) -> AppResult<Option<TreeSnapshot>> {
+    let (bucket, prefix) = match fs.resolve(path)? {
+        // The bucket list has no single-prefix listing; walk it.
+        Loc::Root => return Ok(None),
+        Loc::Bucket(b) => (b, String::new()),
+        Loc::Key(b, k) => (b, format!("{k}/")),
+    };
     let mut snapshot = TreeSnapshot::default();
     let mut token: Option<String> = None;
     loop {
-        let mut req = fs.client.list_objects_v2().bucket(bucket);
+        let mut req = fs.client.list_objects_v2().bucket(&bucket);
         if !prefix.is_empty() {
-            req = req.prefix(prefix);
+            req = req.prefix(&prefix);
         }
         if let Some(t) = token.take() {
             req = req.continuation_token(t);
         }
         let out = req.send().await.map_err(|e| sdk_err(path, e))?;
         for obj in out.contents() {
-            let Some(rel) = obj.key().and_then(|k| k.strip_prefix(prefix)) else {
+            let Some(rel) = obj.key().and_then(|k| k.strip_prefix(prefix.as_str())) else {
                 continue;
             };
             if rel.is_empty() {
@@ -81,12 +137,12 @@ pub(super) async fn tree_snapshot(
             });
             if snapshot.items.len() > limit {
                 snapshot.truncated = true;
-                return Ok(snapshot);
+                return Ok(Some(snapshot));
             }
         }
         match out.next_continuation_token() {
             Some(t) if out.is_truncated() == Some(true) => token = Some(t.to_string()),
-            _ => return Ok(snapshot),
+            _ => return Ok(Some(snapshot)),
         }
     }
 }

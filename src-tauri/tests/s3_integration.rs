@@ -20,6 +20,8 @@ mod operations;
 mod server;
 #[path = "s3_integration/transfers.rs"]
 mod transfers;
+#[path = "s3_integration/tree_ops.rs"]
+mod tree_ops;
 
 #[tokio::test]
 async fn s3_bucket_level_operations() {
@@ -104,4 +106,9 @@ async fn s3_replacement_staging_is_private_under_public_upload_mode() {
 #[tokio::test]
 async fn s3_subtree_compare() {
     compare::subtree_compare().await;
+}
+
+#[tokio::test]
+async fn s3_recursive_delete_uses_bulk_requests() {
+    tree_ops::recursive_delete_uses_bulk_requests().await;
 }

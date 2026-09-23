@@ -123,6 +123,7 @@
           <FilePaneRow
             {entry}
             selected={pane.selected.has(entry.name)}
+            deleting={pane.deleting.has(entry.path)}
             s3={pane.s3}
             aclStatus={pane.acl[entry.path]}
             comparisonStatus={pane.comparisonStatuses?.get(entry.name)}

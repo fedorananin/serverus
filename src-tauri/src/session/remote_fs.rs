@@ -7,6 +7,16 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::error::{AppError, AppResult};
 
+mod tree_op;
+
+pub use tree_op::{
+    run_tree_action, Checkpoint, EntryFailure, TreeAction, TreeOutcome, TreeProgress, Unattended,
+};
+
+/// Most keys one [`RemoteFs::delete_files_bulk`] call is handed (the S3
+/// `DeleteObjects` limit).
+pub const BULK_DELETE_MAX: usize = 1000;
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct RemoteEntry {
     pub name: String,
@@ -83,6 +93,19 @@ pub trait RemoteFs: Send + Sync {
     async fn tree_snapshot(&self, _path: &str, _limit: usize) -> AppResult<Option<TreeSnapshot>> {
         Ok(None)
     }
+    /// How many independent requests (delete, chmod) recursive operations
+    /// may keep in flight at once. SFTP pipelines them over one channel, FTP
+    /// spreads them over the connection pool, S3 over its HTTP client.
+    fn parallel_ops(&self) -> usize {
+        1
+    }
+    /// Delete up to [`BULK_DELETE_MAX`] files in one request, reporting the
+    /// entries that failed. `Ok(None)` means the protocol has no bulk delete
+    /// (the default); an `Err` means the whole request was refused, and the
+    /// caller falls back to single deletes.
+    async fn delete_files_bulk(&self, _paths: &[String]) -> AppResult<Option<Vec<EntryFailure>>> {
+        Ok(None)
+    }
 }
 
 /// Result of [`RemoteFs::tree_snapshot`].
@@ -143,29 +166,19 @@ where
     }
 }
 
-/// Recursively delete a remote file or directory tree. Shared by SFTP and
-/// FTP — recursion happens here, through the trait (SPEC §4.3).
+/// Recursively delete a remote file or directory tree without progress
+/// reporting — see [`run_tree_action`] for the observable variant the
+/// transfer queue uses. Shared by every protocol (SPEC §4.3).
 pub async fn delete_recursive(fs: &dyn RemoteFs, path: &str, is_dir: bool) -> AppResult<()> {
-    if !is_dir {
-        return fs.delete_file(path).await;
-    }
-    // Iterative DFS: delete files on discovery, directories child-first.
-    let mut stack = vec![path.to_string()];
-    let mut dirs_in_discovery_order = Vec::new();
-    while let Some(dir) = stack.pop() {
-        for entry in fs.list(&dir).await? {
-            if entry.is_dir && !entry.is_symlink {
-                stack.push(entry.path);
-            } else {
-                fs.delete_file(&entry.path).await?;
-            }
-        }
-        dirs_in_discovery_order.push(dir);
-    }
-    for dir in dirs_in_discovery_order.iter().rev() {
-        fs.delete_dir(dir).await?;
-    }
-    Ok(())
+    let counters = (Default::default(), Default::default(), Default::default());
+    let progress = TreeProgress {
+        total: &counters.0,
+        done: &counters.1,
+        scanning: &counters.2,
+    };
+    run_tree_action(fs, path, is_dir, TreeAction::Delete, progress, &Unattended)
+        .await
+        .map(|_| ())
 }
 
 /// Join a remote path and a child name with `/` semantics.

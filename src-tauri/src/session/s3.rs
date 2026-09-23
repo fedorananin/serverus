@@ -31,7 +31,7 @@ use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
 use crate::session::remote_fs::{
-    join_remote, BoxRead, BoxWrite, RemoteEntry, RemoteFs, TreeSnapshot,
+    join_remote, BoxRead, BoxWrite, EntryFailure, RemoteEntry, RemoteFs, TreeSnapshot,
 };
 use crate::vault::model::{Connection, S3UploadAcl};
 
@@ -558,18 +558,18 @@ impl RemoteFs for S3Fs {
         Ok(entries)
     }
 
-    /// See [`bulk::tree_snapshot`] — one request per 1000 objects instead
-    /// of one `list` per directory.
+    /// See [`bulk::tree_snapshot`] — one request per 1000 objects.
     async fn tree_snapshot(&self, path: &str, limit: usize) -> AppResult<Option<TreeSnapshot>> {
-        let (bucket, prefix) = match self.resolve(path)? {
-            // The bucket list has no single-prefix listing; walk it.
-            Loc::Root => return Ok(None),
-            Loc::Bucket(b) => (b, String::new()),
-            Loc::Key(b, k) => (b, format!("{k}/")),
-        };
-        bulk::tree_snapshot(self, path, &bucket, &prefix, limit)
-            .await
-            .map(Some)
+        bulk::tree_snapshot(self, path, limit).await
+    }
+
+    /// See [`bulk::delete_files`] — one `DeleteObjects` per 1000 keys.
+    async fn delete_files_bulk(&self, paths: &[String]) -> AppResult<Option<Vec<EntryFailure>>> {
+        bulk::delete_files(self, paths).await.map(Some)
+    }
+
+    fn parallel_ops(&self) -> usize {
+        ACL_CONCURRENCY
     }
 
     async fn stat(&self, path: &str) -> AppResult<RemoteEntry> {

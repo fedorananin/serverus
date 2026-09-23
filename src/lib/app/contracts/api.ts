@@ -1,17 +1,30 @@
 import type {
+  ChmodScope,
   ConflictAction,
   TransferListDto,
   TransferSnapshot,
   TransferSummary,
+  TreeTarget,
 } from "$lib/api";
 
-export type { ConflictAction, TransferListDto, TransferSnapshot, TransferSummary };
+export type {
+  ChmodScope,
+  ConflictAction,
+  TransferListDto,
+  TransferSnapshot,
+  TransferSummary,
+  TreeTarget,
+};
 
 export interface TransfersApi {
   list(): Promise<TransferListDto>;
   /** One call per user action: the whole selection shares one conflict batch. */
   upload(sessionId: string, localPaths: string[], remoteDir: string): Promise<void>;
   download(sessionId: string, remotePaths: string[], localDir: string): Promise<void>;
+  /** Queue a recursive delete per target; progress shows up in the panel. */
+  delete(sessionId: string, targets: TreeTarget[]): Promise<void>;
+  /** Queue a recursive chmod per target directory. */
+  chmod(sessionId: string, targets: TreeTarget[], mode: number, scope: ChmodScope): Promise<void>;
   pause(id: string): Promise<void>;
   retry(id: string): Promise<void>;
   resume(id: string): Promise<void>;

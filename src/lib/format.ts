@@ -39,6 +39,11 @@ export function formatPermissions(mode: number | null | undefined): string {
   return out;
 }
 
+/** Entry counts with digit grouping: `1318` → `1,318`. */
+export function formatCount(count: number): string {
+  return count.toLocaleString("en-US");
+}
+
 export function formatSpeed(bps: number): string {
   if (bps <= 0) return "";
   return `${formatSize(bps)}/s`;

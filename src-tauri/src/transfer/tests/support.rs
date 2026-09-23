@@ -147,6 +147,7 @@ fn item_with_batch_and_fs(
         settings: settings(),
         resume: AtomicBool::new(false),
         tar: None,
+        tree: None,
         local_target: None::<LocalDownloadTarget>,
         partial_target: Mutex::new(None),
     })

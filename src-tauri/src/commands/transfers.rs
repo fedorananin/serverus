@@ -4,7 +4,7 @@ use serverus_domain::runtime_context::RuntimeContextId;
 
 use super::prelude::*;
 
-fn transfer_settings(state: &AppState) -> crate::vault::model::TransferSettings {
+pub(super) fn transfer_settings(state: &AppState) -> crate::vault::model::TransferSettings {
     state
         .vault
         .lock()

@@ -146,6 +146,12 @@ impl RemoteFs for FtpPool {
         self.supports_mfmt()
     }
 
+    /// One connection stays free so browsing keeps working during a
+    /// recursive delete.
+    fn parallel_ops(&self) -> usize {
+        self.max_connections - 1
+    }
+
     async fn set_mtime(&self, path: &str, mtime_unix: i64) -> AppResult<()> {
         // MFMT is a common extension; best-effort (SPEC §6.1 mtime option).
         if !self.supports_mfmt() {

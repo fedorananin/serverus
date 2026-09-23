@@ -5,14 +5,18 @@
     total: number;
     selectedCount: number;
     notice: FilePaneNotice | null;
+    /** The open folder lies inside a delete that is still running. */
+    deletion?: string | null;
   }
 
-  let { total, selectedCount, notice }: Props = $props();
+  let { total, selectedCount, notice, deletion = null }: Props = $props();
 </script>
 
 <div class="statusbar">
   <span>{total} items{selectedCount > 0 ? `, ${selectedCount} selected` : ""}</span>
-  {#if notice}
+  {#if deletion}
+    <span class="deletion" role="status" title={deletion}>This folder is being deleted…</span>
+  {:else if notice}
     <span class="acl-note" class:err={notice.error} role={notice.error ? "alert" : "status"}
       >{notice.text}</span
     >
@@ -35,6 +39,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .deletion {
+    color: var(--warning);
   }
 
   .acl-note.err {

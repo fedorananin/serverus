@@ -100,6 +100,7 @@ impl TransferManager {
             settings.clone(),
             None,
             None,
+            None,
         ) else {
             return false;
         };
@@ -146,6 +147,7 @@ impl TransferManager {
                 settings,
                 Some(local_target),
                 None,
+                None,
             ) else {
                 return Ok(());
             };
@@ -168,6 +170,7 @@ impl TransferManager {
                     settings,
                     None,
                     Some(tar_stream::TarJob { ssh }),
+                    None,
                 ) else {
                     return Ok(());
                 };
@@ -238,6 +241,7 @@ impl TransferManager {
                         fs.clone(),
                         settings.clone(),
                         Some(local_target),
+                        None,
                         None,
                     ) else {
                         return Ok(());

@@ -123,6 +123,28 @@ impl S3 for AclFs {
         Ok(response)
     }
 
+    async fn delete_objects(
+        &self,
+        req: S3Request<dto::DeleteObjectsInput>,
+    ) -> S3Result<S3Response<dto::DeleteObjectsOutput>> {
+        if let Some(probe) = &self.multipart_probe {
+            probe.delete_objects_calls.fetch_add(1, Ordering::SeqCst);
+        }
+        let bucket = req.input.bucket.clone();
+        let keys: Vec<String> = req
+            .input
+            .delete
+            .objects
+            .iter()
+            .map(|object| object.key.clone())
+            .collect();
+        let response = self.inner.delete_objects(req).await?;
+        for key in keys {
+            self.set_public(&bucket, &key, false);
+        }
+        Ok(response)
+    }
+
     async fn copy_object(
         &self,
         req: S3Request<dto::CopyObjectInput>,

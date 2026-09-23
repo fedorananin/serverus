@@ -38,7 +38,15 @@ impl TransferItem {
             name: self.name.clone(),
             local_path: self.local_path.to_string_lossy().into_owned(),
             remote_path: self.remote_path.clone(),
-            accelerated: self.tar.is_some(),
+            accelerated: self.tar.is_some()
+                || self
+                    .tree
+                    .as_ref()
+                    .is_some_and(|tree| tree.accelerated.load(Ordering::Relaxed)),
+            scanning: self
+                .tree
+                .as_ref()
+                .is_some_and(|tree| tree.scanning.load(Ordering::Relaxed)),
             done: self.done.load(Ordering::Relaxed),
             total: self.total.load(Ordering::Relaxed),
             speed_bps: self.speed_bps.load(Ordering::Relaxed),
@@ -114,7 +122,9 @@ impl TransferItem {
             ),
             Ok(_) => (Vec::new(), None),
             Err(error) => {
-                let event = if self.tar.is_some() {
+                // Tree operations already went over every entry once, and a
+                // rerun rescans from scratch: retrying is the user's call.
+                let event = if self.tar.is_some() || self.tree.is_some() {
                     DomainTransferEvent::PermanentFailure(DomainFailureKind::RemoteIo)
                 } else {
                     DomainTransferEvent::RecoverableFailure(DomainFailureKind::RemoteIo)

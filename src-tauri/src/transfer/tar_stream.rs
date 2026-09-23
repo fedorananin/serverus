@@ -23,7 +23,7 @@ use crate::error::{AppError, AppResult};
 use crate::session::remote_fs::parent_remote;
 use crate::session::ssh::SshSession;
 
-use super::{Control, TransferItem, TransferKind, TransferState};
+use super::{Control, Direction, TransferItem, TransferState};
 use archive::unpack_confined;
 
 pub struct TarJob {
@@ -36,9 +36,10 @@ fn shq(s: &str) -> String {
 }
 
 pub async fn run(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferState> {
-    match item.kind {
-        TransferKind::Download => download(item, job).await,
-        TransferKind::Upload => upload(item, job).await,
+    match item.kind.direction() {
+        Some(Direction::Download) => download(item, job).await,
+        Some(Direction::Upload) => upload(item, job).await,
+        None => Err(AppError::Transfer("not a byte transfer".into())),
     }
 }
 

@@ -74,7 +74,6 @@ pub async fn remote_rename(
     .await
 }
 
-/// Recursive delete — works identically for SFTP and FTP (SPEC §4.3).
 #[tauri::command]
 #[specta::specta]
 pub async fn remote_delete(

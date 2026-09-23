@@ -14,6 +14,12 @@ export class TauriAppApi implements AppApi {
     download: async (sessionId, remotePaths, localDir) => {
       await unwrap(commands.transferDownload(sessionId, remotePaths, localDir));
     },
+    delete: async (sessionId, targets) => {
+      await unwrap(commands.transferDelete(sessionId, targets));
+    },
+    chmod: async (sessionId, targets, mode, scope) => {
+      await unwrap(commands.transferChmod(sessionId, targets, mode, scope));
+    },
     pause: async (id) => {
       await unwrap(commands.transferPause(id));
     },

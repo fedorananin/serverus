@@ -2,10 +2,12 @@
 
 import type {
   AppApi,
+  ChmodScope,
   ConflictAction,
   TransferListDto,
   TransferSnapshot,
   TransferSummary,
+  TreeTarget,
 } from "$lib/app/contracts/api";
 import type { AppEventSource } from "$lib/app/contracts/events";
 
@@ -140,6 +142,14 @@ export class TransfersStore {
 
   download(sessionId: string, remotePaths: string[], localDir: string): Promise<void> {
     return this.api.transfers.download(sessionId, remotePaths, localDir);
+  }
+
+  delete(sessionId: string, targets: TreeTarget[]): Promise<void> {
+    return this.api.transfers.delete(sessionId, targets);
+  }
+
+  chmod(sessionId: string, targets: TreeTarget[], mode: number, scope: ChmodScope): Promise<void> {
+    return this.api.transfers.chmod(sessionId, targets, mode, scope);
   }
 
   pause = (id: string) => void this.api.transfers.pause(id);
