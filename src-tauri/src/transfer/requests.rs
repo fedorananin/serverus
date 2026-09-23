@@ -9,6 +9,7 @@ pub struct UploadRequest<'a> {
     pub(super) local_path: &'a str,
     pub(super) remote_dir: &'a str,
     pub(super) settings: TransferSettings,
+    pub(super) skip_junk: bool,
 }
 
 impl<'a> UploadRequest<'a> {
@@ -25,7 +26,16 @@ impl<'a> UploadRequest<'a> {
             local_path,
             remote_dir,
             settings,
+            skip_junk: false,
         }
+    }
+
+    /// Leave OS metadata junk (`.DS_Store`, `Thumbs.db`) out of a directory
+    /// transfer — the "hide local junk" panel setting. An explicitly chosen
+    /// top-level path is always transferred.
+    pub fn skipping_junk(mut self, skip: bool) -> Self {
+        self.skip_junk = skip;
+        self
     }
 }
 
@@ -35,6 +45,7 @@ pub struct DownloadRequest<'a> {
     pub(super) remote_path: &'a str,
     pub(super) local_dir: &'a str,
     pub(super) settings: TransferSettings,
+    pub(super) skip_junk: bool,
 }
 
 impl<'a> DownloadRequest<'a> {
@@ -51,6 +62,15 @@ impl<'a> DownloadRequest<'a> {
             remote_path,
             local_dir,
             settings,
+            skip_junk: false,
         }
+    }
+
+    /// Leave OS metadata junk (`.DS_Store`, `Thumbs.db`) out of a directory
+    /// transfer — the "hide local junk" panel setting. An explicitly chosen
+    /// top-level path is always transferred.
+    pub fn skipping_junk(mut self, skip: bool) -> Self {
+        self.skip_junk = skip;
+        self
     }
 }

@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use serverus_domain::fs_compare::is_local_junk;
 use serverus_domain::runtime_context::RuntimeContextId;
 use serverus_domain::transfers::{
     FailureKind as DomainFailureKind, TransferEvent as DomainTransferEvent,
@@ -123,6 +124,7 @@ impl TransferManager {
             remote_path,
             local_dir,
             settings,
+            skip_junk,
         } = request;
         let entry = fs.stat(remote_path).await?;
         let local_base = crate::local_fs::expand(local_dir);
@@ -169,7 +171,7 @@ impl TransferManager {
                     fs,
                     settings,
                     None,
-                    Some(tar_stream::TarJob { ssh }),
+                    Some(tar_stream::TarJob { ssh, skip_junk }),
                     None,
                 ) else {
                     return Ok(());
@@ -184,6 +186,9 @@ impl TransferManager {
         while let Some((remote_dir, local_relative)) = pending.pop() {
             let mut used_names = std::collections::HashSet::new();
             for child in fs.list(&remote_dir).await? {
+                if skip_junk && is_local_junk(&child.name) {
+                    continue;
+                }
                 let local_name = match safe_local_component(&child.name) {
                     Ok(name) => name,
                     Err(error) => {

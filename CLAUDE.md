@@ -192,8 +192,10 @@ hidden-file handling follows the panes' dot-file filter at every level, and
 symlinked directories are compared as symlinks, never descended. The
 "hide local junk" panel setting (on by default, incl. pre-existing vaults)
 drops `.DS_Store`/`Thumbs.db` (case-insensitive) from the local pane and the
-local side of comparison only — junk on the server stays visible so stray
-uploads surface and can be deleted; the name list lives in
+local side of comparison only — junk on the server stays visible and counts
+as a difference so stray uploads surface and can be deleted. The same setting
+makes recursive uploads/downloads (per-file walks and tar acceleration) skip
+junk; an explicitly chosen top-level path still transfers. The name list lives in
 `serverus-domain::fs_compare::is_local_junk` + `isLocalJunk` in
 `directory-comparison.ts` (lockstep). v1.4.1: sessions whose uploads
 can't preserve mtime compare size-only — S3 always, FTP when the server's

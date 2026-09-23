@@ -1,4 +1,4 @@
-use super::archive::unpack_confined;
+use super::archive::{pack_tree, unpack_confined};
 
 fn open_root(dir: &std::path::Path) -> cap_std::fs::Dir {
     cap_std::fs::Dir::open_ambient_dir(dir, cap_std::ambient_authority()).unwrap()
@@ -31,7 +31,7 @@ fn unpacks_a_normal_nested_tree() {
         regular("tree/nested/b.txt", b"beta"),
     ];
 
-    unpack_confined(archive(entries), &open_root(dir.path())).unwrap();
+    unpack_confined(archive(entries), &open_root(dir.path()), false).unwrap();
 
     assert_eq!(
         std::fs::read(dir.path().join("tree/a.txt")).unwrap(),
@@ -53,6 +53,7 @@ fn rejects_parent_directory_traversal() {
     let result = unpack_confined(
         archive(vec![regular("../evil.txt", b"pwned")]),
         &open_root(&inner),
+        false,
     );
 
     assert!(result.is_err());
@@ -67,6 +68,7 @@ fn rejects_absolute_entry_paths() {
     let result = unpack_confined(
         archive(vec![regular("/tmp/evil.txt", b"pwned")]),
         &open_root(dir.path()),
+        false,
     );
 
     assert!(result.is_err());
@@ -95,7 +97,7 @@ fn a_planted_symlink_cannot_redirect_later_entries() {
     let entries = vec![(link, Vec::new()), regular("link/victim.txt", b"pwned")];
     // The symlink entry is skipped, so "link" becomes a real directory
     // and the write lands inside the destination.
-    unpack_confined(archive(entries), &open_root(dir.path())).unwrap();
+    unpack_confined(archive(entries), &open_root(dir.path()), false).unwrap();
 
     assert!(!outside.path().join("victim.txt").exists());
     assert_eq!(
@@ -113,6 +115,7 @@ fn unix_legal_names_survive_the_tar_path_verbatim() {
     unpack_confined(
         archive(vec![regular("tree/2024-01-01T12:00:00.log", b"log")]),
         &open_root(dir.path()),
+        false,
     )
     .unwrap();
 
@@ -129,6 +132,7 @@ fn file_mtime_is_preserved() {
     unpack_confined(
         archive(vec![regular("tree/dated.txt", b"x")]),
         &open_root(dir.path()),
+        false,
     )
     .unwrap();
 
@@ -141,4 +145,66 @@ fn file_mtime_is_preserved() {
         .unwrap()
         .as_secs();
     assert_eq!(unix, 1_700_000_000);
+}
+
+#[test]
+fn skip_junk_drops_junk_entries_on_unpack() {
+    let dir = tempfile::tempdir().unwrap();
+    let entries = vec![
+        regular("tree/a.txt", b"alpha"),
+        regular("tree/.DS_Store", b"junk"),
+        regular("tree/nested/thumbs.db", b"junk"),
+    ];
+
+    unpack_confined(archive(entries), &open_root(dir.path()), true).unwrap();
+
+    assert!(dir.path().join("tree/a.txt").exists());
+    assert!(!dir.path().join("tree/.DS_Store").exists());
+    assert!(!dir.path().join("tree/nested/thumbs.db").exists());
+}
+
+fn packed_names(src: &std::path::Path, skip_junk: bool) -> Vec<String> {
+    let mut builder = tar::Builder::new(Vec::new());
+    builder.follow_symlinks(false);
+    pack_tree(&mut builder, "tree", src, skip_junk).unwrap();
+    let bytes = builder.into_inner().unwrap();
+    let mut names: Vec<String> = tar::Archive::new(std::io::Cursor::new(bytes))
+        .entries()
+        .unwrap()
+        .map(|entry| {
+            entry
+                .unwrap()
+                .path()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .map(|name| name.trim_end_matches('/').to_string())
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn pack_tree_leaves_junk_out_only_when_asked() {
+    let src = tempfile::tempdir().unwrap();
+    std::fs::create_dir(src.path().join("nested")).unwrap();
+    std::fs::write(src.path().join("a.txt"), b"alpha").unwrap();
+    std::fs::write(src.path().join(".DS_Store"), b"junk").unwrap();
+    std::fs::write(src.path().join("nested/Thumbs.db"), b"junk").unwrap();
+
+    assert_eq!(
+        packed_names(src.path(), true),
+        ["tree", "tree/a.txt", "tree/nested"]
+    );
+    assert_eq!(
+        packed_names(src.path(), false),
+        [
+            "tree",
+            "tree/.DS_Store",
+            "tree/a.txt",
+            "tree/nested",
+            "tree/nested/Thumbs.db"
+        ]
+    );
 }

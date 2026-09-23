@@ -157,7 +157,8 @@ impl TransferManager {
         if !item.begin_manual_retry() {
             return Ok(());
         }
-        if item.tar.is_some() {
+        if let Some(tar) = &item.tar {
+            let skip_junk = tar.skip_junk;
             let _ = item.apply_and_dispatch(DomainTransferEvent::CancelRequested, None, None);
             let mut settings = item.settings.clone();
             settings.tar_acceleration = false;
@@ -174,7 +175,8 @@ impl TransferManager {
                             &local,
                             &remote_dir,
                             settings,
-                        ),
+                        )
+                        .skipping_junk(skip_junk),
                         None,
                         item.batch.clone(),
                     )
@@ -195,7 +197,8 @@ impl TransferManager {
                             &item.remote_path,
                             &local_dir,
                             settings,
-                        ),
+                        )
+                        .skipping_junk(skip_junk),
                         None,
                         item.batch.clone(),
                     )

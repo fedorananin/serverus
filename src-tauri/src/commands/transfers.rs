@@ -14,6 +14,18 @@ pub(super) fn transfer_settings(state: &AppState) -> crate::vault::model::Transf
         .unwrap_or_default()
 }
 
+/// The "hide local junk" panel setting: directory transfers leave
+/// `.DS_Store` / `Thumbs.db` behind in both directions.
+fn skip_junk(state: &AppState) -> bool {
+    state
+        .vault
+        .lock()
+        .unwrap()
+        .payload()
+        .map(|p| p.settings.panels.hide_local_junk)
+        .unwrap_or(true)
+}
+
 fn requested_context(state: &AppState, runtime_context_id: &str) -> AppResult<RuntimeContextId> {
     let lease = state.application.require_active().map_err(AppError::from)?;
     if runtime_context_id != lease.context_id().get().to_string() {
@@ -43,6 +55,7 @@ pub async fn transfer_upload(
     let entry = state.sessions.get(&session_id)?;
     let fs = entry.remote_fs().await?;
     let settings = transfer_settings(&state);
+    let skip_junk = skip_junk(&state);
     let tar_ssh = entry.tar_ssh().await;
     let sink: std::sync::Arc<dyn crate::transfer::ProgressSink> = std::sync::Arc::new(app);
     let requests = local_paths
@@ -55,6 +68,7 @@ pub async fn transfer_upload(
                 &remote_dir,
                 settings.clone(),
             )
+            .skipping_junk(skip_junk)
         })
         .collect();
     state
@@ -77,6 +91,7 @@ pub async fn transfer_download(
     let entry = state.sessions.get(&session_id)?;
     let fs = entry.remote_fs().await?;
     let settings = transfer_settings(&state);
+    let skip_junk = skip_junk(&state);
     let tar_ssh = entry.tar_ssh().await;
     let sink: std::sync::Arc<dyn crate::transfer::ProgressSink> = std::sync::Arc::new(app);
     let requests = remote_paths
@@ -89,6 +104,7 @@ pub async fn transfer_download(
                 &local_dir,
                 settings.clone(),
             )
+            .skipping_junk(skip_junk)
         })
         .collect();
     state

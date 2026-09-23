@@ -34,7 +34,8 @@ pub struct CompareRules {
 }
 
 /// OS metadata junk the "hide local junk" panel setting suppresses in the
-/// local pane and on the local side of folder comparison (case-insensitive:
+/// local pane and on the local side of folder comparison, and leaves out of
+/// directory transfers in either direction (case-insensitive:
 /// Windows writes both `Thumbs.db` and `thumbs.db` in the wild). Mirrored by
 /// `isLocalJunk` in `src/lib/directory-comparison.ts` — keep in lockstep.
 pub fn is_local_junk(name: &str) -> bool {

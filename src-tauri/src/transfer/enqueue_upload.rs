@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use serverus_domain::fs_compare::is_local_junk;
 use serverus_domain::runtime_context::RuntimeContextId;
 
 use super::tar_stream;
@@ -81,6 +82,7 @@ impl TransferManager {
             local_path,
             remote_dir,
             settings,
+            skip_junk,
         } = request;
         let root = crate::local_fs::expand(local_path);
         let metadata = tokio::fs::metadata(&root)
@@ -115,7 +117,7 @@ impl TransferManager {
 
         if settings.tar_acceleration {
             if let Some(ssh) = tar_ssh {
-                let total = local_tree_size(&root).await;
+                let total = local_tree_size(&root, skip_junk).await;
                 let Some(item) = self.add_item(
                     admission,
                     batch,
@@ -127,7 +129,7 @@ impl TransferManager {
                     fs,
                     settings,
                     None,
-                    Some(tar_stream::TarJob { ssh }),
+                    Some(tar_stream::TarJob { ssh, skip_junk }),
                     None,
                 ) else {
                     return Ok(());
@@ -154,6 +156,9 @@ impl TransferManager {
                     continue;
                 };
                 let name = entry.file_name().to_string_lossy().into_owned();
+                if skip_junk && is_local_junk(&name) {
+                    continue;
+                }
                 let remote_child = join_remote(&remote_dir, &name);
                 if metadata.is_dir() {
                     let _ = fs.mkdir(&remote_child).await;

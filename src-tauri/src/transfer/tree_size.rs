@@ -53,7 +53,7 @@ pub(super) fn scenario_chunk_delay(name: &str) -> Option<Duration> {
     (name == "cleanup-slow.bin").then_some(Duration::from_millis(200))
 }
 
-pub(super) async fn local_tree_size(root: &std::path::Path) -> u64 {
+pub(super) async fn local_tree_size(root: &std::path::Path, skip_junk: bool) -> u64 {
     let mut total = 0_u64;
     let mut pending = vec![root.to_path_buf()];
     while let Some(directory) = pending.pop() {
@@ -61,6 +61,11 @@ pub(super) async fn local_tree_size(root: &std::path::Path) -> u64 {
             continue;
         };
         while let Ok(Some(entry)) = entries.next_entry().await {
+            if skip_junk
+                && serverus_domain::fs_compare::is_local_junk(&entry.file_name().to_string_lossy())
+            {
+                continue;
+            }
             let Ok(metadata) = entry.metadata().await else {
                 continue;
             };

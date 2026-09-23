@@ -135,10 +135,11 @@ fn default_sidebar_width() -> u16 {
 pub struct PanelSettings {
     pub show_hidden: bool,
     /// Never show OS metadata junk (`.DS_Store`, `Thumbs.db`) in the local
-    /// pane — regardless of `show_hidden` — and keep it out of the local
-    /// side of folder comparison. The remote pane still shows such files so
-    /// stray uploads can be found and deleted. On by default (also for
-    /// vaults saved before the setting existed).
+    /// pane — regardless of `show_hidden` — keep it out of the local side of
+    /// folder comparison, and leave it out of directory transfers in either
+    /// direction. The remote pane and remote side of comparison still show
+    /// such files so stray uploads surface as differences and can be deleted.
+    /// On by default (also for vaults saved before the setting existed).
     #[serde(default = "default_hide_local_junk")]
     pub hide_local_junk: bool,
     pub size_format: SizeFormat,

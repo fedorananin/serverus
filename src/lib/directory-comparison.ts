@@ -7,7 +7,8 @@ export type DirectoryComparisonStatus =
   | "remote-only";
 
 /** OS metadata junk the "hide local junk" panel setting suppresses in the
- *  local pane and on the local side of comparison (case-insensitive —
+ *  local pane and on the local side of comparison, and leaves out of
+ *  directory transfers (case-insensitive —
  *  Windows writes both `Thumbs.db` and `thumbs.db` in the wild). Mirrored
  *  by `is_local_junk` in `serverus-domain::fs_compare` — keep in lockstep. */
 export function isLocalJunk(name: string): boolean {

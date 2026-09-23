@@ -24,10 +24,13 @@ use crate::session::remote_fs::parent_remote;
 use crate::session::ssh::SshSession;
 
 use super::{Control, Direction, TransferItem, TransferState};
-use archive::unpack_confined;
+use archive::{pack_tree, unpack_confined};
 
 pub struct TarJob {
     pub ssh: Arc<SshSession>,
+    /// Leave `.DS_Store` / `Thumbs.db` out of the archive (upload) or out
+    /// of the unpacked tree (download).
+    pub skip_junk: bool,
 }
 
 /// POSIX single-quote escaping.
@@ -80,9 +83,10 @@ async fn download(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferS
     let (mut pipe_w, pipe_r) = tokio::io::duplex(512 * 1024);
     // Bridge must be created on the runtime, then moved to the blocking pool.
     let bridge = SyncIoBridge::new(pipe_r);
+    let skip_junk = job.skip_junk;
     let unpack = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
         let root = cap_std::fs::Dir::open_ambient_dir(&local_parent, cap_std::ambient_authority())?;
-        unpack_confined(tar::Archive::new(bridge), &root)
+        unpack_confined(tar::Archive::new(bridge), &root, skip_junk)
     });
 
     let mut ctrl = item.control.subscribe();
@@ -163,10 +167,11 @@ async fn upload(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferSta
 
     let (pipe_w, pipe_r) = tokio::io::duplex(512 * 1024);
     let bridge = SyncIoBridge::new(pipe_w);
+    let skip_junk = job.skip_junk;
     let pack = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
         let mut builder = tar::Builder::new(bridge);
         builder.follow_symlinks(false);
-        builder.append_dir_all(&base_name, &local_root)?;
+        pack_tree(&mut builder, &base_name, &local_root, skip_junk)?;
         let mut inner = builder.into_inner()?;
         std::io::Write::flush(&mut inner)?;
         Ok(())
