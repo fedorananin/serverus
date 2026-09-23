@@ -1,6 +1,8 @@
 //! Recursive delete and recursive chmod as transfer-queue items, against a
 //! real unprivileged sshd: the portable SFTP walk, the server-side `rm`
-//! shortcut, per-entry failure reporting, and chmod scopes.
+//! shortcut, per-entry failure reporting, and chmod scopes. Unix only: it
+//! needs the local sshd and POSIX permissions/symlinks to build its trees.
+#![cfg(unix)]
 
 mod support;
 #[path = "support/transfer_context.rs"]
