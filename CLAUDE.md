@@ -210,7 +210,10 @@ room. v1.5.0: remote deletes and recursive chmods run as transfer-queue items
 with live progress, cancel/retry and a finished entry (see Gotchas); one
 failing entry no longer aborts the rest; SFTP/FTP requests go out in
 parallel, S3 deletes use `DeleteObjects`, SSH dirs use server-side `rm`;
-deleting a symlink to a directory no longer empties its target. Also v1.4.0: settings-dialog polish —
+deleting a symlink to a directory no longer empties its target. v1.5.1: the
+"hide local junk" setting also keeps `.DS_Store`/`Thumbs.db` out of recursive
+uploads and downloads (per-file walks and tar: `tar_stream/archive.rs`
+`pack_tree` / `unpack_confined`); comparison unchanged. Also v1.4.0: settings-dialog polish —
 checkboxes render inline everywhere (a `.row > label` specificity bug stacked
 them as centered columns), Panels puts each checkbox on its own row,
 input/select share a fixed 30px height globally, and Vault separates
@@ -225,7 +228,7 @@ WKWebView, WebKitGTK and WebView2, but this is not representative physical
 Windows/Linux hardware validation.
 Known gaps: no Linux quick unlock; lock-on-sleep detection (monotonic vs wall
 clock divergence) may not fire on Windows; local chmod is hidden on Windows.
-Integration tests (44) run against a local unprivileged `sshd`, an in-process
+Integration tests (45) run against a local unprivileged `sshd`, an in-process
 libunftp FTP server and an in-process `s3s` S3 server — no docker needed
 (macOS + Linux; Windows runs `cargo test --workspace --lib`, plus supported
 non-SSH desktop scenarios). Releases are built by

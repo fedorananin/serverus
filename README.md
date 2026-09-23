@@ -13,7 +13,7 @@ A native macOS connection manager. Built with Tauri 2, a Rust backend and a Svel
 ![Built with Rust](https://img.shields.io/badge/backend-Rust-orange)
 ![Built with Tauri](https://img.shields.io/badge/shell-Tauri%202-24C8DB)
 ![Frontend Svelte](https://img.shields.io/badge/frontend-Svelte%205-FF3E00)
-![Version](https://img.shields.io/badge/version-1.5.0-brightgreen)
+![Version](https://img.shields.io/badge/version-1.5.1-brightgreen)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
@@ -116,8 +116,9 @@ hard warning on key change, keep‑alive and auto‑reconnect.
   that can't preserve mtime on upload (S3; FTP without `MFMT`) compare by
   size, so fresh uploads never read as "different" forever.
 - Local junk (`.DS_Store`, `Thumbs.db`) is hidden from the local pane and the
-  local side of comparison; strays on the server stay visible so you can
-  delete them.
+  local side of comparison, and never copied by folder uploads or downloads
+  (tar acceleration included); strays already on the server stay visible and
+  count as differences so you can find and delete them.
 
 ### 📦 Transfer queue & acceleration
 - A per‑connection queue with progress, speed, ETA, pause/resume/cancel; up to
@@ -244,7 +245,7 @@ cargo test --workspace # unit + integration against real local sshd/FTP/S3 — n
   certificate and put `APPLE_SIGNING_IDENTITY="Local Dev"` in a git‑ignored
   `.env.local`; `npm run tauri build` picks it up. Distribution without the
   Gatekeeper prompt still needs a paid Developer ID and notarization.
-- **Releases** are fully automated: `git tag v1.5.0 && git push origin v1.5.0`
+- **Releases** are fully automated: `git tag v1.5.1 && git push origin v1.5.1`
   runs the full cross‑OS gate, then uploads installers to a draft GitHub
   Release. Review and publish — no local builds.
 
