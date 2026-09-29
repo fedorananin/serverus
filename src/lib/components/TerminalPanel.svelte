@@ -1,6 +1,7 @@
 <script lang="ts">
   // Several terminals per connection tab — separate channels of one SSH
   // session (SPEC §5.5).
+  import { untrack } from "svelte";
   import { useOptionalAppModel } from "$lib/app/model.svelte";
   import TerminalView from "./TerminalView.svelte";
   import TerminalPasteButton from "./TerminalPasteButton.svelte";
@@ -26,7 +27,7 @@
   // The AI agent needs a terminal in this tab and every one was closed.
   const agent = useOptionalAppModel()?.agent;
   $effect(() => {
-    if (agent?.terminalRequests[sessionId] && slots.length === 0) addTerminal();
+    if (agent?.terminalRequests[sessionId] && slots.length === 0) untrack(addTerminal);
   });
 
   /** Focus the visible terminal — used when this session's tab becomes active. */

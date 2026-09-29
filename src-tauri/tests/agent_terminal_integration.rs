@@ -181,7 +181,16 @@ async fn ctrl_c_is_recognised_as_an_interrupt() {
     let outcome = tokio::time::timeout(Duration::from_secs(10), follow(&shell.tap, started))
         .await
         .unwrap_or_else(|_| panic!("interrupt not detected; terminal: {:?}", shell.screen()));
-    assert_eq!(outcome.end, CommandEnd::Interrupted);
+    // zsh drops the rest of the line (no end marker: Interrupted); bash
+    // runs on to the end marker, which then carries SIGINT's 128 + 2.
+    assert!(
+        matches!(
+            outcome.end,
+            CommandEnd::Interrupted | CommandEnd::Exited(Some(130))
+        ),
+        "{:?}",
+        outcome.end
+    );
     // The shell is usable again.
     assert_exit(&shell.run("echo again").await, 0, "again");
 }

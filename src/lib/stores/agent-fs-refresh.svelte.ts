@@ -2,6 +2,7 @@
 // shows outside the transfer queue (mkdir, rename, chmod) — queued work
 // already refreshes panes when the queue settles.
 
+import { untrack } from "svelte";
 import type { AgentStore } from "./agent.svelte";
 import type { PaneController } from "./pane.svelte";
 
@@ -29,6 +30,10 @@ export function trackAgentFsChanges(pane: PaneController, agent: AgentStore, ses
     const change = agent.fsChanges[sessionId];
     if (!change || change.revision === seen) return;
     seen = change.revision;
-    if (change.paths.some((path) => paneAffected(pane.path, path))) void pane.refresh();
+    // Only the change counter drives this; what refresh reads and writes
+    // must not become a dependency.
+    untrack(() => {
+      if (change.paths.some((path) => paneAffected(pane.path, path))) void pane.refresh();
+    });
   });
 }

@@ -120,9 +120,13 @@ export class AgentStore {
     };
   }
 
+  /** Called from the terminal views' effects: a call that changes nothing
+   *  writes nothing, or the effect would re-trigger itself forever. */
   terminalActivated(sessionId: string, termId: string) {
     const entry = this.sessionTerminals[sessionId];
-    if (entry?.all.includes(termId)) this.sessionTerminals[sessionId] = { ...entry, active: termId };
+    if (entry?.all.includes(termId) && entry.active !== termId) {
+      this.sessionTerminals[sessionId] = { ...entry, active: termId };
+    }
   }
 
   terminalClosed(sessionId: string, termId: string) {

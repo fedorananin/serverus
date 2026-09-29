@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { Channel } from "@tauri-apps/api/core";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
@@ -27,7 +27,10 @@
   const agent = useAppModel().agent;
   let openedTermId = $state<string | null>(null);
   $effect(() => {
-    if (openedTermId && active) agent.terminalActivated(sessionId, openedTermId);
+    // Only `openedTermId` and `active` drive this; the registry's own state
+    // must not become a dependency (it is written right here).
+    const termId = openedTermId;
+    if (termId && active) untrack(() => agent.terminalActivated(sessionId, termId));
   });
 
   let container: HTMLDivElement;
