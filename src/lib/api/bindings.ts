@@ -24,12 +24,12 @@ export const commands = {
 	kind: BadgeKind,
 	/**  Emoji character or hex color like `#e5484d`. */
 	value: string,
-} | null) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("folder_create", { name, parentFolder, badge })),
+} | null, agentAccess: "off" | "read_only" | "ask" | "full" | null) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("folder_create", { name, parentFolder, badge, agentAccess })),
 	folderUpdate: (id: string, name: string, badge: {
 	kind: BadgeKind,
 	/**  Emoji character or hex color like `#e5484d`. */
 	value: string,
-} | null) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("folder_update", { id, name, badge })),
+} | null, agentAccess: "off" | "read_only" | "ask" | "full" | null) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("folder_update", { id, name, badge, agentAccess })),
 	/**  Delete a folder; its children are lifted to the parent level. */
 	folderDelete: (id: string) => typedError<PublicVault, ApiError>(__TAURI_INVOKE("folder_delete", { id })),
 	/**
@@ -162,10 +162,29 @@ export const commands = {
 	 *  passed as a single argument, never through a shell.
 	 */
 	openExternal: (url: string) => typedError<null, ApiError>(__TAURI_INVOKE("open_external", { url })),
+	/**
+	 *  Answer a pending agent UI request. Returns false when it already
+	 *  expired.
+	 */
+	agentUiRespond: (requestId: string, response: AgentUiResponse) => typedError<boolean, ApiError>(__TAURI_INVOKE("agent_ui_respond", { requestId, response })),
+	/**  The user takes a terminal away from the agent. */
+	agentTakeOver: (termId: string) => typedError<null, ApiError>(__TAURI_INVOKE("agent_take_over", { termId })),
+	/**  The user hands a terminal back to the agent. */
+	agentHandBack: (termId: string) => typedError<null, ApiError>(__TAURI_INVOKE("agent_hand_back", { termId })),
+	/**  Agent state of every terminal the agent touched, for a UI that starts up. */
+	agentTerminalStates: () => typedError<AgentTerminalEvent[], ApiError>(__TAURI_INVOKE("agent_terminal_states")),
+	/**  How to register Serverus with an MCP client. */
+	agentSetupInfo: () => typedError<AgentSetupInfo, ApiError>(__TAURI_INVOKE("agent_setup_info")),
 };
 
 /** Events */
 export const events = {
+	agentActivityEvent: makeEvent<AgentActivityEvent>("agent-activity-event"),
+	agentFsChangedEvent: makeEvent<AgentFsChangedEvent>("agent-fs-changed-event"),
+	agentTerminalEvent: makeEvent<AgentTerminalEvent>("agent-terminal-event"),
+	agentUiRequestEvent: makeEvent<AgentUiRequestEvent>("agent-ui-request-event"),
+	agentUiRequestExpiredEvent: makeEvent<AgentUiRequestExpiredEvent>("agent-ui-request-expired-event"),
+	agentVaultChangedEvent: makeEvent<AgentVaultChangedEvent>("agent-vault-changed-event"),
 	remoteEditUploadedEvent: makeEvent<RemoteEditUploadedEvent>("remote-edit-uploaded-event"),
 	sessionStateEvent: makeEvent<SessionStateEvent>("session-state-event"),
 	transferProgressEvent: makeEvent<TransferProgressEvent>("transfer-progress-event"),
@@ -173,6 +192,156 @@ export const events = {
 };
 
 /* Types */
+/**
+ *  Persisted AI-agent access level of a connection or folder. `None` in the
+ *  owning field means "inherit from the enclosing folder" (and, at the top,
+ *  `Off`). The policy itself lives in `serverus_domain::agent::access`.
+ */
+export type AgentAccessLevel = "off" | "read_only" | "ask" | "full";
+
+/**
+ *  One entry of the agent activity journal. The same `id` is sent again
+ *  when the action finishes.
+ */
+export type AgentActivityEntry = {
+	id: string,
+	tool: string,
+	summary: string,
+	status: AgentActivityStatus,
+	detail: string | null,
+	/**  Unix milliseconds of the start. */
+	at_ms: number,
+};
+
+export type AgentActivityEvent = {
+	/**  The session the action ran in, when it has one. */
+	session_id: string | null,
+	connection_id: string | null,
+	entry: AgentActivityEntry,
+};
+
+export type AgentActivityStatus = "running" | "done" | "failed" | "denied" | 
+/**  The agent cancelled the call (or disconnected) before it finished. */
+"cancelled";
+
+export type AgentConfirmDecision = "deny" | "once" | 
+/**  Allow every action on this server for a while without asking. */
+"for_a_while";
+
+/**  Whether an agent may add connections to the vault. */
+export type AgentCreateMode = "off" | 
+/**  Every new connection needs the user's confirmation. */
+"ask" | "allowed";
+
+/**
+ *  The agent changed remote paths outside the transfer queue (mkdir,
+ *  rename, chmod): panes showing their parents should relist.
+ */
+export type AgentFsChangedEvent = {
+	session_id: string,
+	paths: string[],
+};
+
+/**
+ *  Vault-wide AI agent (MCP) settings. Everything is off by default and for
+ *  vaults written before the feature existed.
+ */
+export type AgentSettings = {
+	/**  Serve agents at all. While off, every agent request is refused. */
+	enabled?: boolean,
+	/**
+	 *  Treat every connection as `Full`, regardless of its own level: no
+	 *  confirmations, no hidden servers.
+	 */
+	full_access?: boolean,
+	/**
+	 *  Whether the agent may add connections (with whatever secrets the
+	 *  user asked it to store). Full access implies `Allowed`.
+	 */
+	create_connections?: AgentCreateMode,
+};
+
+/**  How to connect an MCP client to this Serverus. */
+export type AgentSetupInfo = {
+	/**  Agent access is implemented on this platform. */
+	supported: boolean,
+	/**  The socket is currently accepting agents. */
+	listening: boolean,
+	/**  Why it is not listening, when it is not. */
+	problem: string | null,
+	/**  Executable to register as the MCP server (stdio transport). */
+	command: string,
+	args: string[],
+	/**  Ready-to-paste `claude mcp add …` line. */
+	claude_code: string,
+	/**  Why `command` will not keep working (a temporary app location). */
+	command_warning: string | null,
+};
+
+/**  One session tab as the UI sees it. */
+export type AgentTabInfo = {
+	tab_id: string,
+	connection_id: string,
+	session_id: string | null,
+	/**  `connecting` / `connected` / `error` / `disconnected`. */
+	state: string,
+	active: boolean,
+	/**  The tab's active terminal, when one is open. */
+	term_id: string | null,
+};
+
+/**
+ *  Agent state of one terminal: whether the user holds it and which agent
+ *  command (if any) is running in it.
+ */
+export type AgentTerminalEvent = {
+	term_id: string,
+	session_id: string,
+	running: string | null,
+	user_control: boolean,
+};
+
+/**  Something only the UI can do or decide, answered via `agent_ui_respond`. */
+export type AgentUiRequest = 
+/**  Report the open session tabs. */
+{ kind: "tabs" } | 
+/**
+ *  Make sure a connected tab exists — the active one when
+ *  `connection_id` is `None` — and report it. With `need_terminal` the
+ *  reply also names the tab's active terminal.
+ */
+{ kind: "open_tab"; connection_id: string | null; need_terminal: boolean } | 
+/**  Ask the user to allow one agent action. */
+{ kind: "confirm"; connection_id: string; server: string; 
+/**  Short imperative summary ("Run a command"). */
+action: string; 
+/**  The exact command, paths, etc. */
+detail: string };
+
+export type AgentUiRequestEvent = {
+	request_id: string,
+	request: AgentUiRequest,
+};
+
+/**
+ *  A request the UI was shown ended without an answer (timed out, or the
+ *  agent cancelled the call): drop its dialog.
+ */
+export type AgentUiRequestExpiredEvent = {
+	request_id: string,
+};
+
+export type AgentUiResponse = { kind: "tabs"; tabs: AgentTabInfo[] } | { kind: "tab"; tab: AgentTabInfo } | { kind: "confirm"; decision: AgentConfirmDecision } | { kind: "error"; message: string };
+
+/**
+ *  The agent changed the vault (added a connection): the UI takes the new
+ *  secret-free vault and tells the user what happened.
+ */
+export type AgentVaultChangedEvent = {
+	vault: PublicVault,
+	summary: string,
+};
+
 /**  Serializable error crossing the IPC boundary. */
 export type ApiError = {
 	code: string,
@@ -226,6 +395,8 @@ export type ConnectionInput = {
 	tunnels: TunnelConfig[],
 	disable_terminal?: boolean,
 	notes: string,
+	/**  `None` inherits the folder's level. */
+	agent_access?: AgentAccessLevel | null,
 };
 
 /**
@@ -333,6 +504,7 @@ export type PublicConnection = {
 	tunnels: TunnelConfig[],
 	disable_terminal: boolean,
 	notes: string,
+	agent_access: AgentAccessLevel | null,
 };
 
 /**  The whole vault as the UI sees it — no secrets. */
@@ -437,6 +609,8 @@ export type Settings = {
 	editor: EditorSettings,
 	terminal: TerminalSettings,
 	panels: PanelSettings,
+	/**  Missing in vaults written before AI agent access existed. */
+	agent?: AgentSettings,
 };
 
 export type SizeFormat = 
@@ -536,7 +710,12 @@ export type TreeNode = { type: "folder"; id: string; name: string; badge?: Badge
  *  Sidebar disclosure state. Expanded is the default, so `false` is
  *  also the right value for vaults written before this existed.
  */
-collapsed?: boolean } | { type: "connection"; id: string };
+collapsed?: boolean; 
+/**
+ *  AI agent access inherited by everything inside that does not set
+ *  its own; `None` inherits from the parent folder.
+ */
+agent_access?: AgentAccessLevel | null } | { type: "connection"; id: string };
 
 /**
  *  One selected entry. `is_dir` means a real directory: a symlink to one is

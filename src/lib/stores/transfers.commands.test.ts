@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import type { AppApi, TransferListDto } from "$lib/app/contracts/api";
 import type { AppEventSource } from "$lib/app/contracts/events";
+import { inertAgentApi, inertAgentEvents } from "../../test/agent-fakes";
 import { TransfersStore } from "./transfers.svelte";
 
 const initialSnapshot: TransferListDto = {
@@ -30,10 +31,12 @@ function dependencies() {
   const api: AppApi = {
     transfers,
     vault: { touchActivity: vi.fn(async () => {}) },
+    agent: inertAgentApi(),
   };
   const events: AppEventSource = {
     transfers: { listenProgress: vi.fn(async () => () => {}) },
     remoteEdit: { listenUploaded: vi.fn(async () => () => {}) },
+    agent: inertAgentEvents(),
   };
   return { api, events, transfers };
 }

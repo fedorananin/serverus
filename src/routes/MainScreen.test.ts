@@ -44,6 +44,7 @@ vi.mock("$lib/components/SessionTabBar.svelte", async () => import("../test/Stub
 vi.mock("$lib/components/HostKeyDialog.svelte", async () => import("../test/Stub.svelte"));
 vi.mock("$lib/components/TransferQueue.svelte", async () => import("../test/Stub.svelte"));
 vi.mock("$lib/components/ConflictDialog.svelte", async () => import("../test/Stub.svelte"));
+vi.mock("$lib/components/agent/AgentConfirmDialog.svelte", async () => import("../test/Stub.svelte"));
 vi.mock("$lib/components/DragGhost.svelte", async () => import("../test/Stub.svelte"));
 vi.mock("$lib/components/Toasts.svelte", async () => ({
   ...(await import("../test/Stub.svelte")),

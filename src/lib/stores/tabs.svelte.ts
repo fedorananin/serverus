@@ -71,7 +71,9 @@ class TabsStore {
     });
   }
 
-  open(connectionId: string) {
+  /** Open a tab for a connection. `background` keeps the current tab in
+   *  front (used when the AI agent opens one) unless none is active. */
+  open(connectionId: string, options: { background?: boolean } = {}) {
     void this.listenForDisconnects();
     const conn = vault.data?.connections[connectionId];
     // Terminal-less servers (FTP, S3, or SSH with the shell disabled) open on Files.
@@ -89,7 +91,7 @@ class TabsStore {
       reconnectAttempts: 0,
     };
     this.tabs.push(tab);
-    this.activeId = tab.id;
+    if (!options.background || this.activeId === null) this.activeId = tab.id;
     void this.connect(tab.id);
     return tab;
   }

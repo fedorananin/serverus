@@ -2,29 +2,9 @@
 
 use serverus_domain::runtime_context::RuntimeContextId;
 
+use std::sync::Arc;
+
 use super::prelude::*;
-
-pub(super) fn transfer_settings(state: &AppState) -> crate::vault::model::TransferSettings {
-    state
-        .vault
-        .lock()
-        .unwrap()
-        .payload()
-        .map(|p| p.settings.transfers.clone())
-        .unwrap_or_default()
-}
-
-/// The "hide local junk" panel setting: directory transfers leave
-/// `.DS_Store` / `Thumbs.db` behind in both directions.
-fn skip_junk(state: &AppState) -> bool {
-    state
-        .vault
-        .lock()
-        .unwrap()
-        .payload()
-        .map(|p| p.settings.panels.hide_local_junk)
-        .unwrap_or(true)
-}
 
 fn requested_context(state: &AppState, runtime_context_id: &str) -> AppResult<RuntimeContextId> {
     let lease = state.application.require_active().map_err(AppError::from)?;
@@ -51,30 +31,11 @@ pub async fn transfer_upload(
     local_paths: Vec<String>,
     remote_dir: String,
 ) -> ApiResult<()> {
-    let lease = state.application.require_active().map_err(AppError::from)?;
-    let entry = state.sessions.get(&session_id)?;
-    let fs = entry.remote_fs().await?;
-    let settings = transfer_settings(&state);
-    let skip_junk = skip_junk(&state);
-    let tar_ssh = entry.tar_ssh().await;
-    let sink: std::sync::Arc<dyn crate::transfer::ProgressSink> = std::sync::Arc::new(app);
-    let requests = local_paths
-        .iter()
-        .map(|local_path| {
-            crate::transfer::UploadRequest::new(
-                fs.clone(),
-                &session_id,
-                local_path,
-                &remote_dir,
-                settings.clone(),
-            )
-            .skipping_junk(skip_junk)
-        })
-        .collect();
     state
-        .transfers
-        .enqueue_uploads_accelerated(lease.context_id(), &sink, requests, tar_ssh)
+        .application
+        .enqueue_uploads(Arc::new(app), &session_id, &local_paths, &remote_dir, None)
         .await
+        .and_then(|enqueued| enqueued.result)
         .map_err(Into::into)
 }
 
@@ -87,30 +48,11 @@ pub async fn transfer_download(
     remote_paths: Vec<String>,
     local_dir: String,
 ) -> ApiResult<()> {
-    let lease = state.application.require_active().map_err(AppError::from)?;
-    let entry = state.sessions.get(&session_id)?;
-    let fs = entry.remote_fs().await?;
-    let settings = transfer_settings(&state);
-    let skip_junk = skip_junk(&state);
-    let tar_ssh = entry.tar_ssh().await;
-    let sink: std::sync::Arc<dyn crate::transfer::ProgressSink> = std::sync::Arc::new(app);
-    let requests = remote_paths
-        .iter()
-        .map(|remote_path| {
-            crate::transfer::DownloadRequest::new(
-                fs.clone(),
-                &session_id,
-                remote_path,
-                &local_dir,
-                settings.clone(),
-            )
-            .skipping_junk(skip_junk)
-        })
-        .collect();
     state
-        .transfers
-        .enqueue_downloads_accelerated(lease.context_id(), &sink, requests, tar_ssh)
+        .application
+        .enqueue_downloads(Arc::new(app), &session_id, &remote_paths, &local_dir, None)
         .await
+        .and_then(|enqueued| enqueued.result)
         .map_err(Into::into)
 }
 

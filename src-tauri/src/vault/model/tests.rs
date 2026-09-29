@@ -62,3 +62,35 @@ fn clamp_forces_sidebar_width_into_range() {
     settings.clamp();
     assert_eq!(settings.panels.sidebar_width, 300);
 }
+
+#[test]
+fn agent_access_is_absent_and_off_in_older_vaults() {
+    // Vaults written before AI agent access existed share nothing.
+    let settings: Settings = {
+        let mut value = serde_json::to_value(Settings::default()).unwrap();
+        value.as_object_mut().unwrap().remove("agent");
+        serde_json::from_value(value).unwrap()
+    };
+    assert!(!settings.agent.enabled);
+    assert!(!settings.agent.full_access);
+
+    let node: TreeNode =
+        serde_json::from_str(r#"{"type":"folder","id":"f1","name":"Prod"}"#).unwrap();
+    assert!(matches!(
+        node,
+        TreeNode::Folder {
+            agent_access: None,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn agent_access_levels_round_trip_in_snake_case() {
+    let level: AgentAccessLevel = serde_json::from_str(r#""read_only""#).unwrap();
+    assert_eq!(level, AgentAccessLevel::ReadOnly);
+    assert_eq!(
+        serde_json::to_string(&AgentAccessLevel::Full).unwrap(),
+        r#""full""#
+    );
+}

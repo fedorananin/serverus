@@ -77,6 +77,7 @@ function initialSettings(): Settings {
       size_format: "kib",
       default_local_dir: null,
     },
+    agent: { enabled: false, full_access: false, create_connections: "off" },
   };
 }
 
@@ -226,5 +227,54 @@ describe("SettingsDialog transaction", () => {
 
     await waitFor(() => expect(onclose).toHaveBeenCalledOnce());
     expect(mocks.setThemePreference).toHaveBeenLastCalledWith("dark");
+  });
+
+  it("saves the AI agent switches; full access needs agents enabled", async () => {
+    render(SettingsDialog, { onclose: vi.fn() });
+    const fullAccess = screen.getByLabelText("Full access to every server — never ask");
+    expect(fullAccess).toBeDisabled();
+
+    await fireEvent.click(
+      screen.getByLabelText("Let AI agents (MCP, e.g. Claude Code) work with my servers"),
+    );
+    expect(fullAccess).not.toBeDisabled();
+    await fireEvent.click(fullAccess);
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(mocks.updateSettings).toHaveBeenCalledWith({
+      ...initialSettings(),
+      agent: { enabled: true, full_access: true, create_connections: "off" },
+    });
+  });
+
+  it("lets agents add connections only while agent access is on", async () => {
+    render(SettingsDialog, { onclose: vi.fn() });
+    const adding = screen.getByLabelText("Agent may add connections");
+    expect(adding).toBeDisabled();
+    await fireEvent.click(
+      screen.getByLabelText("Let AI agents (MCP, e.g. Claude Code) work with my servers"),
+    );
+    await fireEvent.change(adding, { target: { value: "ask" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(mocks.updateSettings).toHaveBeenCalledWith({
+      ...initialSettings(),
+      agent: { enabled: true, full_access: false, create_connections: "ask" },
+    });
+  });
+
+  it("shows adding connections as included while full access is on, keeping the choice", async () => {
+    mocks.settings = {
+      ...initialSettings(),
+      agent: { enabled: true, full_access: true, create_connections: "ask" },
+    };
+    render(SettingsDialog, { onclose: vi.fn() });
+    const adding = screen.getByLabelText("Agent may add connections") as HTMLSelectElement;
+    expect(adding).toBeDisabled();
+    expect(adding.selectedOptions[0].textContent).toBe("Yes — included in full access");
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(mocks.updateSettings).toHaveBeenCalledWith({
+      ...initialSettings(),
+      agent: { enabled: true, full_access: true, create_connections: "ask" },
+    });
   });
 });

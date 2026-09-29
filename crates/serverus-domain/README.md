@@ -27,6 +27,15 @@ The `runtime_context` module exposes non-zero `RuntimeContextId`, validated
 `VaultKey`, lock/unlock state, and same-generation Vault reidentification.
 Cancellation tokens and cleanup ownership stay in `serverus-runtime`.
 
+The `agent` module holds the pure rules of AI agent (MCP) access:
+`access` (per-connection level resolution through folders and the
+allow/confirm/deny decision per operation class), `shell` (wrapping a command
+in OSC completion markers for POSIX, fish and csh shells, with or without
+bracketed paste), `terminal_modes` (alternate-screen / bracketed-paste
+tracking across chunks, marker search) and `terminal_text` (raw terminal
+output to readable text, prompt detection, middle truncation). Tests live in
+`tests/agent_*.rs`.
+
 `Transition::next` is a new aggregate. The original `Transfer` remains
 unchanged, which lets application tests inspect decisions without a runtime or
 mocks.

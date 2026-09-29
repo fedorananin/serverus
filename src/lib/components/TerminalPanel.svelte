@@ -1,8 +1,10 @@
 <script lang="ts">
   // Several terminals per connection tab — separate channels of one SSH
   // session (SPEC §5.5).
+  import { useOptionalAppModel } from "$lib/app/model.svelte";
   import TerminalView from "./TerminalView.svelte";
   import TerminalPasteButton from "./TerminalPasteButton.svelte";
+  import AgentTerminalBanner from "./agent/AgentTerminalBanner.svelte";
 
   interface Props {
     sessionId: string;
@@ -20,6 +22,12 @@
     slots.push({ id });
     activeSlot = id;
   }
+
+  // The AI agent needs a terminal in this tab and every one was closed.
+  const agent = useOptionalAppModel()?.agent;
+  $effect(() => {
+    if (agent?.terminalRequests[sessionId] && slots.length === 0) addTerminal();
+  });
 
   /** Focus the visible terminal — used when this session's tab becomes active. */
   export function focusActive() {
@@ -72,6 +80,9 @@
       </div>
     {/each}
     <button class="add" onclick={addTerminal} title="New terminal" aria-label="New terminal">+</button>
+    {#if agent}
+      <AgentTerminalBanner termId={agent.activeTerminal(sessionId)} />
+    {/if}
     {#if slots.length > 0}
       <div class="strip-actions">
         <TerminalPasteButton
@@ -84,7 +95,12 @@
   <div class="terms">
     {#each slots as slot (slot.id)}
       <div class="term" style:display={slot.id === activeSlot ? "block" : "none"}>
-        <TerminalView bind:this={views[slot.id]} {sessionId} onexit={() => {}} />
+        <TerminalView
+          bind:this={views[slot.id]}
+          {sessionId}
+          active={slot.id === activeSlot}
+          onexit={() => {}}
+        />
       </div>
     {/each}
     {#if slots.length === 0}

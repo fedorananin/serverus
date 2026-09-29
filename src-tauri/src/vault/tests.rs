@@ -38,6 +38,7 @@ fn sample_connection() -> Connection {
         tunnels: vec![],
         disable_terminal: false,
         notes: String::new(),
+        agent_access: None,
     }
 }
 

@@ -121,6 +121,56 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
   and never chmodded. The frontend dims rows being deleted and relists the
   pane per finished item (`stores/remote-tree-ops.svelte.ts`,
   `lib/tree-ops.ts`).
+- **AI agent access (MCP)** lives in `src-tauri/src/agent/`. `serverus --mcp`
+  (`agent/shim.rs`, dispatched in `main.rs` before Tauri starts) relays stdio
+  to `<config dir>/agent.sock` (`agent/transport.rs`: 0600, peer UID must
+  equal the socket owner; Unix only). MCP clients start their servers with
+  every session, so the shim (`agent/shim/lazy.rs`) answers `initialize` /
+  `ping` / `tools/list` itself and connects — launching the app if needed —
+  only on the first `tools/call`; if the app goes away, waiting calls get an
+  error and the next call reconnects. Never make the shim launch the app at
+  start-up. The MCP server
+  (`agent/mcp/`, hand-rolled JSON-RPC, no SDK) serves the tools in
+  `agent/tools/` against the running app. Tools never do protocol work
+  themselves: tabs, host-key prompts and confirmations go to the UI through
+  `agent/bridge.rs` (`AgentUiRequestEvent` ↔ `agent_ui_respond`, answered by
+  `stores/agent.svelte.ts` + `agent-tabs.ts`); transfers go through
+  `DesktopApplication::enqueue_*` (`state/transfer_jobs.rs`, shared with the
+  panel commands) so they show in the tab's queue. `run_command` types into
+  the tab's *visible* shell: `serverus_domain::agent::shell::wrap` brackets the
+  command with OSC 6973 start/end markers (end carries `$?`; the echo contains
+  only `\033` literals, never a real marker), `session/terminal_tap.rs` keeps a
+  2 MiB copy of each terminal's output, and `agent/exec/` follows it
+  (interrupt key typed + back at a prompt + quiet → Interrupted; no start
+  marker + prompt back → NotStarted, i.e. the shell rejected the wrapper —
+  the agent can then pass `shell`, remembered per terminal). Idle = the
+  cursor line (up to the cursor, so a right prompt doesn't count) looks like
+  a shell prompt; REPL/continuation prompts don't. `run_command` holds a
+  per-terminal typing lock from the checks until the command is registered.
+  Rendering is bounded (cursor moves clamp at 4096 columns) — remote output
+  is untrusted. Access policy is pure
+  (`serverus_domain::agent::access`): connection level, else nearest folder,
+  else Off; `settings.agent.full_access` overrides all. Connection notes are
+  never shown to agents (people keep passwords there). Imports never carry
+  agent access. Agent `delete`/`chmod` decide via `RemoteFs::lstat` (SFTP's
+  `stat` follows links), and never chmod a symlink. UI round trips that end
+  unanswered are retracted (`AgentUiRequestExpiredEvent`); a cancelled tool
+  call journals as `cancelled`. `create_connection` (`agent/tools/create.rs`, placement in
+  `agent/placement.rs`) writes secrets the user gave the agent into the vault,
+  gated by `settings.agent.create_connections` (off/ask/allowed; full access
+  implies allowed); the agent never picks the new connection's level
+  (inherit, or Ask where inheriting gives Off) and may use a jump host only at
+  Ask/Full; one that would get Full, or routes through an Ask bastion, needs
+  the user even when adding is allowed (`decide_new_connection`). It goes through `DesktopApplication::run_unlocked_vault_operation`
+  (`state/vault_operations.rs`, shared with the vault commands) and pushes the
+  new `PublicVault` to the UI via `AgentVaultChangedEvent`. A connected
+  agent holds `ActivityTracker::hold()` (`tools::ConnectionHold`, one
+  `Toolbox` per socket connection) from its first request that agent access
+  admitted until it disconnects — or a request finds agent access off. That
+  vetoes idle *and* sleep auto-lock (the user asked for that); explicit lock
+  still locks. Queue tools follow their own items by `TransferBatch` id
+  (`enqueue_*_tracked`). Integration: `tests/agent_terminal_integration.rs` (real sshd;
+  interactive zsh has no `#` comments unless INTERACTIVE_COMMENTS).
 - `Connection.disable_terminal` = SFTP-only SSH servers (no shell); the UI hides
   the terminal view and the backend never opens a shell channel.
 - **S3 uploads must declare a `Content-Type`.** `aws-sdk-s3` labels every body
@@ -210,7 +260,11 @@ room. v1.5.0: remote deletes and recursive chmods run as transfer-queue items
 with live progress, cancel/retry and a finished entry (see Gotchas); one
 failing entry no longer aborts the rest; SFTP/FTP requests go out in
 parallel, S3 deletes use `DeleteObjects`, SSH dirs use server-side `rm`;
-deleting a symlink to a directory no longer empties its target. v1.5.1: the
+deleting a symlink to a directory no longer empties its target. Unreleased:
+AI agent access over MCP (see Gotchas) — per-connection/folder levels
+Off / Read-only / Ask / Full plus a global full-access switch, commands typed
+into the visible terminal with take-over / hand-back, agent transfers in the
+tab's queue, confirmation dialog, per-tab activity journal. v1.5.1: the
 "hide local junk" setting also keeps `.DS_Store`/`Thumbs.db` out of recursive
 uploads and downloads (per-file walks and tar: `tar_stream/archive.rs`
 `pack_tree` / `unpack_confined`); comparison unchanged. Also v1.4.0: settings-dialog polish —
@@ -228,7 +282,7 @@ WKWebView, WebKitGTK and WebView2, but this is not representative physical
 Windows/Linux hardware validation.
 Known gaps: no Linux quick unlock; lock-on-sleep detection (monotonic vs wall
 clock divergence) may not fire on Windows; local chmod is hidden on Windows.
-Integration tests (45) run against a local unprivileged `sshd`, an in-process
+Integration tests (50) run against a local unprivileged `sshd`, an in-process
 libunftp FTP server and an in-process `s3s` S3 server — no docker needed
 (macOS + Linux; Windows runs `cargo test --workspace --lib`, plus supported
 non-SSH desktop scenarios). Releases are built by

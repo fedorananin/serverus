@@ -3,6 +3,7 @@
 
 import { commands, events, unwrap, errorMessage, isApiError } from "$lib/api";
 import type {
+  AgentAccessLevel,
   Badge,
   ConnectionInput,
   PublicVault,
@@ -144,6 +145,12 @@ class VaultStore {
     }
   }
 
+  /** The vault changed outside the UI (the AI agent added a connection).
+   *  Ignored while locked — the next unlock loads the committed vault. */
+  applyExternal(data: PublicVault) {
+    if (this.data) this.data = data;
+  }
+
   // -- Connections & tree (M1). All mutations return the fresh PublicVault. --
 
   private async mutate(op: () => Promise<PublicVault>): Promise<void> {
@@ -164,12 +171,24 @@ class VaultStore {
     return this.mutate(() => unwrap(commands.connectionDelete(id)));
   }
 
-  createFolder(name: string, parentFolder: string | null, badge: Badge | null) {
-    return this.mutate(() => unwrap(commands.folderCreate(name, parentFolder, badge)));
+  createFolder(
+    name: string,
+    parentFolder: string | null,
+    badge: Badge | null,
+    agentAccess: AgentAccessLevel | null = null,
+  ) {
+    return this.mutate(() =>
+      unwrap(commands.folderCreate(name, parentFolder, badge, agentAccess)),
+    );
   }
 
-  updateFolder(id: string, name: string, badge: Badge | null) {
-    return this.mutate(() => unwrap(commands.folderUpdate(id, name, badge)));
+  updateFolder(
+    id: string,
+    name: string,
+    badge: Badge | null,
+    agentAccess: AgentAccessLevel | null = null,
+  ) {
+    return this.mutate(() => unwrap(commands.folderUpdate(id, name, badge, agentAccess)));
   }
 
   deleteFolder(id: string) {

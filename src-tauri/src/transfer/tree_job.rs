@@ -21,7 +21,7 @@ use crate::session::ssh::SshSession;
 use crate::vault::model::TransferSettings;
 
 use super::{
-    Control, ProgressSink, TransferBatch, TransferItem, TransferKind, TransferManager,
+    Control, Enqueued, ProgressSink, TransferBatch, TransferItem, TransferKind, TransferManager,
     TransferState,
 };
 
@@ -56,46 +56,64 @@ impl TransferManager {
         app: &Arc<dyn ProgressSink>,
         requests: Vec<TreeRequest<'_>>,
     ) -> AppResult<()> {
+        self.enqueue_tree_ops_tracked(context_id, app, requests)
+            .await
+            .result
+    }
+
+    /// [`Self::enqueue_tree_ops`], naming the batch its items share.
+    pub async fn enqueue_tree_ops_tracked(
+        self: &Arc<Self>,
+        context_id: RuntimeContextId,
+        app: &Arc<dyn ProgressSink>,
+        requests: Vec<TreeRequest<'_>>,
+    ) -> Enqueued {
         let batch = TransferBatch::new();
+        let mut result = Ok(());
         for request in requests {
             let session_id = request.session_id;
             let batch = batch.clone();
-            self.run_admitted(context_id, session_id, |admission| async move {
-                let kind = match request.action {
-                    TreeAction::Delete => TransferKind::Delete,
-                    TreeAction::Chmod { .. } => TransferKind::Chmod,
-                };
-                let shell = request
-                    .shell
-                    .filter(|_| request.action == TreeAction::Delete && request.is_dir);
-                let job = TreeJob {
-                    action: request.action,
-                    is_dir: request.is_dir,
-                    accelerated: AtomicBool::new(shell.is_some()),
-                    shell,
-                    scanning: AtomicBool::new(false),
-                };
-                if let Some(item) = self.add_item(
-                    admission,
-                    batch,
-                    session_id,
-                    kind,
-                    PathBuf::new(),
-                    request.path.to_string(),
-                    0,
-                    request.fs,
-                    request.settings,
-                    None,
-                    None,
-                    Some(job),
-                ) {
-                    self.spawn_worker(app, item);
-                }
-                Ok(())
-            })
-            .await?;
+            let queued = self
+                .run_admitted(context_id, session_id, |admission| async move {
+                    let kind = match request.action {
+                        TreeAction::Delete => TransferKind::Delete,
+                        TreeAction::Chmod { .. } => TransferKind::Chmod,
+                    };
+                    let shell = request
+                        .shell
+                        .filter(|_| request.action == TreeAction::Delete && request.is_dir);
+                    let job = TreeJob {
+                        action: request.action,
+                        is_dir: request.is_dir,
+                        accelerated: AtomicBool::new(shell.is_some()),
+                        shell,
+                        scanning: AtomicBool::new(false),
+                    };
+                    if let Some(item) = self.add_item(
+                        admission,
+                        batch,
+                        session_id,
+                        kind,
+                        PathBuf::new(),
+                        request.path.to_string(),
+                        0,
+                        request.fs,
+                        request.settings,
+                        None,
+                        None,
+                        Some(job),
+                    ) {
+                        self.spawn_worker(app, item);
+                    }
+                    Ok(())
+                })
+                .await;
+            if let Err(error) = queued {
+                result = Err(error);
+                break;
+            }
         }
-        Ok(())
+        Enqueued::new(&batch, result)
     }
 }
 

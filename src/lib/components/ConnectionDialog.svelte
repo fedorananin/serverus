@@ -15,6 +15,7 @@
   import DirectoryFields from "./connection-dialog/DirectoryFields.svelte";
   import EndpointFields from "./connection-dialog/EndpointFields.svelte";
   import MetadataFields from "./connection-dialog/MetadataFields.svelte";
+  import AgentAccessSelect from "./agent/AgentAccessSelect.svelte";
   import ProtocolOptionsSection from "./connection-dialog/ProtocolOptionsSection.svelte";
   import TunnelsSection from "./connection-dialog/TunnelsSection.svelte";
   import { buildConnectionInput } from "./connection-dialog/build-connection-input";
@@ -58,6 +59,7 @@
   let tunnels = $state<TunnelConfig[]>(structuredClone($state.snapshot(existing?.tunnels ?? [])) as TunnelConfig[]);
   let disableTerminal = $state(existing?.disable_terminal ?? false);
   let notes = $state(existing?.notes ?? "");
+  let agentAccess = $state(existing?.agent_access ?? null);
   let saving = $state(false);
   let error = $state<string | null>(null);
   let secretLoadState = $state<"loading" | "ready" | "error">(
@@ -144,6 +146,7 @@
       tunnels: $state.snapshot(tunnels) as TunnelConfig[],
       disableTerminal,
       notes,
+      agentAccess,
     });
     try {
       await vault.upsertConnection(existing?.id ?? null, input, parentFolder);
@@ -202,6 +205,7 @@
       <TunnelsSection bind:tunnels />
     {/if}
     <MetadataFields bind:badge bind:notes />
+    <AgentAccessSelect bind:value={agentAccess} />
 
     {#if secretLoadState === "loading"}
       <div class="hint" aria-live="polite">Loading saved credentials…</div>

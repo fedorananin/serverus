@@ -7,6 +7,7 @@ import type {
   TreeTarget,
 } from "$lib/app/contracts/api";
 import type { AppEventSource } from "$lib/app/contracts/events";
+import { inertAgentApi, inertAgentEvents } from "../../test/agent-fakes";
 import type { RemoteEditUploadedEvent } from "$lib/api";
 import { TransfersStore } from "./transfers.svelte";
 
@@ -73,6 +74,7 @@ class FakeAppApi implements AppApi {
   readonly vault = {
     touchActivity: vi.fn(async () => {}),
   };
+  readonly agent = inertAgentApi();
 
   constructor(initial: TransferListDto = snapshot()) {
     this.current = initial;
@@ -121,6 +123,8 @@ class FakeEventSource implements AppEventSource {
       async (_listener: (value: RemoteEditUploadedEvent) => void) => () => {},
     ),
   };
+
+  readonly agent = inertAgentEvents();
 
   emitProgress(value: TransferListDto) {
     this.progressListener?.(value);

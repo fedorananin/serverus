@@ -1,5 +1,6 @@
 import { commands, unwrap } from "$lib/api";
 import type {
+  AgentApi,
   AppApi,
   TransfersApi,
   VaultActivityApi,
@@ -53,5 +54,17 @@ export class TauriAppApi implements AppApi {
     touchActivity: async () => {
       await unwrap(commands.vaultTouchActivity());
     },
+  };
+
+  readonly agent: AgentApi = {
+    respond: (requestId, response) => unwrap(commands.agentUiRespond(requestId, response)),
+    takeOver: async (termId) => {
+      await unwrap(commands.agentTakeOver(termId));
+    },
+    handBack: async (termId) => {
+      await unwrap(commands.agentHandBack(termId));
+    },
+    terminalStates: () => unwrap(commands.agentTerminalStates()),
+    setupInfo: () => unwrap(commands.agentSetupInfo()),
   };
 }

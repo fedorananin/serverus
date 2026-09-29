@@ -14,7 +14,7 @@ use crate::session::ssh::SshSession;
 use super::tar_stream;
 use super::{
     ensure_download_directory, open_download_root, remote_tree_size, safe_local_component,
-    AdmissionToken, DownloadRequest, LocalDownloadTarget, ProgressSink, TransferBatch,
+    AdmissionToken, DownloadRequest, Enqueued, LocalDownloadTarget, ProgressSink, TransferBatch,
     TransferItem, TransferKind, TransferManager,
 };
 
@@ -52,6 +52,19 @@ impl TransferManager {
         requests: Vec<DownloadRequest<'_>>,
         tar_ssh: Option<Arc<SshSession>>,
     ) -> AppResult<()> {
+        self.enqueue_downloads_tracked(context_id, app, requests, tar_ssh)
+            .await
+            .result
+    }
+
+    /// [`Self::enqueue_downloads_accelerated`], naming the batch its items share.
+    pub async fn enqueue_downloads_tracked(
+        self: &Arc<Self>,
+        context_id: RuntimeContextId,
+        app: &Arc<dyn ProgressSink>,
+        requests: Vec<DownloadRequest<'_>>,
+        tar_ssh: Option<Arc<SshSession>>,
+    ) -> Enqueued {
         let batch = TransferBatch::new();
         let mut failures = Vec::new();
         for request in requests {
@@ -67,11 +80,12 @@ impl TransferManager {
                 failures.push(error.to_string());
             }
         }
-        if failures.is_empty() {
+        let result = if failures.is_empty() {
             Ok(())
         } else {
             Err(AppError::Transfer(failures.join("; ")))
-        }
+        };
+        Enqueued::new(&batch, result)
     }
 
     /// Keep an unsafe or colliding child visible as one failed queue item

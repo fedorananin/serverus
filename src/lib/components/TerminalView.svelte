@@ -9,6 +9,7 @@
   import { commands, unwrap, type TerminalStreamEvent } from "$lib/api";
   import { isMac } from "$lib/platform";
   import { vault } from "$lib/stores/vault.svelte";
+  import { useAppModel } from "$lib/app/model.svelte";
   import { needsPasteConfirmation } from "./terminal/paste";
   import { syncTerminalTheme, terminalThemeOptions } from "./terminal/terminal-theme";
   import TerminalFindBar from "./terminal/TerminalFindBar.svelte";
@@ -16,11 +17,18 @@
 
   interface Props {
     sessionId: string;
+    /** This terminal is the one shown in its tab (the AI agent types there). */
+    active: boolean;
     /** Notifies the parent (terminal tab strip) that the shell ended. */
     onexit: () => void;
   }
 
-  let { sessionId, onexit }: Props = $props();
+  let { sessionId, active, onexit }: Props = $props();
+  const agent = useAppModel().agent;
+  let openedTermId = $state<string | null>(null);
+  $effect(() => {
+    if (openedTermId && active) agent.terminalActivated(sessionId, openedTermId);
+  });
 
   let container: HTMLDivElement;
   let termId: string | null = null;
@@ -160,6 +168,8 @@
         return;
       }
       termId = id;
+      openedTermId = id;
+      agent.terminalOpened(sessionId, id);
       term.onData((data) => {
         void unwrap(commands.termWrite(id, data));
       });
@@ -183,6 +193,7 @@
       unsubscribeTheme();
       container.removeEventListener("paste", onPaste, true);
       if (termId) {
+        agent.terminalClosed(sessionId, termId);
         void unwrap(commands.termClose(termId)).catch(() => {});
       }
       term.dispose();

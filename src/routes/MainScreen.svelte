@@ -7,6 +7,7 @@
   import SessionTabBar from "$lib/components/SessionTabBar.svelte";
   import HostKeyDialog from "$lib/components/HostKeyDialog.svelte";
   import ConflictDialog from "$lib/components/ConflictDialog.svelte";
+  import AgentConfirmDialog from "$lib/components/agent/AgentConfirmDialog.svelte";
   import Toasts from "$lib/components/Toasts.svelte";
   import DragGhost from "$lib/components/DragGhost.svelte";
   import { useAppModel } from "$lib/app/model.svelte";
@@ -107,6 +108,7 @@
 
   <HostKeyDialog />
   <ConflictDialog />
+  <AgentConfirmDialog />
   <Toasts />
   <DragGhost />
 

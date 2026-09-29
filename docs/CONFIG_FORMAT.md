@@ -112,7 +112,12 @@ Import **merges** into the current vault — nothing is deleted:
   Refs to unknown connection ids are dropped; a `jump_host` pointing nowhere
   is detached.
 - **Known hosts** merge; on conflict the existing (already verified) entry wins.
-- **Settings**, when present, replace the current ones wholesale.
+- **Settings**, when present, replace the current ones wholesale — except the
+  AI agent switches (`settings.agent`), which are always kept.
+- **AI agent access is never imported.** An export carries each connection's
+  and folder's `agent_access`, but an import ignores it: new connections and
+  folders start at "inherit", existing ones keep the level you gave them. A
+  config file must not be able to hand an agent access to your servers.
 
 Only Serverus's own format is supported — there are no importers for other
 apps' files; convert them into this shape instead.

@@ -31,6 +31,10 @@ pub enum TreeNode {
         /// also the right value for vaults written before this existed.
         #[serde(default)]
         collapsed: bool,
+        /// AI agent access inherited by everything inside that does not set
+        /// its own; `None` inherits from the parent folder.
+        #[serde(default)]
+        agent_access: Option<super::AgentAccessLevel>,
     },
     Connection {
         id: String,

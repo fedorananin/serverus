@@ -98,6 +98,7 @@ pub async fn folder_create(
     name: String,
     parent_folder: Option<String>,
     badge: Option<Badge>,
+    agent_access: Option<AgentAccessLevel>,
 ) -> ApiResult<PublicVault> {
     run_unlocked_vault_operation(&state.application, move |mgr| {
         mgr.with_payload(|p| {
@@ -110,6 +111,7 @@ pub async fn folder_create(
                     badge,
                     children: vec![],
                     collapsed: false,
+                    agent_access,
                 },
             )?;
             Ok(p.to_public())
@@ -125,10 +127,11 @@ pub async fn folder_update(
     id: String,
     name: String,
     badge: Option<Badge>,
+    agent_access: Option<AgentAccessLevel>,
 ) -> ApiResult<PublicVault> {
     run_unlocked_vault_operation(&state.application, move |mgr| {
         mgr.with_payload(|p| {
-            tree::update_folder(&mut p.tree, &id, name, badge)?;
+            tree::update_folder(&mut p.tree, &id, name, badge, agent_access)?;
             Ok(p.to_public())
         })
     })

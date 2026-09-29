@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Badge, PublicConnection, Settings, TreeNode } from "$lib/api";
+  import type { AgentAccessLevel, Badge, PublicConnection, Settings, TreeNode } from "$lib/api";
   import { errorMessage } from "$lib/api";
   import { vault } from "$lib/stores/vault.svelte";
   import { tabs } from "$lib/stores/tabs.svelte";
@@ -13,7 +13,12 @@
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   let connectionDialog = $state<{ existing: PublicConnection | null; parent: string | null } | null>(null);
   let folderDialog = $state<{
-    existing: { id: string; name: string; badge: Badge | null } | null;
+    existing: {
+      id: string;
+      name: string;
+      badge: Badge | null;
+      agentAccess: AgentAccessLevel | null;
+    } | null;
     parent: string | null;
   } | null>(null);
   let confirm = $state<{ title: string; message: string; action: () => void } | null>(null);
@@ -116,7 +121,12 @@
             label: "Edit…",
             action: () =>
               (folderDialog = {
-                existing: { id: folder.id, name: folder.name, badge: folder.badge ?? null },
+                existing: {
+                  id: folder.id,
+                  name: folder.name,
+                  badge: folder.badge ?? null,
+                  agentAccess: folder.agent_access ?? null,
+                },
                 parent: null,
               }),
           },

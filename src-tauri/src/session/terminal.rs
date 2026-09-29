@@ -7,11 +7,14 @@ use tauri::ipc::Channel;
 
 use crate::error::{AppError, AppResult};
 
+use super::terminal_tap::TerminalTap;
 use super::{SessionEntry, SessionManager, TerminalStreamEvent};
 
 pub(super) struct TerminalEntry {
     session_id: String,
     write: ChannelWriteHalf<russh::client::Msg>,
+    /// Output copy for the AI agent (command results, scrollback).
+    tap: Arc<TerminalTap>,
 }
 
 impl SessionManager {
@@ -46,11 +49,13 @@ impl SessionManager {
 
         let (mut read, write) = channel.split();
         let term_id = uuid::Uuid::new_v4().to_string();
+        let tap = Arc::new(TerminalTap::default());
         self.terminals.lock().await.insert(
             term_id.clone(),
             TerminalEntry {
                 session_id: entry.id.clone(),
                 write,
+                tap: tap.clone(),
             },
         );
 
@@ -79,12 +84,14 @@ impl SessionManager {
                 tokio::select! {
                     msg = read.wait() => match msg {
                         Some(ChannelMsg::Data { data }) => {
+                            tap.push(&data);
                             buf.extend_from_slice(&data);
                             if buf.len() > 256 * 1024 {
                                 flush(&mut buf);
                             }
                         }
                         Some(ChannelMsg::ExtendedData { data, .. }) => {
+                            tap.push(&data);
                             buf.extend_from_slice(&data);
                         }
                         Some(ChannelMsg::ExitStatus { .. })
@@ -92,6 +99,7 @@ impl SessionManager {
                         | Some(ChannelMsg::Close)
                         | None => {
                             flush(&mut buf);
+                            tap.close();
                             let _ = output.send(TerminalStreamEvent::Exit);
                             break;
                         }
@@ -105,7 +113,19 @@ impl SessionManager {
         Ok(term_id)
     }
 
+    /// Keystrokes from the user's xterm view.
     pub async fn term_write(&self, term_id: &str, data: &[u8]) -> AppResult<()> {
+        let terminals = self.terminals.lock().await;
+        let term = terminals.get(term_id).ok_or(AppError::SessionNotFound)?;
+        term.tap.note_input(data);
+        term.write
+            .data(data)
+            .await
+            .map_err(|e| AppError::Other(format!("terminal write: {e}")))
+    }
+
+    /// Input typed by the AI agent — not counted as user input.
+    pub async fn term_write_agent(&self, term_id: &str, data: &[u8]) -> AppResult<()> {
         let terminals = self.terminals.lock().await;
         let term = terminals.get(term_id).ok_or(AppError::SessionNotFound)?;
         term.write
@@ -125,8 +145,16 @@ impl SessionManager {
 
     pub async fn term_close(&self, term_id: &str) {
         if let Some(term) = self.terminals.lock().await.remove(term_id) {
+            term.tap.close();
             let _ = term.write.close().await;
         }
+    }
+
+    /// The owning session and output tap of a live terminal.
+    pub async fn terminal_tap(&self, term_id: &str) -> AppResult<(String, Arc<TerminalTap>)> {
+        let terminals = self.terminals.lock().await;
+        let term = terminals.get(term_id).ok_or(AppError::SessionNotFound)?;
+        Ok((term.session_id.clone(), term.tap.clone()))
     }
 
     pub(super) async fn close_session_terminals(&self, session_id: &str) {
@@ -138,6 +166,7 @@ impl SessionManager {
             .collect();
         for id in ids {
             if let Some(terminal) = terminals.remove(&id) {
+                terminal.tap.close();
                 let _ = terminal.write.close().await;
             }
         }

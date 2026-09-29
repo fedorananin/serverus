@@ -5,6 +5,7 @@
   import TerminalPanel from "./TerminalPanel.svelte";
   import FilesView from "./FilesView.svelte";
   import TunnelsView from "./TunnelsView.svelte";
+  import AgentActivity from "./agent/AgentActivity.svelte";
 
   interface Props {
     tab: Tab;
@@ -67,6 +68,7 @@
         {/if}
       {/if}
     </div>
+    <AgentActivity sessionId={tab.sessionId} />
     <div
       class="status"
       data-testid="session-state"
@@ -135,7 +137,7 @@
   .viewbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 10px;
     padding: 5px 10px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-1);
@@ -144,6 +146,7 @@
   .views {
     display: flex;
     gap: 2px;
+    flex: 1;
   }
 
   .views button {

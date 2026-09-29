@@ -1,4 +1,5 @@
 import type {
+  AgentAccessLevel,
   AuthMethod,
   Badge,
   ConnectionInput,
@@ -34,6 +35,8 @@ export interface ConnectionDraft {
   tunnels: TunnelConfig[];
   disableTerminal: boolean;
   notes: string;
+  /** Null inherits the folder's level. */
+  agentAccess: AgentAccessLevel | null;
 }
 
 function optional(value: string): string | null {
@@ -82,5 +85,6 @@ export function buildConnectionInput(draft: ConnectionDraft): ConnectionInput {
     tunnels: draft.protocol === "ssh" ? draft.tunnels : [],
     disable_terminal: draft.protocol === "ssh" ? draft.disableTerminal : false,
     notes: draft.notes,
+    agent_access: draft.agentAccess,
   };
 }

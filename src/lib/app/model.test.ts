@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import type { AppApi } from "./contracts/api";
 import type { AppEventSource } from "./contracts/events";
 import * as appModelModule from "./model.svelte";
+import { inertAgentApi, inertAgentEvents } from "../../test/agent-fakes";
 
 const { createAppModel } = appModelModule;
 
@@ -31,6 +32,7 @@ function fakeApi(): AppApi {
     vault: {
       touchActivity: vi.fn(async () => {}),
     },
+    agent: inertAgentApi(),
   };
 }
 
@@ -42,6 +44,7 @@ function fakeEvents(): AppEventSource {
     remoteEdit: {
       listenUploaded: vi.fn(async () => () => {}),
     },
+    agent: inertAgentEvents(),
   };
 }
 

@@ -1,13 +1,19 @@
 <script lang="ts">
-  import type { Badge } from "$lib/api";
+  import type { AgentAccessLevel, Badge } from "$lib/api";
   import { errorMessage } from "$lib/api";
   import { vault } from "$lib/stores/vault.svelte";
   import Modal from "./Modal.svelte";
   import BadgePicker from "./BadgePicker.svelte";
+  import AgentAccessSelect from "./agent/AgentAccessSelect.svelte";
 
   interface Props {
     /** Folder being edited (id + current values), or null to create. */
-    existing: { id: string; name: string; badge: Badge | null } | null;
+    existing: {
+      id: string;
+      name: string;
+      badge: Badge | null;
+      agentAccess: AgentAccessLevel | null;
+    } | null;
     parentFolder: string | null;
     onclose: () => void;
   }
@@ -16,6 +22,7 @@
 
   let name = $state(existing?.name ?? "");
   let badge = $state<Badge | null>(existing?.badge ?? null);
+  let agentAccess = $state<AgentAccessLevel | null>(existing?.agentAccess ?? null);
   let saving = $state(false);
   let error = $state<string | null>(null);
 
@@ -27,9 +34,9 @@
     error = null;
     try {
       if (existing) {
-        await vault.updateFolder(existing.id, name.trim(), badge);
+        await vault.updateFolder(existing.id, name.trim(), badge, agentAccess);
       } else {
-        await vault.createFolder(name.trim(), parentFolder, badge);
+        await vault.createFolder(name.trim(), parentFolder, badge, agentAccess);
       }
       onclose();
     } catch (e) {
@@ -61,6 +68,7 @@
       <span>Badge</span>
       <BadgePicker value={badge} onchange={(b) => (badge = b)} />
     </label>
+    <AgentAccessSelect bind:value={agentAccess} />
     {#if error}
       <div class="error">{error}</div>
     {/if}

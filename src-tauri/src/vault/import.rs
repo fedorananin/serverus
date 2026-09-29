@@ -21,6 +21,10 @@ use crate::vault::model::{
 };
 use crate::vault::tree;
 
+mod tree_convert;
+
+use tree_convert::{collect_conn_refs, collect_folder_access, convert_tree};
+
 /// Top-level import file. Every section is optional so a hand-written file
 /// can stay minimal; unknown fields (e.g. the `has_password` flags an export
 /// carries) are ignored.
@@ -149,57 +153,9 @@ impl ImportConnection {
             tunnels: self.tunnels,
             disable_terminal: self.disable_terminal,
             notes: self.notes,
-        }
-    }
-}
-
-/// Convert the imported tree, assigning ids to folders that lack one and
-/// dropping connection refs that don't resolve; collects what it references.
-fn convert_tree(
-    nodes: Vec<ImportTreeNode>,
-    known: &HashMap<String, Connection>,
-    conn_refs: &mut HashSet<String>,
-    folder_ids: &mut HashSet<String>,
-) -> Vec<TreeNode> {
-    nodes
-        .into_iter()
-        .filter_map(|node| match node {
-            ImportTreeNode::Folder {
-                id,
-                name,
-                badge,
-                children,
-            } => {
-                let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                folder_ids.insert(id.clone());
-                Some(TreeNode::Folder {
-                    id,
-                    name,
-                    badge,
-                    children: convert_tree(children, known, conn_refs, folder_ids),
-                    collapsed: false,
-                })
-            }
-            ImportTreeNode::Connection { id } => {
-                // A ref must resolve AND be unique — validate_tree rejects
-                // duplicates, so silently keep only the first occurrence.
-                if known.contains_key(&id) && conn_refs.insert(id.clone()) {
-                    Some(TreeNode::Connection { id })
-                } else {
-                    None
-                }
-            }
-        })
-        .collect()
-}
-
-fn collect_conn_refs(nodes: &[TreeNode], out: &mut HashSet<String>) {
-    for node in nodes {
-        match node {
-            TreeNode::Connection { id } => {
-                out.insert(id.clone());
-            }
-            TreeNode::Folder { children, .. } => collect_conn_refs(children, out),
+            // An import never grants AI agent access; an existing
+            // connection keeps the level the user gave it.
+            agent_access: old.and_then(|c| c.agent_access),
         }
     }
 }
@@ -245,9 +201,12 @@ pub fn apply(payload: &mut VaultPayload, json: &str) -> AppResult<u32> {
     // same file can be imported twice without duplicates), then append.
     let mut conn_refs = HashSet::new();
     let mut folder_ids = HashSet::new();
+    let mut folder_access = HashMap::new();
+    collect_folder_access(&next.tree, &mut folder_access);
     let incoming = convert_tree(
         file.tree,
         &next.connections,
+        &folder_access,
         &mut conn_refs,
         &mut folder_ids,
     );
@@ -279,7 +238,11 @@ pub fn apply(payload: &mut VaultPayload, json: &str) -> AppResult<u32> {
     }
 
     if let Some(settings) = file.settings {
+        // AI agent switches are never imported: a config file must not be
+        // able to hand an agent access to the user's servers.
+        let agent = next.settings.agent.clone();
         next.settings = settings;
+        next.settings.agent = agent;
     }
 
     let tree_copy = next.tree.clone();

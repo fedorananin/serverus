@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use super::{
-    AuthMethod, Badge, Connection, FtpOptions, Protocol, S3Options, Settings, TreeNode,
-    TunnelConfig, VaultPayload,
+    AgentAccessLevel, AuthMethod, Badge, Connection, FtpOptions, Protocol, S3Options, Settings,
+    TreeNode, TunnelConfig, VaultPayload,
 };
 
 /// Auth config with secrets replaced by presence flags.
@@ -36,6 +36,7 @@ pub struct PublicConnection {
     pub tunnels: Vec<TunnelConfig>,
     pub disable_terminal: bool,
     pub notes: String,
+    pub agent_access: Option<AgentAccessLevel>,
 }
 
 /// The whole vault as the UI sees it — no secrets.
@@ -72,6 +73,7 @@ impl Connection {
             tunnels: self.tunnels.clone(),
             disable_terminal: self.disable_terminal,
             notes: self.notes.clone(),
+            agent_access: self.agent_access,
         }
     }
 }

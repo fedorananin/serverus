@@ -7,7 +7,7 @@
 use std::collections::HashSet;
 
 use crate::error::{AppError, AppResult};
-use crate::vault::model::{TreeNode, VaultPayload};
+use crate::vault::model::{AgentAccessLevel, TreeNode, VaultPayload};
 
 /// Check invariants: unique folder ids, unique connection refs, every
 /// connection ref resolves, no unknown connections dropped silently.
@@ -140,17 +140,19 @@ pub fn insert_after(tree: &mut Vec<TreeNode>, after_id: &str, node: TreeNode) {
     }
 }
 
-/// Update a folder's name/badge in place.
+/// Update a folder's name/badge/agent access in place.
 pub fn update_folder(
     tree: &mut [TreeNode],
     folder_id: &str,
     name: String,
     badge: Option<crate::vault::model::Badge>,
+    agent_access: Option<AgentAccessLevel>,
 ) -> AppResult<()> {
     let mut updated = false;
-    update_folder_walk(tree, folder_id, &mut |n, b| {
+    update_folder_walk(tree, folder_id, &mut |n, b, a| {
         *n = name.clone();
         *b = badge.clone();
+        *a = agent_access;
         updated = true;
     });
     if updated {
@@ -163,7 +165,11 @@ pub fn update_folder(
 fn update_folder_walk(
     nodes: &mut [TreeNode],
     folder_id: &str,
-    f: &mut impl FnMut(&mut String, &mut Option<crate::vault::model::Badge>),
+    f: &mut impl FnMut(
+        &mut String,
+        &mut Option<crate::vault::model::Badge>,
+        &mut Option<AgentAccessLevel>,
+    ),
 ) {
     for node in nodes {
         if let TreeNode::Folder {
@@ -171,11 +177,12 @@ fn update_folder_walk(
             name,
             badge,
             children,
+            agent_access,
             ..
         } = node
         {
             if id == folder_id {
-                f(name, badge);
+                f(name, badge, agent_access);
                 return;
             }
             update_folder_walk(children, folder_id, f);

@@ -1,5 +1,6 @@
 // Modules are public so integration tests (tests/) can exercise them
 // against in-process SSH/FTP servers.
+pub mod agent;
 pub mod app_config;
 pub mod autolock;
 pub mod commands;
@@ -88,12 +89,23 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::vault_import_config,
             commands::ssh_key_read_file,
             commands::open_external,
+            commands::agent_ui_respond,
+            commands::agent_take_over,
+            commands::agent_hand_back,
+            commands::agent_terminal_states,
+            commands::agent_setup_info,
         ])
         .events(collect_events![
             events::VaultLockedEvent,
             events::SessionStateEvent,
             events::TransferProgressEvent,
             events::RemoteEditUploadedEvent,
+            agent::types::AgentUiRequestEvent,
+            agent::types::AgentUiRequestExpiredEvent,
+            agent::types::AgentTerminalEvent,
+            agent::types::AgentActivityEvent,
+            agent::types::AgentFsChangedEvent,
+            agent::types::AgentVaultChangedEvent,
         ])
 }
 
@@ -126,6 +138,7 @@ pub fn run() {
             use tauri::Manager;
             builder.mount_events(app.app_handle());
             autolock::spawn(app.app_handle().clone());
+            agent::spawn(app.app_handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -134,6 +147,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 // Temp copies of remote-edited files never outlive the app.
                 watcher::cleanup_all();
+                agent::shutdown();
             }
         });
 }

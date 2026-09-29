@@ -2,6 +2,8 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { tabs } from "$lib/stores/tabs.svelte";
   import BadgeIcon from "$lib/components/BadgeIcon.svelte";
+  import AgentTabMark from "$lib/components/agent/AgentTabMark.svelte";
+  import AgentFullAccessBadge from "$lib/components/agent/AgentFullAccessBadge.svelte";
 
   let { onOpenSettings }: { onOpenSettings: () => void } = $props();
 
@@ -127,6 +129,7 @@
             fallback={connection?.protocol === "ftp" ? "📦" : "🖥"}
           />
           <span class="tab-name">{connection?.name ?? "?"}</span>
+          <AgentTabMark sessionId={tab.sessionId} />
           <button
             class="tab-close"
             aria-label="Close tab"
@@ -139,6 +142,7 @@
       {/each}
     </div>
   </div>
+  <AgentFullAccessBadge onclick={onOpenSettings} />
   <button class="ghost" title="Settings (⌘,)" aria-label="Settings" onclick={onOpenSettings}>⚙</button>
   <button class="ghost" title="Lock vault" aria-label="Lock vault" onclick={() => void vault.lock()}>🔒</button>
 </div>

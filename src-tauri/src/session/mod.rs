@@ -10,12 +10,14 @@ mod operation_admission;
 mod resource_cleanup;
 mod terminal;
 mod terminal_stream;
+pub mod terminal_tap;
 
 pub mod ftp;
 pub mod remote_fs;
 pub mod s3;
 pub mod sftp;
 pub mod ssh;
+pub mod ssh_exec;
 pub mod tunnel;
 
 pub(crate) use connection::load_authorized_plan;

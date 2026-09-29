@@ -1,4 +1,5 @@
 use super::*;
+use crate::vault::model::AgentAccessLevel;
 
 fn payload_with_conn(id: &str, password: Option<&str>) -> VaultPayload {
     let mut p = VaultPayload::default();
@@ -107,4 +108,69 @@ fn known_hosts_existing_wins_and_settings_replace() {
     assert_eq!(p.known_hosts["h:22"], "ssh-ed25519 verified");
     assert_eq!(p.known_hosts["x:22"], "ssh-rsa new");
     assert_eq!(p.settings.terminal.font_size, 15);
+}
+
+#[test]
+fn import_never_grants_agent_access() {
+    let mut p = VaultPayload::default();
+    p.settings.agent.enabled = false;
+    apply(
+        &mut p,
+        r#"{
+          "tree": [ { "type": "folder", "id": "f1", "name": "Prod", "agent_access": "full",
+                      "children": [ { "type": "connection", "id": "c1" } ] } ],
+          "connections": { "c1": { "protocol": "ssh", "host": "h", "agent_access": "full" } },
+          "settings": {
+            "security": { "auto_lock_minutes": 5, "lock_on_sleep": true, "touch_id": false },
+            "transfers": { "max_parallel_per_server": 2, "conflict_policy": "ask",
+                           "preserve_mtime": true, "tar_acceleration": true },
+            "editor": { "use_system_default": true, "custom_app": null },
+            "terminal": { "font_family": "Menlo", "font_size": 12, "scrollback": 1000 },
+            "panels": { "show_hidden": false, "size_format": "kib", "default_local_dir": null },
+            "agent": { "enabled": true, "full_access": true }
+          }
+        }"#,
+    )
+    .unwrap();
+    assert_eq!(p.connections["c1"].agent_access, None);
+    assert!(matches!(
+        &p.tree[0],
+        TreeNode::Folder {
+            agent_access: None,
+            ..
+        }
+    ));
+    // Other settings are imported; the agent switches are not.
+    assert_eq!(p.settings.security.auto_lock_minutes, 5);
+    assert!(!p.settings.agent.enabled);
+    assert!(!p.settings.agent.full_access);
+}
+
+#[test]
+fn reimport_keeps_the_agent_access_the_user_gave() {
+    let json = r#"{
+      "tree": [ { "type": "folder", "id": "f1", "name": "Prod",
+                  "children": [ { "type": "connection", "id": "c1" } ] } ],
+      "connections": { "c1": { "protocol": "ssh", "host": "h" } }
+    }"#;
+    let mut p = VaultPayload::default();
+    apply(&mut p, json).unwrap();
+    p.connections.get_mut("c1").unwrap().agent_access = Some(AgentAccessLevel::Ask);
+    if let TreeNode::Folder { agent_access, .. } = &mut p.tree[0] {
+        *agent_access = Some(AgentAccessLevel::ReadOnly);
+    }
+
+    apply(&mut p, json).unwrap();
+
+    assert_eq!(
+        p.connections["c1"].agent_access,
+        Some(AgentAccessLevel::Ask)
+    );
+    assert!(matches!(
+        &p.tree[0],
+        TreeNode::Folder {
+            agent_access: Some(AgentAccessLevel::ReadOnly),
+            ..
+        }
+    ));
 }

@@ -9,6 +9,7 @@
   import { isMac } from "$lib/platform";
   import Modal from "./Modal.svelte";
   import AboutSection from "./settings-dialog/AboutSection.svelte";
+  import AgentSection from "./settings-dialog/AgentSection.svelte";
   import AppearanceSection from "./settings-dialog/AppearanceSection.svelte";
   import EditorSection from "./settings-dialog/EditorSection.svelte";
   import KnownHostsSection from "./settings-dialog/KnownHostsSection.svelte";
@@ -27,13 +28,21 @@
 
   let { onclose }: Props = $props();
 
-  type SettingsDraft = Settings & { appearance: NonNullable<Settings["appearance"]> };
+  type SettingsDraft = Settings & {
+    appearance: NonNullable<Settings["appearance"]>;
+    agent: NonNullable<Settings["agent"]>;
+  };
 
   function createSettingsDraft(source: Settings): SettingsDraft {
     const draft = structuredClone($state.snapshot(source)) as Settings;
     return {
       ...draft,
       appearance: draft.appearance ?? { theme: "system" },
+      agent: {
+        enabled: draft.agent?.enabled ?? false,
+        full_access: draft.agent?.full_access ?? false,
+        create_connections: draft.agent?.create_connections ?? "off",
+      },
     };
   }
 
@@ -195,6 +204,7 @@
     <EditorSection bind:value={settings.editor} />
     <TerminalSection bind:value={settings.terminal} {isMac} />
     <PanelsSection bind:value={settings.panels} />
+    <AgentSection bind:value={settings.agent} />
     <VaultSection
       path={vault.info?.path}
       bind:newVaultPath

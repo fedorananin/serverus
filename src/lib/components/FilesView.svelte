@@ -10,6 +10,7 @@
   import { CompareRulesController } from "$lib/stores/compare-rules.svelte";
   import { PaneController } from "$lib/stores/pane.svelte";
   import { trackRemoteTreeOps } from "$lib/stores/remote-tree-ops.svelte";
+  import { trackAgentFsChanges } from "$lib/stores/agent-fs-refresh.svelte";
   import {
     directoryPairs,
     SubtreeComparisonController,
@@ -30,7 +31,7 @@
   }
 
   let { tab, sessionId }: Props = $props();
-  const transfers = useAppModel().transfers;
+  const { transfers, agent } = useAppModel();
 
   let root = $state<HTMLDivElement>();
 
@@ -95,6 +96,7 @@
   });
 
   const remoteTree = trackRemoteTreeOps(remote, transfers, sessionId);
+  trackAgentFsChanges(remote, agent, sessionId);
 
   function toggleComparison() {
     comparisonActive = !comparisonActive;

@@ -9,6 +9,8 @@
     wireContextRetirement,
   } from "$lib/app/model.svelte";
   import { commands, unwrap, type ThemePreference } from "$lib/api";
+  import { agentTabsPort } from "$lib/stores/agent-tabs-port";
+  import { showToast } from "$lib/components/Toasts.svelte";
   import { setThemePreference } from "$lib/theme";
   import UnlockScreen from "./routes/UnlockScreen.svelte";
   import MainScreen from "./routes/MainScreen.svelte";
@@ -70,6 +72,18 @@
   });
 
   $effect(() => wireContextRetirement(vault, tabs, hostKey, model.transfers));
+  $effect(() =>
+    model.agent.start(agentTabsPort(tabs), {
+      applyVault: ({ vault: data, summary }) => {
+        vault.applyExternal(data);
+        showToast(summary);
+      },
+      notify: (message) => showToast(message),
+    }),
+  );
+  $effect(() => {
+    if (tabs.activeId) model.agent.noteTabActivated(tabs.activeId);
+  });
   $effect(() => wireAccessRevocation(vault, hostKey));
 
   // Keep the main screen (and its live terminals/sessions) mounted while

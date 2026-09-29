@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use super::Badge;
+use super::{AgentAccessLevel, Badge};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
@@ -150,4 +150,7 @@ pub struct Connection {
     pub disable_terminal: bool,
     #[serde(default)]
     pub notes: String,
+    /// AI agent access; `None` inherits from the enclosing folder.
+    #[serde(default)]
+    pub agent_access: Option<AgentAccessLevel>,
 }

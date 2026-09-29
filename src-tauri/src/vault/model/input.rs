@@ -2,7 +2,8 @@ use serde::Deserialize;
 use specta::Type;
 
 use super::{
-    AuthConfig, AuthMethod, Badge, Connection, FtpOptions, Protocol, S3Options, TunnelConfig,
+    AgentAccessLevel, AuthConfig, AuthMethod, Badge, Connection, FtpOptions, Protocol, S3Options,
+    TunnelConfig,
 };
 
 /// Input for creating/updating a connection from the UI. Secret fields are
@@ -30,6 +31,9 @@ pub struct ConnectionInput {
     #[serde(default)]
     pub disable_terminal: bool,
     pub notes: String,
+    /// `None` inherits the folder's level.
+    #[serde(default)]
+    pub agent_access: Option<AgentAccessLevel>,
 }
 
 fn merge_secret(new: Option<String>, old: Option<String>) -> Option<String> {
@@ -75,6 +79,7 @@ impl ConnectionInput {
             tunnels: self.tunnels,
             disable_terminal: self.disable_terminal,
             notes: self.notes,
+            agent_access: self.agent_access,
         }
     }
 }

@@ -60,6 +60,7 @@ fn test_vault(path: std::path::PathBuf, password: &str) -> VaultManager {
                     tunnels: Vec::new(),
                     disable_terminal: false,
                     notes: String::new(),
+                    agent_access: None,
                 }
                 .into_connection(None),
             );

@@ -158,6 +158,55 @@ Locks on an inactivity timeout (default 15 min; 0 = never) and on sleep.
 Locking zeroizes all decrypted secrets from memory, but **live sessions keep
 running** — you just can't pull new secrets until you unlock.
 
+### 🤖 AI agents (MCP)
+Let an AI agent such as Claude Code see your servers, run commands on them and
+move files — **in your visible tabs**, so you watch everything happen:
+
+- `run_command` types into the server's real terminal tab (reused if open,
+  opened in the background otherwise). Shell state carries over between the
+  agent and you: `cd`, env vars, `sudo`, virtualenvs. Commands are wrapped in
+  invisible completion markers so the agent gets exit status and clean output.
+- **Take over** at any moment from the bar above the terminal; the agent is
+  refused until you **Hand back**, and then it can read what you did
+  (`read_terminal`). Ask it to "continue in the current tab" and it works
+  where you left off.
+- Uploads, downloads, file writes, deletes and chmods go through the tab's
+  transfer queue — you see progress and can cancel them.
+- Per connection or folder (folders pass it down): **Off** (hidden),
+  **Read‑only**, **Ask** (every change or command needs your approval in
+  Serverus, with "allow for 15 min"), **Full**. Or flip **Settings → AI Agent
+  → Full access** for everything, no questions.
+- The agent can **add connections** when you let it (**Settings → AI Agent →
+  Agent may add connections**: no / ask each time / yes): tell it a host,
+  user and password or key and a folder like `Clients/Acme`, and it stores
+  them in the vault and connects. It cannot choose its own access — the new
+  connection inherits its folder's level (or starts at **Ask** where that
+  would be Off) — and it can only route through jump hosts it may run
+  commands on. The first connection still shows you the host‑key prompt.
+- While an agent is connected and working with Serverus, the vault stays
+  unlocked — neither the idle timeout nor sleep locks it; it can lock again
+  once the agent disconnects (an explicit lock always works).
+- Adding a connection that would get **Full** access from its folder, or that
+  tunnels through a jump host where the agent only has **Ask**, always asks
+  you — even when adding connections is allowed without asking.
+- Commands are typed with a leading space. zsh keeps them in history unless
+  `setopt HIST_IGNORE_SPACE` (bash: `HISTCONTROL=ignorespace`, the default on
+  most distributions).
+- Secrets never reach the agent: it sees names, hosts and users, not
+  passwords, keys or connection notes. (Secrets *you* hand it to store go
+  one way — into the vault.)
+
+Enable it in **Settings → AI Agent** and register Serverus once:
+
+```bash
+claude mcp add --scope user serverus -- /Applications/Serverus.app/Contents/MacOS/serverus --mcp
+```
+
+`serverus --mcp` is a stdio MCP server that relays to the running app over a
+user‑only local socket. Starting an agent session never opens Serverus: the
+app is started only when the agent first uses one of its tools. Other MCP clients use
+the same command. macOS and Linux; not available on Windows yet.
+
 ### 🎨 Dark, light and system themes
 Follow the OS automatically or pin a theme; changes apply immediately to the
 app chrome, dialogs and live terminals, including a dedicated light‑terminal
@@ -269,6 +318,11 @@ cargo test --workspace # unit + integration against real local sshd/FTP/S3 — n
   path** — losing it means losing the vault (you're warned at creation).
 - Secrets are zeroized from memory on lock and drop, and are kept out of logs,
   errors and command return values.
+- AI agent access is off by default. The agent socket is owner‑only (`0600`,
+  peer UID checked — the ssh‑agent trust model): any process running as your
+  user can reach it, just as it could your SSH agent. Agent tools act with
+  the level you set; at **Full** an agent can also upload any local file your
+  user can read and download into any local directory.
 - The app is currently **unsigned / un‑notarized** — build it yourself or
   clear the quarantine attribute as noted above.
 

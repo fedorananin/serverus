@@ -172,6 +172,9 @@ pub struct Settings {
     pub editor: EditorSettings,
     pub terminal: TerminalSettings,
     pub panels: PanelSettings,
+    /// Missing in vaults written before AI agent access existed.
+    #[serde(default)]
+    pub agent: super::AgentSettings,
 }
 
 impl Settings {

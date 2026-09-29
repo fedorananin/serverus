@@ -5,10 +5,11 @@
 use serde::Deserialize;
 use specta::Type;
 
+use std::sync::Arc;
+
 use super::prelude::*;
-use super::transfers::transfer_settings;
 use crate::session::remote_fs::TreeAction;
-use crate::transfer::{ProgressSink, TreeRequest};
+use crate::state::TreeTargetSpec;
 
 /// One selected entry. `is_dir` means a real directory: a symlink to one is
 /// removed as a link, never descended.
@@ -63,31 +64,17 @@ async fn enqueue(
     targets: Vec<TreeTarget>,
     action: TreeAction,
 ) -> ApiResult<()> {
-    let lease = state.application.require_active().map_err(AppError::from)?;
-    let entry = state.sessions.get(session_id)?;
-    let fs = entry.remote_fs().await?;
-    let settings = transfer_settings(state);
-    let shell = if settings.tar_acceleration && action == TreeAction::Delete {
-        entry.rm_ssh().await
-    } else {
-        None
-    };
-    let sink: std::sync::Arc<dyn ProgressSink> = std::sync::Arc::new(app);
-    let requests = targets
-        .iter()
-        .map(|target| TreeRequest {
-            fs: fs.clone(),
-            session_id,
-            path: &target.path,
+    let targets: Vec<TreeTargetSpec> = targets
+        .into_iter()
+        .map(|target| TreeTargetSpec {
+            path: target.path,
             is_dir: target.is_dir,
-            action,
-            settings: settings.clone(),
-            shell: shell.clone(),
         })
         .collect();
     state
-        .transfers
-        .enqueue_tree_ops(lease.context_id(), &sink, requests)
+        .application
+        .enqueue_tree_ops(Arc::new(app), session_id, &targets, action)
         .await
+        .and_then(|enqueued| enqueued.result)
         .map_err(Into::into)
 }

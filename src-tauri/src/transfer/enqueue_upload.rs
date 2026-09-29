@@ -5,8 +5,8 @@ use serverus_domain::runtime_context::RuntimeContextId;
 
 use super::tar_stream;
 use super::{
-    local_tree_size, AdmissionToken, ProgressSink, TransferBatch, TransferKind, TransferManager,
-    UploadRequest,
+    local_tree_size, AdmissionToken, Enqueued, ProgressSink, TransferBatch, TransferKind,
+    TransferManager, UploadRequest,
 };
 use crate::error::{AppError, AppResult};
 use crate::session::remote_fs::join_remote;
@@ -46,6 +46,19 @@ impl TransferManager {
         requests: Vec<UploadRequest<'_>>,
         tar_ssh: Option<Arc<SshSession>>,
     ) -> AppResult<()> {
+        self.enqueue_uploads_tracked(context_id, app, requests, tar_ssh)
+            .await
+            .result
+    }
+
+    /// [`Self::enqueue_uploads_accelerated`], naming the batch its items share.
+    pub async fn enqueue_uploads_tracked(
+        self: &Arc<Self>,
+        context_id: RuntimeContextId,
+        app: &Arc<dyn ProgressSink>,
+        requests: Vec<UploadRequest<'_>>,
+        tar_ssh: Option<Arc<SshSession>>,
+    ) -> Enqueued {
         let batch = TransferBatch::new();
         let mut failures = Vec::new();
         for request in requests {
@@ -61,11 +74,12 @@ impl TransferManager {
                 failures.push(error.to_string());
             }
         }
-        if failures.is_empty() {
+        let result = if failures.is_empty() {
             Ok(())
         } else {
             Err(AppError::Transfer(failures.join("; ")))
-        }
+        };
+        Enqueued::new(&batch, result)
     }
 
     pub(super) async fn enqueue_upload_inner(

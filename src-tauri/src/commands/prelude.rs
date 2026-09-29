@@ -18,7 +18,7 @@ pub(super) use crate::state::AppState;
 pub(super) use crate::transfer::ConflictAction;
 pub(super) use crate::vault::format::KdfParams;
 pub(super) use crate::vault::model::{
-    Badge, ConnectionInput, PublicVault, S3UploadAcl, Settings, TreeNode,
+    AgentAccessLevel, Badge, ConnectionInput, PublicVault, S3UploadAcl, Settings, TreeNode,
 };
 pub(super) use crate::vault::tree;
 pub(super) use tauri::State;

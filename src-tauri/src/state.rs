@@ -2,6 +2,10 @@
 
 mod operation;
 mod s3_upload_acl;
+mod transfer_jobs;
+mod vault_operations;
+
+pub(crate) use transfer_jobs::TreeTargetSpec;
 
 #[cfg(all(test, feature = "scenario-tests"))]
 mod quick_unlock_selection_tests;
@@ -17,6 +21,7 @@ use serverus_application::context::{
 use serverus_domain::runtime_context::{RuntimeContextId, VaultKey};
 use serverus_runtime::{ApplicationHandle as RuntimeApplicationHandle, RuntimeError};
 
+use crate::agent::AgentHub;
 use crate::app_config;
 use crate::autolock::ActivityTracker;
 use crate::error::{AppError, AppResult};
@@ -105,6 +110,7 @@ struct DesktopContextCleanup {
 struct DesktopSessionResourceCleanup {
     edits: Arc<EditWatcher>,
     transfers: Arc<TransferManager>,
+    agent: Arc<AgentHub>,
 }
 
 #[async_trait]
@@ -112,6 +118,7 @@ impl SessionResourceCleanup for DesktopSessionResourceCleanup {
     async fn clear_session(&self, session_id: &str) {
         self.edits.close_session(session_id).await;
         self.transfers.clear_session(session_id).await;
+        self.agent.forget_session(session_id);
     }
 }
 
@@ -141,6 +148,9 @@ impl AppEventSink for DesktopContextEvents {
 
 pub struct AppState {
     pub application: DesktopApplication,
+    /// AI agent (MCP) bridge state: UI round trips, terminal control,
+    /// temporary grants.
+    pub(crate) agent: Arc<AgentHub>,
     /// Folder-comparison cancellation epochs — UI-scoped, so it lives beside
     /// the application handle rather than inside it.
     pub(crate) compare: Arc<crate::session::compare::CompareRegistry>,
@@ -192,10 +202,12 @@ impl AppState {
         let vault = Arc::new(Mutex::new(vault));
         let transfers = Arc::new(TransferManager::default());
         let edits = Arc::new(EditWatcher::default());
+        let agent = Arc::new(AgentHub::default());
         let sessions = Arc::new(SessionManager::with_resource_cleanup(Arc::new(
             DesktopSessionResourceCleanup {
                 edits: edits.clone(),
                 transfers: transfers.clone(),
+                agent: agent.clone(),
             },
         )));
         let cleanup = Arc::new(DesktopContextCleanup {
@@ -221,6 +233,7 @@ impl AppState {
                 activity,
             },
             compare: Arc::default(),
+            agent,
         }
     }
 }

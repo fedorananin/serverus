@@ -217,3 +217,58 @@ async fn recursive_chmod_applies_its_scope() {
     assert_eq!(mode(&tree.join("dir3")), 0o750);
     assert_ne!(mode(&sshd.dir.path().join("elsewhere")), 0o640);
 }
+
+/// What the agent's `delete` / `chmod` rely on: over SFTP, `stat` follows a
+/// symlink (it reports the target directory), `lstat` does not — and a
+/// delete planned from `lstat` removes the link, never the target's files.
+#[tokio::test]
+async fn lstat_keeps_a_symlink_to_a_directory_a_link() {
+    let sshd = TestSshd::spawn();
+    let ssh = connect(&sshd).await;
+    let fs_remote: Arc<dyn RemoteFs> = Arc::new(SftpFs::open(&ssh).await.unwrap());
+    let manager = Arc::new(TransferManager::default());
+    let outside = sshd.dir.path().join("outside-lstat");
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(outside.join("precious.txt"), b"keep me").unwrap();
+    let link = sshd.dir.path().join("link-lstat");
+    std::os::unix::fs::symlink(&outside, &link).unwrap();
+    let link_path = link.to_string_lossy().into_owned();
+
+    let followed = fs_remote.stat(&link_path).await.unwrap();
+    assert!(followed.is_dir && !followed.is_symlink, "{followed:?}");
+    let entry = fs_remote.lstat(&link_path).await.unwrap();
+    assert!(entry.is_symlink && !entry.is_dir, "{entry:?}");
+
+    let context_id = transfer_context::activate(&manager);
+    let sink: Arc<dyn ProgressSink> = Arc::new(NullSink);
+    manager
+        .enqueue_tree_ops(
+            context_id,
+            &sink,
+            vec![TreeRequest {
+                fs: fs_remote.clone(),
+                session_id: "s",
+                path: &link_path,
+                is_dir: entry.is_dir && !entry.is_symlink,
+                action: TreeAction::Delete,
+                settings: TransferSettings {
+                    tar_acceleration: false,
+                    ..settings()
+                },
+                shell: None,
+            }],
+        )
+        .await
+        .unwrap();
+    for _ in 0..200 {
+        let summary = manager.snapshot().summary;
+        if summary.queued == 0 && summary.running == 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let item = manager.snapshot().items.remove(0);
+    assert_eq!(item.state, TransferState::Done, "{item:#?}");
+    assert!(fs::symlink_metadata(&link).is_err(), "the link is gone");
+    assert_eq!(fs::read(outside.join("precious.txt")).unwrap(), b"keep me");
+}

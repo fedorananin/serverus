@@ -29,6 +29,7 @@ const baseDraft: ConnectionDraft = {
   tunnels: [],
   disableTerminal: false,
   notes: "kept verbatim  ",
+  agentAccess: null,
 };
 
 describe("buildConnectionInput", () => {
@@ -74,6 +75,7 @@ describe("buildConnectionInput", () => {
       tunnels: draft.tunnels,
       disable_terminal: true,
       notes: "kept verbatim  ",
+      agent_access: null,
     });
   });
 
@@ -134,5 +136,9 @@ describe("buildConnectionInput", () => {
       tunnels: [],
       disable_terminal: false,
     });
+  });
+
+  it("passes the AI agent access level through", () => {
+    expect(buildConnectionInput({ ...baseDraft, agentAccess: "ask" }).agent_access).toBe("ask");
   });
 });

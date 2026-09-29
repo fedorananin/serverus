@@ -66,6 +66,7 @@ const existing: PublicConnection = {
   tunnels: [],
   disable_terminal: false,
   notes: "",
+  agent_access: "ask",
 };
 
 function deferred<T>() {

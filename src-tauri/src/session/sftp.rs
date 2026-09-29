@@ -108,6 +108,20 @@ impl RemoteFs for SftpFs {
         Ok(entry_from(path.to_string(), name.to_string(), &attrs))
     }
 
+    async fn lstat(&self, path: &str) -> AppResult<RemoteEntry> {
+        let attrs = self
+            .sftp
+            .symlink_metadata(path)
+            .await
+            .map_err(|e| map_err(path, e))?;
+        let name = path
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or(path);
+        Ok(entry_from(path.to_string(), name.to_string(), &attrs))
+    }
+
     async fn home_dir(&self) -> AppResult<String> {
         self.sftp
             .canonicalize(".")

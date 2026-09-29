@@ -42,6 +42,13 @@ pub trait RemoteFs: Send + Sync {
     /// lead to a directory (SPEC §5.2).
     async fn list(&self, path: &str) -> AppResult<Vec<RemoteEntry>>;
     async fn stat(&self, path: &str) -> AppResult<RemoteEntry>;
+    /// Like [`RemoteFs::stat`], but a symlink describes the link itself
+    /// (`is_symlink`, never `is_dir`) instead of its target — what deciding
+    /// whether to descend into a path needs. Protocols whose `stat` already
+    /// reports links as links keep the default.
+    async fn lstat(&self, path: &str) -> AppResult<RemoteEntry> {
+        self.stat(path).await
+    }
     /// Resolve the login/home directory used as the initial path.
     async fn home_dir(&self) -> AppResult<String>;
     async fn mkdir(&self, path: &str) -> AppResult<()>;

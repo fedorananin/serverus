@@ -12,6 +12,7 @@ mod item;
 mod item_lifecycle;
 mod lifecycle;
 mod local_target;
+mod lookup;
 mod manager;
 mod partial;
 mod progress;
@@ -29,6 +30,7 @@ pub use contracts::{
     ConflictAction, TransferKind, TransferQueueSnapshot, TransferSnapshot, TransferState,
     TransferSummary,
 };
+pub use lookup::{is_settled, Enqueued};
 pub use manager::TransferManager;
 pub use requests::{DownloadRequest, UploadRequest};
 pub use sink::ProgressSink;

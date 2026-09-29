@@ -4,17 +4,20 @@ import { TauriAppEventSource } from "./adapters/tauri-events";
 import type { AppApi } from "./contracts/api";
 import type { AppEventSource } from "./contracts/events";
 import { TransfersStore } from "$lib/stores/transfers.svelte";
+import { AgentStore } from "$lib/stores/agent.svelte";
 
 const appModelContext = Symbol("serverus-app-model");
 
 export class AppModel {
   readonly transfers: TransfersStore;
+  readonly agent: AgentStore;
 
   constructor(
     readonly api: AppApi,
     readonly eventSource: AppEventSource,
   ) {
     this.transfers = new TransfersStore(api, eventSource);
+    this.agent = new AgentStore(api.agent, eventSource.agent);
   }
 }
 
@@ -72,6 +75,12 @@ export function wireAccessRevocation(
 
 export function provideAppModel(model: AppModel): void {
   setContext(appModelContext, model);
+}
+
+/** For components that also render outside the app (isolated tests) and
+ *  simply skip app-scoped features there. */
+export function useOptionalAppModel(): AppModel | null {
+  return getContext<AppModel | undefined>(appModelContext) ?? null;
 }
 
 export function useAppModel(): AppModel {

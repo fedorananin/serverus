@@ -4,6 +4,7 @@
 //! cross the IPC boundary have redacted public counterparts; secrets never
 //! leave the backend.
 
+mod agent;
 mod connection;
 mod input;
 mod payload;
@@ -11,6 +12,7 @@ mod public;
 mod settings;
 mod tree;
 
+pub use agent::*;
 pub use connection::*;
 pub use input::*;
 pub use payload::*;

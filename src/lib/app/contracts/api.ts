@@ -1,4 +1,11 @@
 import type {
+  AgentActivityEntry,
+  AgentConfirmDecision,
+  AgentSetupInfo,
+  AgentTabInfo,
+  AgentTerminalEvent,
+  AgentUiRequest,
+  AgentUiResponse,
   ChmodScope,
   ConflictAction,
   TransferListDto,
@@ -8,6 +15,13 @@ import type {
 } from "$lib/api";
 
 export type {
+  AgentActivityEntry,
+  AgentConfirmDecision,
+  AgentSetupInfo,
+  AgentTabInfo,
+  AgentTerminalEvent,
+  AgentUiRequest,
+  AgentUiResponse,
   ChmodScope,
   ConflictAction,
   TransferListDto,
@@ -46,8 +60,20 @@ export interface VaultActivityApi {
   touchActivity(): Promise<void>;
 }
 
+/** AI agent (MCP) bridge: answering the backend's UI requests and
+ *  handing terminals between the user and the agent. */
+export interface AgentApi {
+  /** Resolves false when the request already expired. */
+  respond(requestId: string, response: AgentUiResponse): Promise<boolean>;
+  takeOver(termId: string): Promise<void>;
+  handBack(termId: string): Promise<void>;
+  terminalStates(): Promise<AgentTerminalEvent[]>;
+  setupInfo(): Promise<AgentSetupInfo>;
+}
+
 /** Frontend-facing command boundary, extended one feature namespace at a time. */
 export interface AppApi {
   transfers: TransfersApi;
   vault: VaultActivityApi;
+  agent: AgentApi;
 }

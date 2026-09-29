@@ -24,6 +24,7 @@ fn conn(name: &str) -> Connection {
         tunnels: vec![],
         disable_terminal: false,
         notes: String::new(),
+        agent_access: None,
     }
 }
 
@@ -37,6 +38,7 @@ fn folder(id: &str, children: Vec<TreeNode>) -> TreeNode {
         }),
         children,
         collapsed: false,
+        agent_access: None,
     }
 }
 
