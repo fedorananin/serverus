@@ -260,7 +260,7 @@ room. v1.5.0: remote deletes and recursive chmods run as transfer-queue items
 with live progress, cancel/retry and a finished entry (see Gotchas); one
 failing entry no longer aborts the rest; SFTP/FTP requests go out in
 parallel, S3 deletes use `DeleteObjects`, SSH dirs use server-side `rm`;
-deleting a symlink to a directory no longer empties its target. Unreleased:
+deleting a symlink to a directory no longer empties its target. v1.6.0:
 AI agent access over MCP (see Gotchas) — per-connection/folder levels
 Off / Read-only / Ask / Full plus a global full-access switch, commands typed
 into the visible terminal with take-over / hand-back, agent transfers in the

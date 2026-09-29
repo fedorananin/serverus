@@ -13,7 +13,7 @@ A native macOS connection manager. Built with Tauri 2, a Rust backend and a Svel
 ![Built with Rust](https://img.shields.io/badge/backend-Rust-orange)
 ![Built with Tauri](https://img.shields.io/badge/shell-Tauri%202-24C8DB)
 ![Frontend Svelte](https://img.shields.io/badge/frontend-Svelte%205-FF3E00)
-![Version](https://img.shields.io/badge/version-1.5.1-brightgreen)
+![Version](https://img.shields.io/badge/version-1.6.0-brightgreen)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
