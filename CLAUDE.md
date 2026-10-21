@@ -99,7 +99,11 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
   Never reach for `draggable`/`dataTransfer`.
 - **Terminal views stay mounted when hidden** (SessionView toggles `display`),
   because unmounting closes the SSH channel and loses the shell. Guard
-  `FitAddon.fit()` against 0×0.
+  `FitAddon.fit()` against 0×0. This needs xterm.js ≥ 6: xterm 5's native
+  `scrollTop` viewport fell out of sync while hidden, so after switching tabs
+  the first wheel was swallowed and the next jumped back to a stale screen
+  that no longer followed output (until a keypress). The embedded WebDriver
+  sends no wheel input, so no scenario can guard this — don't downgrade.
 - **`russh-sftp`: `FileAttributes::default()` is NOT empty** (carries uid/gid 0
   → SETSTAT chowns to root). Build from `FileAttributes::empty()` for chmod/mtime.
 - Transfer queue + history are **per-session, end to end**: the panel lives in

@@ -248,6 +248,11 @@
   .terminal :global(.xterm) {
     padding: 4px 0 8px 6px;
   }
+  /* xterm 6 paints the theme background on its scrollable element only; the
+     viewport underneath spans the padding too and keeps xterm.css's #000. */
+  .terminal :global(.xterm .xterm-viewport) {
+    background-color: transparent;
+  }
   .opening {
     position: absolute;
     inset: 8px auto auto 10px;
