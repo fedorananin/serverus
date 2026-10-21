@@ -137,7 +137,7 @@ struct CancelAfter(AtomicUsize);
 impl Checkpoint for CancelAfter {
     async fn proceed(&self) -> bool {
         self.0
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
                 left.checked_sub(1)
             })
             .is_ok()
