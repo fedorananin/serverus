@@ -268,7 +268,9 @@ deleting a symlink to a directory no longer empties its target. v1.6.0:
 AI agent access over MCP (see Gotchas) — per-connection/folder levels
 Off / Read-only / Ask / Full plus a global full-access switch, commands typed
 into the visible terminal with take-over / hand-back, agent transfers in the
-tab's queue, confirmation dialog, per-tab activity journal. v1.5.1: the
+tab's queue, confirmation dialog, per-tab activity journal. v1.6.1:
+xterm.js 6.0 — terminals no longer show a stale screen after a tab switch
+(see the hidden-terminal Gotcha). v1.5.1: the
 "hide local junk" setting also keeps `.DS_Store`/`Thumbs.db` out of recursive
 uploads and downloads (per-file walks and tar: `tar_stream/archive.rs`
 `pack_tree` / `unpack_confined`); comparison unchanged. Also v1.4.0: settings-dialog polish —
