@@ -10,7 +10,7 @@ use russh::keys::{load_secret_key, ssh_key};
 use tokio::sync::Mutex as AsyncMutex;
 use zeroize::Zeroizing;
 
-use crate::error::{AppError, AppResult};
+use crate::error::{connect_error, AppError, AppResult};
 use crate::vault::model::{AuthMethod, Connection};
 
 /// Outcome of a host-key check that stops the connection: the UI shows a
@@ -174,7 +174,7 @@ pub async fn connect_chain_with_progress(
                         })));
                     }
                 }
-                return Err(AppError::Connect(format!("{}:{}: {e}", hop.host, hop.port)));
+                return Err(connect_error(format!("{}:{}", hop.host, hop.port), &e));
             }
         };
 

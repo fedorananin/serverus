@@ -175,6 +175,14 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
   still locks. Queue tools follow their own items by `TransferBatch` id
   (`enqueue_*_tracked`). Integration: `tests/agent_terminal_integration.rs` (real sshd;
   interactive zsh has no `#` comments unless INTERACTIVE_COMMENTS).
+- **macOS Local Network privacy (15+)** blocks the app's connections to LAN
+  hosts until the user allows Serverus in System Settings → Privacy &
+  Security → Local Network, and reports the block as a bare EHOSTUNREACH
+  ("No route to host", os error 65) — Terminal.app is exempt, so `ssh` works
+  there. `src-tauri/Info.plist` (merged by Tauri) declares
+  `NSLocalNetworkUsageDescription`; `error::local_network_hint` appends the
+  fix to SSH/FTP/S3 connect errors on macOS. Ad-hoc signed builds may need
+  re-approval after updates.
 - `Connection.disable_terminal` = SFTP-only SSH servers (no shell); the UI hides
   the terminal view and the backend never opens a shell channel.
 - **S3 uploads must declare a `Content-Type`.** `aws-sdk-s3` labels every body
@@ -270,7 +278,9 @@ Off / Read-only / Ask / Full plus a global full-access switch, commands typed
 into the visible terminal with take-over / hand-back, agent transfers in the
 tab's queue, confirmation dialog, per-tab activity journal. v1.6.1:
 xterm.js 6.0 — terminals no longer show a stale screen after a tab switch
-(see the hidden-terminal Gotcha). v1.5.1: the
+(see the hidden-terminal Gotcha). v1.6.2: macOS Local Network privacy —
+`NSLocalNetworkUsageDescription` in `src-tauri/Info.plist` and a "No route to
+host" hint on connect errors (see Gotchas). v1.5.1: the
 "hide local junk" setting also keeps `.DS_Store`/`Thumbs.db` out of recursive
 uploads and downloads (per-file walks and tar: `tar_stream/archive.rs`
 `pack_tree` / `unpack_confined`); comparison unchanged. Also v1.4.0: settings-dialog polish —

@@ -5,7 +5,7 @@ use suppaftp::types::FileType;
 use suppaftp::Mode;
 use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore};
 
-use crate::error::{AppError, AppResult};
+use crate::error::{connect_error, AppError, AppResult};
 use crate::vault::model::FtpTlsMode;
 
 use super::FtpConfig;
@@ -61,7 +61,7 @@ impl FtpPool {
         let addr = format!("{}:{}", self.config.host, self.config.port);
         let mut ftp = FtpConn::connect(&addr)
             .await
-            .map_err(|error| AppError::Connect(format!("{addr}: {error}")))?;
+            .map_err(|error| connect_error(&addr, &error))?;
         if self.config.tls == FtpTlsMode::Explicit {
             // "FTPS required": no plaintext fallback, ever (SPEC §4.3).
             let connector = tokio_rustls::TlsConnector::from(rustls_config());

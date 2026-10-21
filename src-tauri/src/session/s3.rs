@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use zeroize::Zeroizing;
 
-use crate::error::{AppError, AppResult};
+use crate::error::{local_network_hint, AppError, AppResult};
 use crate::session::remote_fs::{
     join_remote, BoxRead, BoxWrite, EntryFailure, RemoteEntry, RemoteFs, TreeSnapshot,
 };
@@ -126,7 +126,7 @@ where
         }
         // Dispatch/timeout errors carry the useful part in their source.
         other => match std::error::Error::source(other) {
-            Some(src) => format!("{other}: {src}"),
+            Some(src) => format!("{other}: {src}{}", local_network_hint(other)),
             None => other.to_string(),
         },
     }

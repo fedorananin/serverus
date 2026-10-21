@@ -145,6 +145,56 @@ impl std::fmt::Display for ApiError {
 pub type AppResult<T> = Result<T, AppError>;
 pub type ApiResult<T> = Result<T, ApiError>;
 
+const LOCAL_NETWORK_HINT: &str = ". If this host is on your local network, macOS may be \
+     blocking Serverus: turn it on in System Settings → Privacy & Security → Local Network, \
+     then connect again";
+
+/// macOS 15+ refuses an app's connections to its local network until the
+/// user grants the Local Network privilege, and reports the refusal as a bare
+/// EHOSTUNREACH — the same "No route to host" a powered-off device gives
+/// (Apple TN3179). The first attempt can fail while the permission alert is
+/// still on screen. Returns the guidance to append to a connect error whose
+/// cause chain holds such an error, or "" otherwise.
+pub fn local_network_hint(error: &(dyn std::error::Error + 'static)) -> &'static str {
+    if !cfg!(target_os = "macos") {
+        return "";
+    }
+    let mut current = Some(error);
+    while let Some(error) = current {
+        if io_cause(error).is_some_and(|io| io.kind() == std::io::ErrorKind::HostUnreachable) {
+            return LOCAL_NETWORK_HINT;
+        }
+        current = error.source();
+    }
+    ""
+}
+
+/// The io::Error behind `error`, including the ones russh (a transparent
+/// variant) and suppaftp (no `#[source]`) keep out of the `source()` chain.
+fn io_cause<'a>(error: &'a (dyn std::error::Error + 'static)) -> Option<&'a std::io::Error> {
+    if let Some(io) = error.downcast_ref::<std::io::Error>() {
+        return Some(io);
+    }
+    match error.downcast_ref::<russh::Error>() {
+        Some(russh::Error::IO(io)) => return Some(io),
+        Some(_) => return None,
+        None => {}
+    }
+    match error.downcast_ref::<suppaftp::FtpError>() {
+        Some(suppaftp::FtpError::ConnectionError(io)) => Some(io),
+        _ => None,
+    }
+}
+
+/// `AppError::Connect` for a failed connection to `target`, with
+/// [`local_network_hint`] appended when it applies.
+pub fn connect_error(
+    target: impl std::fmt::Display,
+    error: &(dyn std::error::Error + 'static),
+) -> AppError {
+    AppError::Connect(format!("{target}: {error}{}", local_network_hint(error)))
+}
+
 #[cfg(test)]
 #[path = "error/tests.rs"]
 mod runtime_error_mapping_tests;

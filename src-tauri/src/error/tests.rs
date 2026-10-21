@@ -1,4 +1,4 @@
-use super::{ApiError, AppError};
+use super::{connect_error, local_network_hint, ApiError, AppError};
 use serverus_application::context::ContextCleanupError;
 use serverus_runtime::RuntimeError;
 
@@ -49,4 +49,37 @@ fn cleanup_failure_does_not_expose_its_source_message() {
     assert_eq!(api.code, "runtime_cleanup_failed");
     assert_eq!(api.message, "runtime context cleanup failed");
     assert!(!api.message.contains("private adapter detail"));
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("dispatch failure")]
+struct Wrapper(#[source] std::io::Error);
+
+#[test]
+fn local_network_hint_only_for_host_unreachable_on_macos() {
+    let unreachable = std::io::Error::from(std::io::ErrorKind::HostUnreachable);
+    let refused = std::io::Error::from(std::io::ErrorKind::ConnectionRefused);
+    let expected = cfg!(target_os = "macos");
+    assert_eq!(!local_network_hint(&unreachable).is_empty(), expected);
+    assert_eq!(
+        !local_network_hint(&Wrapper(unreachable)).is_empty(),
+        expected
+    );
+    assert!(local_network_hint(&refused).is_empty());
+    assert!(local_network_hint(&Wrapper(refused)).is_empty());
+}
+
+#[test]
+fn connect_errors_find_the_io_error_russh_and_suppaftp_hide() {
+    let unreachable = || std::io::Error::from(std::io::ErrorKind::HostUnreachable);
+    let ssh = connect_error("pi.local:22", &russh::Error::IO(unreachable())).to_string();
+    let ftp = suppaftp::FtpError::ConnectionError(unreachable());
+    let ftp = connect_error("pi.local:21", &ftp).to_string();
+    for message in [ssh, ftp] {
+        assert!(message.starts_with("connection failed: pi.local:2"));
+        assert_eq!(message.contains("Local Network"), cfg!(target_os = "macos"));
+    }
+    let refused = std::io::Error::from(std::io::ErrorKind::ConnectionRefused);
+    let refused = connect_error("pi.local:22", &russh::Error::IO(refused)).to_string();
+    assert!(!refused.contains("Local Network"));
 }
