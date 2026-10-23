@@ -181,8 +181,14 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
   ("No route to host", os error 65) — Terminal.app is exempt, so `ssh` works
   there. `src-tauri/Info.plist` (merged by Tauri) declares
   `NSLocalNetworkUsageDescription`; `error::local_network_hint` appends the
-  fix to SSH/FTP/S3 connect errors on macOS. Ad-hoc signed builds may need
-  re-approval after updates.
+  fix to SSH/FTP/S3 connect errors on macOS. **Keep
+  `bundle.macOS.signingIdentity: "-"`** in `tauri.conf.json`: without a
+  certificate (CI) the bundle otherwise carries only the linker's ad-hoc
+  signature (identifier `serverus-<hash>`, Info.plist unbound, no sealed
+  resources), macOS then tracks the app under two identities, and LAN
+  connections stay blocked with the switch on (#30). `APPLE_SIGNING_IDENTITY`
+  (local `.env.local`) overrides it. Ad-hoc builds may need re-approval after
+  updates (the designated requirement is the cdhash).
 - `Connection.disable_terminal` = SFTP-only SSH servers (no shell); the UI hides
   the terminal view and the backend never opens a shell channel.
 - **S3 uploads must declare a `Content-Type`.** `aws-sdk-s3` labels every body
@@ -280,7 +286,9 @@ tab's queue, confirmation dialog, per-tab activity journal. v1.6.1:
 xterm.js 6.0 — terminals no longer show a stale screen after a tab switch
 (see the hidden-terminal Gotcha). v1.6.2: macOS Local Network privacy —
 `NSLocalNetworkUsageDescription` in `src-tauri/Info.plist` and a "No route to
-host" hint on connect errors (see Gotchas). v1.5.1: the
+host" hint on connect errors (see Gotchas). v1.6.3: release bundles are
+ad-hoc signed with the bundle identifier (`signingIdentity: "-"`), so the
+Local Network switch actually applies (see Gotchas). v1.5.1: the
 "hide local junk" setting also keeps `.DS_Store`/`Thumbs.db` out of recursive
 uploads and downloads (per-file walks and tar: `tar_stream/archive.rs`
 `pack_tree` / `unpack_confined`); comparison unchanged. Also v1.4.0: settings-dialog polish —

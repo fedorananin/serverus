@@ -4,8 +4,9 @@
 #   macOS (Apple Silicon)  .dmg
 #   Windows x64            .msi + NSIS setup .exe
 #   Linux x64              .AppImage + .deb + .rpm
-# Review the draft, then publish it. Artifacts are unsigned (same as local
-# builds) — macOS Gatekeeper and Windows SmartScreen will warn on first run.
+# Review the draft, then publish it. Artifacts have no Developer ID: the macOS
+# bundle is ad-hoc signed (`signingIdentity: "-"`, needed for Local Network
+# privacy), Windows is unsigned — Gatekeeper and SmartScreen warn on first run.
 name: Release
 
 on:
