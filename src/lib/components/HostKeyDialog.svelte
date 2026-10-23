@@ -1,7 +1,19 @@
 <script lang="ts">
   import { hostKey } from "$lib/stores/hostkey.svelte";
 
+  /** Prompts appear unasked and queue behind each other: a click meant for
+   *  the previous one (or a double click) must not answer a key unseen. */
+  const ARM_DELAY_MS = 500;
+
   const p = $derived(hostKey.pending);
+  let armed = $state(false);
+
+  $effect(() => {
+    if (!p) return;
+    armed = false;
+    const timer = setTimeout(() => (armed = true), ARM_DELAY_MS);
+    return () => clearTimeout(timer);
+  });
 </script>
 
 {#if p}
@@ -33,8 +45,15 @@
       </div>
 
       <div class="actions">
-        <button onclick={() => hostKey.reject()}>Cancel</button>
-        <button class={p.changed ? "danger" : "primary"} onclick={() => void hostKey.accept()}>
+        {#if hostKey.waiting > 1}
+          <span class="more">{hostKey.waiting - 1} more waiting</span>
+        {/if}
+        <button disabled={!armed} onclick={() => hostKey.reject()}>Cancel</button>
+        <button
+          class={p.changed ? "danger" : "primary"}
+          disabled={!armed}
+          onclick={() => void hostKey.accept()}
+        >
           {p.changed ? "Accept new key anyway" : "Trust and connect"}
         </button>
       </div>
@@ -97,7 +116,14 @@
 
   .actions {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
     gap: 8px;
+  }
+
+  .more {
+    margin-right: auto;
+    color: var(--text-2);
+    font-size: 11px;
   }
 </style>

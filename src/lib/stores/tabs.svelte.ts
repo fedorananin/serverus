@@ -103,6 +103,8 @@ class TabsStore {
     const attempt = Symbol(tabId);
     const accessGeneration = vault.accessGeneration;
     this.connectAttempts.set(tabId, attempt);
+    // A prompt from an earlier attempt no longer speaks for this tab.
+    hostKey.withdraw(tabId);
     const isCurrent = () =>
       this.tabs.includes(tab) && this.connectAttempts.get(tabId) === attempt;
     tab.state = "connecting";
@@ -131,6 +133,7 @@ class TabsStore {
           return;
         }
         hostKey.ask(e.host_key, {
+          owner: tabId,
           accepted: () => void this.connect(tabId),
           rejected: () => {
             tab.state = "error";
@@ -149,6 +152,7 @@ class TabsStore {
     if (idx === -1) return;
     const [tab] = this.tabs.splice(idx, 1);
     this.connectAttempts.delete(id);
+    hostKey.withdraw(id);
     if (tab.sessionId) {
       void unwrap(commands.sessionDisconnect(tab.sessionId)).catch(() => {});
     }

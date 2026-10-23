@@ -62,7 +62,9 @@ describe("@ssh-terminal", () => {
       "SSH opened a terminal before the unknown host key was trusted.",
     );
     const ordinaryBorder = await trustDialog.getCSSProperty("border-top-color");
-    await trustDialog.$("button=Trust and connect").click();
+    const trust = await trustDialog.$("button=Trust and connect");
+    await trust.waitForEnabled();
+    await trust.click();
     await waitForConnected();
 
     const terminalScreen = await $("[data-terminal-state='ready'] .xterm-screen");
@@ -111,7 +113,9 @@ describe("@ssh-terminal", () => {
       "Changed-key warning did not use a more severe visible border.",
     );
     await changedDialog.$("button.danger=Accept new key anyway").waitForDisplayed();
-    await changedDialog.$("button=Cancel").click();
+    const cancel = await changedDialog.$("button=Cancel");
+    await cancel.waitForEnabled();
+    await cancel.click();
 
     await $("[data-testid='session-state'][data-state='error']").waitForDisplayed();
     await $("p=Host key rejected").waitForDisplayed();

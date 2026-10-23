@@ -51,7 +51,7 @@ function deferred<T>() {
 
 describe("HostKeyStore runtime context", () => {
   beforeEach(() => {
-    hostKey.pending = null;
+    hostKey.clearForContextRetirement();
     apiMocks.hostKeyAccept.mockClear();
   });
 
@@ -152,5 +152,91 @@ describe("HostKeyStore runtime context", () => {
 
     expect(accepted).not.toHaveBeenCalled();
     expect(rejected).not.toHaveBeenCalled();
+  });
+});
+
+describe("HostKeyStore queue", () => {
+  const other = { ...prompt, host: "other.example.com", key_line: "ssh-ed25519 other" };
+
+  beforeEach(() => {
+    hostKey.clearForContextRetirement();
+    apiMocks.hostKeyAccept.mockClear();
+  });
+
+  it("asks about every host in turn instead of dropping earlier prompts", async () => {
+    const first = { accepted: vi.fn(), rejected: vi.fn() };
+    const second = { accepted: vi.fn(), rejected: vi.fn() };
+    hostKey.ask(prompt, first);
+    hostKey.ask(other, second);
+
+    expect(hostKey.pending?.host).toBe(prompt.host);
+    expect(hostKey.waiting).toBe(2);
+    await hostKey.accept();
+    expect(first.accepted).toHaveBeenCalledOnce();
+
+    expect(hostKey.pending?.host).toBe(other.host);
+    hostKey.reject();
+    expect(second.rejected).toHaveBeenCalledOnce();
+    expect(second.accepted).not.toHaveBeenCalled();
+    expect(hostKey.pending).toBeNull();
+  });
+
+  it("asks once for connections that present the same key", async () => {
+    const first = { accepted: vi.fn(), rejected: vi.fn() };
+    const second = { accepted: vi.fn(), rejected: vi.fn() };
+    hostKey.ask(prompt, first);
+    hostKey.ask({ ...prompt }, second);
+
+    expect(hostKey.waiting).toBe(1);
+    await hostKey.accept();
+
+    expect(apiMocks.hostKeyAccept).toHaveBeenCalledOnce();
+    expect(first.accepted).toHaveBeenCalledOnce();
+    expect(second.accepted).toHaveBeenCalledOnce();
+    expect(hostKey.pending).toBeNull();
+  });
+
+  it("lets a late connection join a key that is still being saved", async () => {
+    const saving = deferred<{ status: "ok"; data: null }>();
+    apiMocks.hostKeyAccept.mockReturnValueOnce(saving.promise);
+    const first = { accepted: vi.fn(), rejected: vi.fn() };
+    const late = { accepted: vi.fn(), rejected: vi.fn() };
+    hostKey.ask(prompt, first);
+
+    const accepting = hostKey.accept();
+    hostKey.ask({ ...prompt }, late);
+    expect(hostKey.pending).toBeNull();
+    saving.resolve({ status: "ok", data: null });
+    await accepting;
+
+    expect(first.accepted).toHaveBeenCalledOnce();
+    expect(late.accepted).toHaveBeenCalledOnce();
+  });
+
+  it("drops a prompt once nobody waits for it", () => {
+    const closed = { owner: "tab-a", accepted: vi.fn(), rejected: vi.fn() };
+    const open = { owner: "tab-b", accepted: vi.fn(), rejected: vi.fn() };
+    hostKey.ask(prompt, closed);
+    hostKey.ask(other, open);
+
+    hostKey.withdraw("tab-a");
+
+    expect(hostKey.pending?.host).toBe(other.host);
+    expect(hostKey.waiting).toBe(1);
+    expect(closed.accepted).not.toHaveBeenCalled();
+    expect(closed.rejected).not.toHaveBeenCalled();
+  });
+
+  it("keeps a shared prompt while another connection still waits for it", async () => {
+    const closed = { owner: "tab-a", accepted: vi.fn(), rejected: vi.fn() };
+    const open = { owner: "tab-b", accepted: vi.fn(), rejected: vi.fn() };
+    hostKey.ask(prompt, closed);
+    hostKey.ask({ ...prompt }, open);
+
+    hostKey.withdraw("tab-a");
+    await hostKey.accept();
+
+    expect(closed.accepted).not.toHaveBeenCalled();
+    expect(open.accepted).toHaveBeenCalledOnce();
   });
 });

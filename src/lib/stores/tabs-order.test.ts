@@ -15,7 +15,7 @@ vi.mock("$lib/api", () => ({
 }));
 
 vi.mock("./hostkey.svelte", () => ({
-  hostKey: { ask: vi.fn() },
+  hostKey: { ask: vi.fn(), withdraw: vi.fn() },
 }));
 
 vi.mock("./vault.svelte", () => ({

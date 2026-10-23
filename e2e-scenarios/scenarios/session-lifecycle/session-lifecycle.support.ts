@@ -129,7 +129,10 @@ export async function openScenarioConnection(): Promise<void> {
 export async function acceptUnknownHost(): Promise<void> {
   const dialog = await $("[role='dialog'][aria-label='Unknown host']");
   await dialog.waitForDisplayed({ timeout: 30_000 });
-  await dialog.$("button=Trust and connect").click();
+  // The dialog arms its buttons a moment after a prompt appears.
+  const trust = await dialog.$("button=Trust and connect");
+  await trust.waitForEnabled();
+  await trust.click();
 }
 
 export async function waitForConnected(): Promise<void> {

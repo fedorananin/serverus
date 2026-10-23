@@ -288,7 +288,12 @@ xterm.js 6.0 — terminals no longer show a stale screen after a tab switch
 `NSLocalNetworkUsageDescription` in `src-tauri/Info.plist` and a "No route to
 host" hint on connect errors (see Gotchas). v1.6.3: release bundles are
 ad-hoc signed with the bundle identifier (`signingIdentity: "-"`), so the
-Local Network switch actually applies (see Gotchas). v1.5.1: the
+Local Network switch actually applies (see Gotchas). v1.6.4: host-key
+prompts queue (`stores/hostkey.svelte.ts`) instead of the newest replacing
+the one on screen, which left the other tabs stuck in "connecting"; tabs
+presenting the same host + key share one prompt, a closing or reconnecting
+tab withdraws its wait, and the dialog arms its buttons 500 ms after each
+prompt appears so a double click can't trust a key nobody saw. v1.5.1: the
 "hide local junk" setting also keeps `.DS_Store`/`Thumbs.db` out of recursive
 uploads and downloads (per-file walks and tar: `tar_stream/archive.rs`
 `pack_tree` / `unpack_confined`); comparison unchanged. Also v1.4.0: settings-dialog polish —
