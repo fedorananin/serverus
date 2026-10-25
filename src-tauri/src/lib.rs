@@ -52,6 +52,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::local_delete,
             commands::local_chmod,
             commands::local_copy_into,
+            commands::local_edit_open,
             commands::drag_preview_icon,
             commands::remote_list,
             commands::remote_home,

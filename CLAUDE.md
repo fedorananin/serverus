@@ -189,6 +189,17 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
   connections stay blocked with the switch on (#30). `APPLE_SIGNING_IDENTITY`
   (local `.env.local`) overrides it. Ad-hoc builds may need re-approval after
   updates (the designated requirement is the cdhash).
+- **The system opener must never run a file.** Remote edit and local edit
+  (`local_edit_open`, double click / Edit… in the local pane) both go
+  through `watcher/editor.rs::open_in_editor`. With "system default app" on,
+  `serverus_domain::open_policy::open_as` decides from the *link target's*
+  name and mode whether `open`/`explorer`/`xdg-open` would execute it (apps,
+  `.command`, `.exe`, WSH scripts, installers, shortcuts; macOS: an
+  extensionless executable; Linux: any executable) — those open as text
+  (`open -t`, `notepad.exe`; Linux has no such opener, so it refuses and
+  points at Settings → Editor). Folders are refused (`open X.app` launches
+  it). The lists were checked against Launch Services; scripts whose default
+  handler is an editor (`.sh`, `.py` on macOS) stay out on purpose.
 - `Connection.disable_terminal` = SFTP-only SSH servers (no shell); the UI hides
   the terminal view and the backend never opens a shell channel.
 - **S3 uploads must declare a `Content-Type`.** `aws-sdk-s3` labels every body
@@ -293,7 +304,10 @@ prompts queue (`stores/hostkey.svelte.ts`) instead of the newest replacing
 the one on screen, which left the other tabs stuck in "connecting"; tabs
 presenting the same host + key share one prompt, a closing or reconnecting
 tab withdraws its wait, and the dialog arms its buttons 500 ms after each
-prompt appears so a double click can't trust a key nobody saw. v1.5.1: the
+prompt appears so a double click can't trust a key nobody saw. v1.7.0:
+local files open in the editor too (double click / Edit… in the local
+pane, edited in place), and nothing the system opener would execute is
+ever run — it opens as text (see Gotchas). v1.5.1: the
 "hide local junk" setting also keeps `.DS_Store`/`Thumbs.db` out of recursive
 uploads and downloads (per-file walks and tar: `tar_stream/archive.rs`
 `pack_tree` / `unpack_confined`); comparison unchanged. Also v1.4.0: settings-dialog polish —

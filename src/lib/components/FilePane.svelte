@@ -19,8 +19,6 @@
     title: string;
     /** Transfer the given entries towards the other pane. */
     ontransfer: (entries: RemoteEntry[]) => void;
-    /** Remote double-click on a file (M5 remote edit). */
-    onopenfile?: (entry: RemoteEntry) => void;
     /** Remote S3 pane: build an object's public URL (SPEC §4.4). */
     publicUrl?: (entry: RemoteEntry) => string | null;
     /** Remote S3 pane: ACL mode for uploads, shown as a header switch. */
@@ -34,7 +32,6 @@
     pane,
     title,
     ontransfer,
-    onopenfile,
     publicUrl,
     uploadMode,
     onuploadmode,
@@ -73,6 +70,15 @@
     }
   }
 
+  /** Double-click or Edit… on a file, in either pane. */
+  async function openFile(entry: RemoteEntry) {
+    try {
+      await pane.edit(entry);
+    } catch (error) {
+      note(errorMessage(error), true);
+    }
+  }
+
   function copyPath(entry: RemoteEntry) {
     void navigator.clipboard.writeText(entry.path);
   }
@@ -95,8 +101,8 @@
       if (single?.is_dir) {
         items.push({ label: "Open", action: () => void pane.open(single) });
       }
-      if (single && !single.is_dir && pane.side === "remote" && onopenfile) {
-        items.push({ label: "Edit…", action: () => onopenfile(single) });
+      if (single && !single.is_dir) {
+        items.push({ label: "Edit…", action: () => void openFile(single) });
       }
       items.push({ separator: true, label: "" });
       if (single) {
@@ -165,7 +171,7 @@
     {title}
     {sizeFormat}
     {ontransfer}
-    {onopenfile}
+    onopenfile={(entry) => void openFile(entry)}
     onmenu={openMenu}
     ondialog={(value) => (dialog = value)}
   />

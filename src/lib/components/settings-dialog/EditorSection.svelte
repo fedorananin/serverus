@@ -12,7 +12,7 @@
   <legend>Editor</legend>
   <label class="checkbox">
     <input type="checkbox" bind:checked={value.use_system_default} />
-    <span>Open remote files with the system default app</span>
+    <span>Open files with the system default app</span>
   </label>
   {#if !value.use_system_default}
     <label>

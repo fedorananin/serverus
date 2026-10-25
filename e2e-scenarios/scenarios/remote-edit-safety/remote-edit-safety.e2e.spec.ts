@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { createFreshVault } from "../../support/app";
@@ -9,6 +9,7 @@ import { fixtures } from "../../support/fixtures";
 
 const SUCCESS_CONTENT = "edited successfully by scenario editor\n";
 const FAILURE_ORIGINAL = "remote failure original\n";
+const LOCAL_EDIT_CONTENT = "edited in place by scenario editor\n";
 
 async function configureFixtureEditor(executable: string): Promise<void> {
   await $("aria/Settings").click();
@@ -16,7 +17,7 @@ async function configureFixtureEditor(executable: string): Promise<void> {
   await dialog.waitForDisplayed();
 
   const useDefault = await dialog.$(
-    "//label[contains(., 'Open remote files with the system default app')]/input[@type='checkbox']",
+    "//label[contains(., 'Open files with the system default app')]/input[@type='checkbox']",
   );
   if (await useDefault.isSelected()) await useDefault.click();
   const application = await dialog.$(
@@ -40,7 +41,7 @@ async function configureFixtureEditor(executable: string): Promise<void> {
   await persisted.waitForDisplayed({ reverse: true });
 }
 
-async function waitForRemoteBytes(path: string, expected: string): Promise<void> {
+async function waitForBytes(path: string, expected: string): Promise<void> {
   await browser.waitUntil(
     async () => {
       try {
@@ -50,7 +51,7 @@ async function waitForRemoteBytes(path: string, expected: string): Promise<void>
         throw error;
       }
     },
-    { timeout: 60_000, timeoutMsg: `Remote bytes at ${path} did not reach the expected state.` },
+    { timeout: 60_000, timeoutMsg: `Bytes at ${path} did not reach the expected state.` },
   );
 }
 
@@ -61,10 +62,12 @@ async function remoteEditLitter(root: string): Promise<string[]> {
 }
 
 describe("@remote-edit-safety", () => {
-  it("publishes a completed edit and rolls back a rejected promotion", async () => {
+  it("publishes a completed edit, rolls back a rejected promotion and edits local files in place", async () => {
     const fixture = fixtures();
     const successPath = join(fixture.paths.ftp_root, "edit-success.txt");
     const failurePath = join(fixture.paths.ftp_root, "edit-failure.txt");
+    const localPath = join(fixture.paths.local_download, "local-edit.txt");
+    await writeFile(localPath, "local original\n");
 
     await createFreshVault("remote-edit-safety");
     await configureFixtureEditor(fixture.editor.executable);
@@ -87,7 +90,7 @@ describe("@remote-edit-safety", () => {
     );
     await successToast.waitForDisplayed({ timeout: 60_000 });
     assert.equal(await successToast.getAttribute("role"), "status");
-    await waitForRemoteBytes(successPath, SUCCESS_CONTENT);
+    await waitForBytes(successPath, SUCCESS_CONTENT);
     assert.deepEqual(await remoteEditLitter(fixture.paths.ftp_root), []);
 
     const failedEdit = await fileOption("remote", "edit-failure.txt");
@@ -98,12 +101,18 @@ describe("@remote-edit-safety", () => {
     );
     await failureToast.waitForDisplayed({ timeout: 60_000 });
     assert.match(await failureToast.getText(), /^Upload of edit-failure\.txt failed:/u);
-    await waitForRemoteBytes(failurePath, FAILURE_ORIGINAL);
+    await waitForBytes(failurePath, FAILURE_ORIGINAL);
     assert.equal(
       await $("//*[@role='status' and normalize-space()='Uploaded edit-failure.txt ✓']").isExisting(),
       false,
       "A failed promotion must never emit a success status.",
     );
     assert.deepEqual(await remoteEditLitter(fixture.paths.ftp_root), []);
+
+    // The local pane edits the file in place: the editor gets its real path.
+    const localEdit = await fileOption("local", "local-edit.txt");
+    await localEdit.waitForDisplayed();
+    await choosePaneAction("local", localEdit, "Edit…");
+    await waitForBytes(localPath, LOCAL_EDIT_CONTENT);
   });
 });

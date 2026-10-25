@@ -67,6 +67,12 @@ export const commands = {
 	 */
 	localCopyInto: (paths: string[], destDir: string) => typedError<null, ApiError>(__TAURI_INVOKE("local_copy_into", { paths, destDir })),
 	/**
+	 *  Open a local file in the configured editor (double click / Edit… in the
+	 *  local pane). Unlike remote edit there is no copy to sync back: the editor
+	 *  works on the file itself.
+	 */
+	localEditOpen: (path: string) => typedError<null, ApiError>(__TAURI_INVOKE("local_edit_open", { path })),
+	/**
 	 *  Write the drag preview icon to a temp file once and return its path.
 	 *  tauri-plugin-drag needs an on-disk image for the OS drag cursor.
 	 */

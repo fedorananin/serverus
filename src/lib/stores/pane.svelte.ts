@@ -97,6 +97,17 @@ export class PaneController {
     return unwrap(commands.remoteList(this.sessionId!, path));
   }
 
+  /** Open a file in the configured editor. Remote files go through the
+   *  edit cache and upload back on every save (SPEC §5.3); local files are
+   *  edited in place. */
+  async edit(entry: RemoteEntry) {
+    await unwrap(
+      this.side === "local"
+        ? commands.localEditOpen(entry.path)
+        : commands.remoteEditOpen(this.sessionId!, entry.path),
+    );
+  }
+
   async init(startDir: string | null) {
     let start = startDir;
     if (!start) {

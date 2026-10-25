@@ -151,7 +151,10 @@ DigitalOcean Spaces, Cloudflare R2, Backblaze B2, Wasabi, MinIO, and more.
 ### ✏️ Remote edit
 Double‑click a remote file → it opens in your editor (system default or a
 specific app); every save auto‑uploads with an unobtrusive "Uploaded ✓". Temp
-copies are cleaned up on tab/app close.
+copies are cleaned up on tab/app close. Local files open the same way, edited
+in place. With the system default app, anything it would *run* rather than
+open — apps, `.command`, `.exe`, `.bat`, installers, shortcuts, extensionless
+executables — opens as plain text instead.
 
 ### 🔒 Auto‑lock
 Locks on an inactivity timeout (default 15 min; 0 = never) and on sleep.

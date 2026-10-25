@@ -104,7 +104,7 @@ describe("SettingsDialog transaction", () => {
       target: { value: "rename" },
     });
     await fireEvent.click(
-      screen.getByLabelText("Open remote files with the system default app"),
+      screen.getByLabelText("Open files with the system default app"),
     );
     await fireEvent.input(screen.getByLabelText("Application"), {
       target: { value: "Visual Studio Code" },

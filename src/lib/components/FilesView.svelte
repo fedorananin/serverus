@@ -194,17 +194,6 @@
     void downloadPaths(entries.map((e) => e.path));
   }
 
-  // Remote edit (SPEC §5.3): double-click downloads to the edit cache and
-  // opens the editor; saves upload back automatically.
-  async function openForEdit(entry: RemoteEntry) {
-    transferError = null;
-    try {
-      await unwrap(commands.remoteEditOpen(sessionId, entry.path));
-    } catch (e) {
-      transferError = errorMessage(e);
-    }
-  }
-
   function handleKeydown(e: KeyboardEvent) {
     if (vault.screen !== "main") return;
     // Hidden tabs stay mounted and hear window keydowns too — only the
@@ -237,7 +226,6 @@
       pane={remote}
       title={connection?.name ?? "Remote"}
       ontransfer={downloadSelection}
-      onopenfile={(entry) => void openForEdit(entry)}
       treeActions={remoteTree}
       publicUrl={isS3 && connection ? (entry) => s3PublicUrl(connection, entry.path) : undefined}
       uploadMode={uploadAcl.mode}

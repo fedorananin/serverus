@@ -54,7 +54,7 @@ export async function configureScenarioEditor(): Promise<void> {
   const dialog = await $("[role='dialog'][aria-label='Settings']");
   await dialog.waitForDisplayed();
   const useDefault = await dialog.$(
-    "//label[contains(., 'Open remote files with the system default app')]/input[@type='checkbox']",
+    "//label[contains(., 'Open files with the system default app')]/input[@type='checkbox']",
   );
   if (await useDefault.isSelected()) await useDefault.click();
   const application = await dialog.$(

@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use admission::OpenAdmissionRegistry;
 pub use cache::cleanup_all;
+pub(crate) use editor::open_in_editor;
 use types::WatchedFile;
 
 use crate::events::RemoteEditUploadedEvent;

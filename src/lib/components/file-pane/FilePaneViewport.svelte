@@ -13,7 +13,7 @@
     title: string;
     sizeFormat: SizeFormat;
     ontransfer: (entries: RemoteEntry[]) => void;
-    onopenfile?: (entry: RemoteEntry) => void;
+    onopenfile: (entry: RemoteEntry) => void;
     onmenu: (event: MouseEvent | KeyboardEvent, entry: RemoteEntry | null) => void;
     ondialog: (dialog: FilePaneDialog) => void;
   }
@@ -42,8 +42,8 @@
   function rowDoubleClick(entry: RemoteEntry) {
     if (entry.is_dir) {
       void pane.open(entry);
-    } else if (pane.side === "remote") {
-      onopenfile?.(entry);
+    } else {
+      onopenfile(entry);
     }
   }
 
