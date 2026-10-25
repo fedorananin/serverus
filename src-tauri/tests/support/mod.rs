@@ -82,58 +82,26 @@ impl TestSshd {
         fs::copy(base.join("client_ed25519.pub"), &authorized).unwrap();
 
         let user = whoami();
-        let port = free_port();
         let config = base.join("sshd_config");
-        fs::write(
-            &config,
-            format!(
-                r#"
-Port {port}
-ListenAddress 127.0.0.1
-HostKey {host_key}
-PidFile none
-UsePAM no
-StrictModes no
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-PubkeyAuthentication yes
-AuthorizedKeysFile {authorized}
-AllowUsers {user}
-Subsystem sftp {sftp}
-AcceptEnv LANG LC_*
-# Interactive-shell tests must not source the host user's dotfiles. Those can
-# perform arbitrary slow or stateful setup and make the SSH transport fixture
-# nondeterministic.
-SetEnv HOME={base} ZDOTDIR={base}
-LogLevel ERROR
-"#,
-                port = port,
-                host_key = host_key.display(),
-                authorized = authorized.display(),
-                user = user,
-                sftp = find_sftp_server(),
-                base = base.display(),
-            ),
-        )
-        .unwrap();
-
-        // Reaped in Drop (kill + wait); the panic path below leaks a child
-        // only if sshd never came up, at which point the test dies anyway.
-        #[allow(clippy::zombie_processes)]
-        let child = Command::new(find_sshd())
-            .arg("-D")
-            .arg("-e")
-            .arg("-f")
-            .arg(&config)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("sshd starts");
-
-        // Wait for the listener to come up.
-        for _ in 0..100 {
-            if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+        // A port picked by `free_port` can be taken again before sshd binds
+        // it (another test's outgoing connection draws from the same
+        // ephemeral range); sshd then exits, and we retry on a fresh port.
+        for _ in 0..5 {
+            let port = free_port();
+            write_config(&config, port, &host_key, &authorized, &user, base);
+            // Reaped in Drop (kill + wait) or below when it exits early.
+            #[allow(clippy::zombie_processes)]
+            let mut child = Command::new(find_sshd())
+                .arg("-D")
+                .arg("-e")
+                .arg("-f")
+                .arg(&config)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("sshd starts");
+            if wait_for_banner(&mut child, port) {
                 return TestSshd {
                     child,
                     port,
@@ -142,9 +110,10 @@ LogLevel ERROR
                     key_path: client_key,
                 };
             }
-            std::thread::sleep(Duration::from_millis(50));
+            let _ = child.kill();
+            let _ = child.wait();
         }
-        panic!("sshd did not start listening on port {port}");
+        panic!("sshd did not start listening");
     }
 
     /// A Hop pointing at this server with key auth.
@@ -169,4 +138,69 @@ fn whoami() -> String {
     std::env::var("USER")
         .or_else(|_| std::env::var("LOGNAME"))
         .expect("USER env var")
+}
+
+/// Wait until sshd on `port` greets with its `SSH-` banner. A bare TCP
+/// connect is not proof: on Linux, connecting to a free port in the
+/// ephemeral range can pick that same port locally and connect to itself,
+/// which "succeeds" with nobody listening. Returns false once sshd exits.
+fn wait_for_banner(child: &mut Child, port: u16) -> bool {
+    use std::io::Read;
+
+    for _ in 0..100 {
+        if !matches!(child.try_wait(), Ok(None)) {
+            return false;
+        }
+        if let Ok(mut stream) = std::net::TcpStream::connect(("127.0.0.1", port)) {
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+            let mut banner = [0u8; 4];
+            if stream.read_exact(&mut banner).is_ok() && &banner == b"SSH-" {
+                return true;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    false
+}
+
+fn write_config(
+    config: &Path,
+    port: u16,
+    host_key: &Path,
+    authorized: &Path,
+    user: &str,
+    base: &Path,
+) {
+    fs::write(
+        config,
+        format!(
+            r#"
+Port {port}
+ListenAddress 127.0.0.1
+HostKey {host_key}
+PidFile none
+UsePAM no
+StrictModes no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AuthorizedKeysFile {authorized}
+AllowUsers {user}
+Subsystem sftp {sftp}
+AcceptEnv LANG LC_*
+# Interactive-shell tests must not source the host user's dotfiles. Those can
+# perform arbitrary slow or stateful setup and make the SSH transport fixture
+# nondeterministic.
+SetEnv HOME={base} ZDOTDIR={base}
+LogLevel ERROR
+"#,
+            port = port,
+            host_key = host_key.display(),
+            authorized = authorized.display(),
+            user = user,
+            sftp = find_sftp_server(),
+            base = base.display(),
+        ),
+    )
+    .unwrap();
 }
