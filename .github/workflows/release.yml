@@ -4,6 +4,7 @@
 #   macOS (Apple Silicon)  .dmg
 #   Windows x64            .msi + NSIS setup .exe
 #   Linux x64              .AppImage + .deb + .rpm
+#   Linux arm64 (aarch64)  .AppImage + .deb + .rpm (native arm runner)
 # Review the draft, then publish it. Artifacts have no Developer ID: the macOS
 # bundle is ad-hoc signed (`signingIdentity: "-"`, needed for Local Network
 # privacy), Windows is unsigned — Gatekeeper and SmartScreen warn on first run.
@@ -28,6 +29,7 @@ jobs:
         os:
           - macos-latest
           - ubuntu-22.04
+          - ubuntu-22.04-arm
           - windows-latest
     runs-on: ${{ matrix.os }}
     steps:
@@ -68,7 +70,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: release-scenario-diagnostics-${{ runner.os }}
+          name: release-scenario-diagnostics-${{ runner.os }}-${{ runner.arch }}
           path: .artifacts/scenarios/
           if-no-files-found: ignore
           include-hidden-files: true
@@ -84,6 +86,8 @@ jobs:
           # Ubuntu 22.04: AppImages link against the runner's glibc, so the
           # oldest supported LTS gives the widest compatibility.
           - os: ubuntu-22.04
+          # Same glibc baseline for arm64, built natively (no cross toolchain).
+          - os: ubuntu-22.04-arm
           - os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:

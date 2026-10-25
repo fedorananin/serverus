@@ -307,7 +307,9 @@ tab withdraws its wait, and the dialog arms its buttons 500 ms after each
 prompt appears so a double click can't trust a key nobody saw. v1.7.0:
 local files open in the editor too (double click / Edit… in the local
 pane, edited in place), and nothing the system opener would execute is
-ever run — it opens as text (see Gotchas). v1.5.1: the
+ever run — it opens as text (see Gotchas); Linux arm64 (aarch64) builds
+and runs the full CI suite on GitHub's native `ubuntu-*-arm` runners and
+ships in releases. v1.5.1: the
 "hide local junk" setting also keeps `.DS_Store`/`Thumbs.db` out of recursive
 uploads and downloads (per-file walks and tar: `tar_stream/archive.rs`
 `pack_tree` / `unpack_confined`); comparison unchanged. Also v1.4.0: settings-dialog polish —
@@ -320,7 +322,7 @@ support — Windows Hello quick unlock (`quick_unlock.rs::windows_hello`,
 KeePassXC scheme: Hello-gated deterministic RSA signature → HKDF → AES-GCM
 wrapped DEK blob in the config dir), cfg-gated unix permissions / openers /
 fonts, ⌘→Ctrl shortcut mapping. **Windows/Linux are experimental:** hosted
-CI builds all three OSes and exercises supported desktop scenarios through
+CI builds all three OSes (Linux on x64 and arm64) and exercises supported desktop scenarios through
 WKWebView, WebKitGTK and WebView2, but this is not representative physical
 Windows/Linux hardware validation.
 Known gaps: no Linux quick unlock; lock-on-sleep detection (monotonic vs wall
@@ -330,7 +332,7 @@ libunftp FTP server and an in-process `s3s` S3 server — no docker needed
 (macOS + Linux; Windows runs `cargo test --workspace --lib`, plus supported
 non-SSH desktop scenarios). Releases are built by
 `.github/workflows/release.yml` on `v*` tags: dmg / msi+nsis /
-AppImage+deb+rpm attached to a draft GitHub Release. Personal use for now;
+AppImage+deb+rpm (Linux x64 and arm64) attached to a draft GitHub Release. Personal use for now;
 the repo is written to open-source quality (MIT, CI in
 `.github/workflows/ci.yml`).
 

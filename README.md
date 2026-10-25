@@ -30,6 +30,7 @@ Grab the artifact for your OS from the releases page (built by CI for every
 | macOS 12+ (Apple Silicon) | `Serverus_x.y.z_aarch64.dmg` |
 | Windows x64 (experimental) | `.msi` or NSIS `-setup.exe` |
 | Linux x64 (experimental) | `.AppImage`, `.deb` or `.rpm` |
+| Linux arm64 / aarch64 (experimental) | `_aarch64.AppImage`, `_arm64.deb` or `.aarch64.rpm` |
 
 **The binaries are not code‑signed or notarized**, so macOS Gatekeeper will
 refuse to open the app on first launch. Unlock it once with:
