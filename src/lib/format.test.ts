@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { joinPath, parentPath } from "./format";
+import { formatMtime, formatMtimeFull, joinPath, parentPath } from "./format";
+
+describe("file pane dates", () => {
+  it("spells out the full timestamp for the tooltip, whatever the year", () => {
+    const unix = new Date(2019, 9, 29, 14, 30, 5).getTime() / 1000;
+    expect(formatMtime(unix)).toBe("29.10.2019");
+    expect(formatMtimeFull(unix)).toBe("29.10.2019 14:30:05");
+    expect(formatMtimeFull(null)).toBe("");
+  });
+});
 
 describe("file pane paths", () => {
   it("navigates to POSIX parent directories", () => {

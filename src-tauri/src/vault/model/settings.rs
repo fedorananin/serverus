@@ -123,6 +123,42 @@ pub const SIDEBAR_WIDTH_MIN: u16 = 200;
 pub const SIDEBAR_WIDTH_MAX: u16 = 380;
 pub const SIDEBAR_WIDTH_DEFAULT: u16 = 230;
 
+/// File-pane column width bounds, in CSS pixels. The floor keeps a header
+/// label grabbable; the ceiling leaves the Name column room in a half-width
+/// pane.
+pub const COLUMN_WIDTH_MIN: u16 = 40;
+pub const COLUMN_WIDTH_MAX: u16 = 320;
+
+/// Widths of the fixed file-pane columns, in CSS pixels; Name takes the rest.
+/// Shared by the local and remote panes of every tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct ColumnWidths {
+    pub size: u16,
+    /// Wide enough for `29.10.2026` and `29.10 14:30` in the platform's
+    /// monospace font (Consolas runs wider than SF Mono).
+    pub date: u16,
+    /// Unix mode (`rwxr-xr-x`), or the S3 access column.
+    pub mode: u16,
+}
+
+impl Default for ColumnWidths {
+    fn default() -> Self {
+        ColumnWidths {
+            size: 74,
+            date: 100,
+            mode: 80,
+        }
+    }
+}
+
+impl ColumnWidths {
+    fn clamp(&mut self) {
+        for width in [&mut self.size, &mut self.date, &mut self.mode] {
+            *width = (*width).clamp(COLUMN_WIDTH_MIN, COLUMN_WIDTH_MAX);
+        }
+    }
+}
+
 fn default_hide_local_junk() -> bool {
     true
 }
@@ -148,6 +184,9 @@ pub struct PanelSettings {
     /// [`SIDEBAR_WIDTH_MIN`]..=[`SIDEBAR_WIDTH_MAX`].
     #[serde(default = "default_sidebar_width")]
     pub sidebar_width: u16,
+    /// Missing in vaults written before columns were resizable.
+    #[serde(default)]
+    pub columns: ColumnWidths,
 }
 
 impl Default for PanelSettings {
@@ -158,6 +197,7 @@ impl Default for PanelSettings {
             size_format: SizeFormat::Kib,
             default_local_dir: None,
             sidebar_width: SIDEBAR_WIDTH_DEFAULT,
+            columns: ColumnWidths::default(),
         }
     }
 }
@@ -180,11 +220,12 @@ pub struct Settings {
 impl Settings {
     /// Force values that would wedge the UI back into range. The frontend
     /// clamps while dragging, but a hand-edited vault must not be able to
-    /// leave the sidebar unusably wide or narrow.
+    /// leave the sidebar or a pane column unusably wide or narrow.
     pub fn clamp(&mut self) {
         self.panels.sidebar_width = self
             .panels
             .sidebar_width
             .clamp(SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX);
+        self.panels.columns.clamp();
     }
 }

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { RemoteEntry, S3AclStatus, SizeFormat } from "$lib/api";
   import type { EntryComparisonStatus } from "$lib/directory-comparison";
-  import { formatMtime, formatPermissions, formatSize } from "$lib/format";
+  import { formatMtime, formatMtimeFull, formatPermissions, formatSize } from "$lib/format";
   import FileComparisonMarker from "../FileComparisonMarker.svelte";
 
   interface Props {
@@ -73,7 +73,9 @@
     {entry.name}{entry.is_symlink ? " →" : ""}
   </span>
   <span class="cell size">{entry.is_dir ? "—" : formatSize(entry.size, sizeFormat)}</span>
-  <span class="cell date">{formatMtime(entry.mtime)}</span>
+  <span class="cell date" title={formatMtimeFull(entry.mtime) || undefined}
+    >{formatMtime(entry.mtime)}</span
+  >
   {#if s3}
     <span class="cell perm" class:acl-public={aclStatus === "public"}>
       {entry.is_dir ? "" : formatAcl(aclStatus)}
@@ -129,19 +131,23 @@
   }
 
   .cell.size {
-    width: 66px;
+    width: var(--col-size);
+    flex-shrink: 0;
+    padding-left: 8px;
     text-align: right;
     color: var(--text-1);
   }
 
   .cell.date {
-    width: 78px;
+    width: var(--col-date);
+    flex-shrink: 0;
     padding-left: 8px;
     color: var(--text-1);
   }
 
   .cell.perm {
-    width: 80px;
+    width: var(--col-mode);
+    flex-shrink: 0;
     padding-left: 8px;
     color: var(--text-2);
   }

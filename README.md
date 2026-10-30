@@ -105,8 +105,9 @@ Plus: password / key / `ssh-agent` auth, **jump‑host chains** of any length
 hard warning on key change, keep‑alive and auto‑reconnect.
 
 ### 🗂️ Dual‑pane file manager
-- Local left, remote right; editable path bars, column sort, hidden‑file
-  toggle, live filter, and virtual scrolling for 10k+ listings.
+- Local left, remote right; editable path bars, column sort, resizable
+  Size/Date/Mode columns (drag the header edge, double‑click to reset),
+  hidden‑file toggle, live filter, and virtual scrolling for 10k+ listings.
 - Native‑feeling selection (`⌘`‑click, `Shift`‑click, `⌘A`, marquee) and
   **drag & drop everywhere** — between panes and in/out of Finder.
 - New folder/file, rename, recursive delete, copy path, and a full **chmod

@@ -12,6 +12,7 @@
   import FilePaneStatus from "./file-pane/FilePaneStatus.svelte";
   import FilePaneToolbar from "./file-pane/FilePaneToolbar.svelte";
   import FilePaneViewport from "./file-pane/FilePaneViewport.svelte";
+  import { FileColumnWidths } from "./file-pane/column-widths.svelte";
   import type { FilePaneDialog, FilePaneMenu, FilePaneNotice } from "./file-pane/types";
 
   interface Props {
@@ -41,6 +42,7 @@
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
   let menu = $state<FilePaneMenu | null>(null);
   let dialog = $state<FilePaneDialog | null>(null);
+  const columns = new FileColumnWidths();
 
   const sizeFormat = $derived(vault.data?.settings.panels.size_format ?? "kib");
   const paneDropActive = $derived(
@@ -150,6 +152,7 @@
   class="pane"
   class:drag-over={paneDropActive}
   data-pane={pane.side}
+  style={columns.style}
   role="region"
   aria-label={title}
   onpointermove={() => {
@@ -162,6 +165,7 @@
   <FilePaneToolbar
     {pane}
     {title}
+    {columns}
     {uploadMode}
     {onuploadmode}
     onactions={(event) => openMenu(event, pane.selectedEntries[0] ?? null)}

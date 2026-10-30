@@ -1,16 +1,18 @@
 <script lang="ts">
   import type { S3UploadAcl } from "$lib/api";
   import type { PaneController, SortKey } from "$lib/stores/pane.svelte";
+  import type { FileColumn, FileColumnWidths } from "./column-widths.svelte";
 
   interface Props {
     pane: PaneController;
     title: string;
+    columns: FileColumnWidths;
     uploadMode?: S3UploadAcl | null;
     onuploadmode?: (mode: S3UploadAcl) => void;
     onactions: (event: MouseEvent) => void;
   }
 
-  let { pane, title, uploadMode, onuploadmode, onactions }: Props = $props();
+  let { pane, title, columns, uploadMode, onuploadmode, onactions }: Props = $props();
   let pathInput = $state("");
   let editingPath = $state(false);
 
@@ -89,10 +91,24 @@
   <input type="text" class="filter" placeholder="Filter" bind:value={pane.filter} />
 </div>
 
+{#snippet resizer(column: FileColumn, label: string)}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <span
+    class="col-resize"
+    title="Drag to resize · double-click to reset"
+    aria-label="Resize {label} column"
+    onpointerdown={(event) => columns.startResize(column, event)}
+    ondblclick={() => columns.reset(column)}
+  ></span>
+{/snippet}
+
 <div class="cols">
   <button class="col name" onclick={() => pane.sortBy("name")}>Name{sortIndicator("name")}</button>
+  {@render resizer("size", "Size")}
   <button class="col size" onclick={() => pane.sortBy("size")}>Size{sortIndicator("size")}</button>
+  {@render resizer("date", "Date")}
   <button class="col date" onclick={() => pane.sortBy("mtime")}>Date{sortIndicator("mtime")}</button>
+  {@render resizer("mode", pane.s3 ? "Access" : "Mode")}
   <button class="col perm" onclick={() => pane.sortBy("permissions")}>
     {pane.s3 ? "Access" : "Mode"}{sortIndicator("permissions")}
   </button>
@@ -188,17 +204,55 @@
 
   .col.name {
     flex: 1;
+    min-width: 0;
   }
 
   .col.size {
-    width: 66px;
+    width: var(--col-size);
+    padding-right: 0;
+    text-align: right;
   }
 
   .col.date {
-    width: 78px;
+    width: var(--col-date);
+    padding-left: 8px;
   }
 
   .col.perm {
-    width: 80px;
+    width: var(--col-mode);
+    padding-left: 8px;
+  }
+
+  .col.size,
+  .col.date,
+  .col.perm {
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Zero-width in the flow, so header and row columns stay aligned; the
+     grab area straddles the boundary. */
+  .col-resize {
+    position: relative;
+    flex: 0 0 0;
+    align-self: stretch;
+  }
+
+  .col-resize::before {
+    content: "";
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    left: -4px;
+    width: 8px;
+    cursor: col-resize;
+    background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat;
+    z-index: 1;
+  }
+
+  .col-resize:hover::before {
+    background-image: linear-gradient(var(--accent), var(--accent));
   }
 </style>

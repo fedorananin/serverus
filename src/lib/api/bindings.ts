@@ -372,6 +372,21 @@ export type BadgeKind = "emoji" | "color";
 /**  Which entries below the selected directories a recursive chmod touches. */
 export type ChmodScope = "files" | "dirs" | "both";
 
+/**
+ *  Widths of the fixed file-pane columns, in CSS pixels; Name takes the rest.
+ *  Shared by the local and remote panes of every tab.
+ */
+export type ColumnWidths = {
+	size: number,
+	/**
+	 *  Wide enough for `29.10.2026` and `29.10 14:30` in the platform's
+	 *  monospace font (Consolas runs wider than SF Mono).
+	 */
+	date: number,
+	/**  Unix mode (`rwxr-xr-x`), or the S3 access column. */
+	mode: number,
+};
+
 export type ConflictAction = "overwrite" | "skip" | "rename";
 
 export type ConflictPolicy = "ask" | "overwrite" | "skip" | "rename";
@@ -476,6 +491,8 @@ export type PanelSettings = {
 	 *  [`SIDEBAR_WIDTH_MIN`]..=[`SIDEBAR_WIDTH_MAX`].
 	 */
 	sidebar_width?: number,
+	/**  Missing in vaults written before columns were resizable. */
+	columns?: ColumnWidths,
 };
 
 export type Protocol = 

@@ -8,6 +8,7 @@ fn sidebar_width_defaults_when_absent() {
     )
     .unwrap();
     assert_eq!(panels.sidebar_width, SIDEBAR_WIDTH_DEFAULT);
+    assert_eq!(panels.columns, ColumnWidths::default());
 }
 
 #[test]
@@ -61,6 +62,25 @@ fn clamp_forces_sidebar_width_into_range() {
     settings.panels.sidebar_width = 300;
     settings.clamp();
     assert_eq!(settings.panels.sidebar_width, 300);
+}
+
+#[test]
+fn clamp_forces_column_widths_into_range() {
+    let mut settings = Settings::default();
+    settings.panels.columns = ColumnWidths {
+        size: 0,
+        date: 120,
+        mode: u16::MAX,
+    };
+    settings.clamp();
+    assert_eq!(
+        settings.panels.columns,
+        ColumnWidths {
+            size: COLUMN_WIDTH_MIN,
+            date: 120,
+            mode: COLUMN_WIDTH_MAX,
+        }
+    );
 }
 
 #[test]

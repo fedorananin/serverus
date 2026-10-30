@@ -28,6 +28,17 @@ export function formatMtime(mtimeUnix: number | null | undefined): string {
     : `${day}.${date.getFullYear()}`;
 }
 
+/** Full timestamp for the date cell's tooltip: `29.10.2026 14:30:05`. */
+export function formatMtimeFull(mtimeUnix: number | null | undefined): string {
+  if (!mtimeUnix) return "";
+  const date = new Date(mtimeUnix * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  );
+}
+
 /** `0o755` → `rwxr-xr-x`. */
 export function formatPermissions(mode: number | null | undefined): string {
   if (mode == null) return "";
