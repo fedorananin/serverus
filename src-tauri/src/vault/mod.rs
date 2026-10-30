@@ -5,11 +5,11 @@
 pub mod format;
 pub mod import;
 pub mod model;
+mod persist;
 pub mod quick_unlock;
 pub mod tree;
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use zeroize::Zeroizing;
@@ -17,6 +17,7 @@ use zeroize::Zeroizing;
 use crate::error::{AppError, AppResult};
 use format::{KdfParams, VaultHeader};
 use model::VaultPayload;
+use persist::{write_atomic, write_password_change_atomic};
 
 pub struct VaultManager {
     path: PathBuf,
@@ -108,13 +109,25 @@ impl VaultManager {
         self.dek.is_some() && self.payload.is_some()
     }
 
+    /// The vault opens without a master password. Works locked too (reads
+    /// the header from disk), so the lock screen can skip the prompt.
+    pub fn is_passwordless(&self) -> bool {
+        match &self.header {
+            Some(header) => format::is_passwordless(header),
+            None => self
+                .load_file()
+                .is_ok_and(|(header, _, _)| format::is_passwordless(&header)),
+        }
+    }
+
     /// Create a brand-new vault file with a fresh DEK. Fails if one exists.
+    /// An empty password creates a vault without a master password.
     pub fn create(&mut self, password: &str, kdf: KdfParams) -> AppResult<()> {
         if self.exists() {
             return Err(AppError::VaultExists);
         }
         let dek = Zeroizing::new(format::random_bytes::<32>());
-        let header = format::wrap_new(password, &dek, kdf)?;
+        let header = format::wrap_new(password, &dek, kdf_for(password, kdf))?;
         let payload = VaultPayload::default();
 
         self.header = Some(header);
@@ -192,18 +205,28 @@ impl VaultManager {
     }
 
     /// Change the master password: re-wrap the DEK, leave data untouched
-    /// (SPEC §2.2). Verifies the current password first.
-    pub fn change_password(&mut self, current: &str, new: &str) -> AppResult<()> {
+    /// (SPEC §2.2). Verifies the current password first; an empty `current`
+    /// is right for a vault without one. An empty `new` removes the master
+    /// password, and `kdf` applies to a non-empty one.
+    ///
+    /// Setting a password on a vault that had none also replaces the DEK:
+    /// anyone who copied the file meanwhile holds the old one, and must not
+    /// be able to read the versions written from now on.
+    pub fn change_password(&mut self, current: &str, new: &str, kdf: KdfParams) -> AppResult<()> {
         let header = self.header.as_ref().ok_or(AppError::VaultLocked)?;
         format::unwrap_dek(header, current)?;
-        let dek = self.dek.as_ref().ok_or(AppError::VaultLocked)?;
         let payload = self.payload.as_ref().ok_or(AppError::VaultLocked)?;
-        let kdf = header.kdf;
-        let next_header = format::wrap_new(new, dek, kdf)?;
-        let bytes = seal_payload(&next_header, dek, payload)?;
+        let dek = if format::is_passwordless(header) && !new.is_empty() {
+            Zeroizing::new(format::random_bytes::<32>())
+        } else {
+            self.dek.clone().ok_or(AppError::VaultLocked)?
+        };
+        let next_header = format::wrap_new(new, &dek, kdf_for(new, kdf))?;
+        let bytes = seal_payload(&next_header, &dek, payload)?;
 
         write_password_change_atomic(&self.path, &bytes)?;
         self.header = Some(next_header);
+        self.dek = Some(dek);
         Ok(())
     }
 
@@ -224,6 +247,19 @@ impl VaultManager {
     }
 }
 
+/// KDF params for wrapping the DEK under `password`: the empty password
+/// always gets [`format::PASSWORDLESS_KDF`], which marks the vault as one
+/// without a master password, and a real password never does.
+fn kdf_for(password: &str, kdf: KdfParams) -> KdfParams {
+    if password.is_empty() {
+        format::PASSWORDLESS_KDF
+    } else if kdf == format::PASSWORDLESS_KDF {
+        KdfParams::default()
+    } else {
+        kdf
+    }
+}
+
 fn seal_payload(
     header: &VaultHeader,
     dek: &[u8; 32],
@@ -236,53 +272,7 @@ fn seal_payload(
     format::seal(header, dek, &json)
 }
 
-fn bak_path(path: &Path) -> PathBuf {
-    let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(".bak");
-    path.with_file_name(name)
-}
-
-fn write_atomic(path: &Path, bytes: &[u8]) -> AppResult<()> {
-    // One overwritable .bak of the previous version.
-    if path.exists() {
-        let previous = fs::read(path)?;
-        replace_atomic(&bak_path(path), &previous)?;
-    }
-
-    replace_atomic(path, bytes)
-}
-
-/// Rekey both recoverable copies without ever leaving a partially-written
-/// vault. If interrupted between the two renames, the primary still opens
-/// with the old password and the backup already opens with the new one.
-fn write_password_change_atomic(path: &Path, bytes: &[u8]) -> AppResult<()> {
-    replace_atomic(&bak_path(path), bytes)?;
-    replace_atomic(path, bytes)
-}
-
-fn replace_atomic(path: &Path, bytes: &[u8]) -> AppResult<()> {
-    let dir = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
-    fs::create_dir_all(&dir)?;
-
-    let mut tmp_name = path.file_name().unwrap_or_default().to_os_string();
-    tmp_name.push(".tmp");
-    let tmp = path.with_file_name(tmp_name);
-    {
-        let mut f = fs::File::create(&tmp)?;
-        f.write_all(bytes)?;
-        f.sync_all()?;
-    }
-    fs::rename(&tmp, path)?;
-    // Persist the rename itself.
-    if let Ok(d) = fs::File::open(&dir) {
-        let _ = d.sync_all();
-    }
-    Ok(())
-}
-
+#[cfg(test)]
+mod passwordless_tests;
 #[cfg(test)]
 mod tests;

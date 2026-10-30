@@ -41,10 +41,16 @@ class VaultStore {
       this.invalidateAccess();
       void this.refreshInfo();
     });
-    // Auto-offer Touch ID on start (SPEC §5.1).
-    if (this.info.exists && this.info.quick_unlock_ready) {
-      await this.unlockQuick();
-    }
+    await this.unlockWithoutPrompt();
+  }
+
+  /** Open the vault without the unlock form when nothing needs typing: a
+   *  vault without a master password opens straight away, otherwise Touch
+   *  ID is offered (SPEC §5.1). */
+  private async unlockWithoutPrompt() {
+    if (!this.info?.exists || this.data) return;
+    if (this.info.passwordless) await this.unlockPassword("");
+    else if (this.info.quick_unlock_ready) await this.unlockQuick();
   }
 
   async refreshInfo(epoch = this.accessEpoch) {
@@ -76,6 +82,7 @@ class VaultStore {
     }
   }
 
+  /** An empty password creates a vault without a master password. */
   create(password: string) {
     return this.run(() => unwrap(commands.vaultCreate(password)));
   }
@@ -143,6 +150,9 @@ class VaultStore {
     } finally {
       this.busy = false;
     }
+    // Only a vault without a master password opens on its own here: Touch
+    // ID stays a click away, as the user just chose this vault by hand.
+    if (this.info?.exists && this.info.passwordless) await this.unlockPassword("");
   }
 
   /** The vault changed outside the UI (the AI agent added a connection).

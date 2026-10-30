@@ -9,6 +9,7 @@ const vaultMock = vi.hoisted(() => ({
   info: {
     exists: true,
     quick_unlock_ready: false,
+    passwordless: false,
     path: "/current.serverus",
     scenario_build: true,
   },
@@ -54,5 +55,35 @@ describe("UnlockScreen vault path", () => {
     // The native pickers remain the user-facing way to re-point the app.
     expect(screen.getByRole("button", { name: "Open another vault…" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "New vault…" })).toBeTruthy();
+  });
+});
+
+describe("UnlockScreen without a master password", () => {
+  beforeEach(() => {
+    vaultMock.create.mockClear();
+    vaultMock.unlockPassword.mockClear();
+    vaultMock.info.exists = true;
+    vaultMock.info.passwordless = false;
+  });
+
+  it("lets a new vault skip the master password", async () => {
+    vaultMock.info.exists = false;
+    render(UnlockScreen);
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Continue without a master password" }),
+    );
+
+    expect(vaultMock.create).toHaveBeenCalledWith("");
+  });
+
+  it("opens a passwordless vault with one click and no password field", async () => {
+    vaultMock.info.passwordless = true;
+    render(UnlockScreen);
+
+    expect(screen.queryByLabelText("Master password")).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Open vault" }));
+
+    expect(vaultMock.unlockPassword).toHaveBeenCalledWith("");
   });
 });

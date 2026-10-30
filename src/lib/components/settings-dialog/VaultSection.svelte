@@ -1,18 +1,14 @@
 <script lang="ts">
+  import MasterPasswordBlock from "./MasterPasswordBlock.svelte";
+
   interface Props {
     path?: string;
     newVaultPath: string;
     moveStatus: string | null;
-    currentPassword: string;
-    newPassword: string;
-    confirmPassword: string;
-    canChangePassword: boolean;
-    passwordStatus: string | null;
     exportStatus: string | null;
     importStatus: string | null;
     onpickpath: () => void;
     onmove: () => void;
-    onchangepassword: () => void;
     onexport: () => void;
     onimport: () => void;
   }
@@ -21,16 +17,10 @@
     path,
     newVaultPath = $bindable(),
     moveStatus,
-    currentPassword = $bindable(),
-    newPassword = $bindable(),
-    confirmPassword = $bindable(),
-    canChangePassword,
-    passwordStatus,
     exportStatus,
     importStatus,
     onpickpath,
     onmove,
-    onchangepassword,
     onexport,
     onimport,
   }: Props = $props();
@@ -54,19 +44,7 @@
       {moveStatus}
     </div>
   {/if}
-  <div class="pw-change">
-    <input type="password" placeholder="Current password" bind:value={currentPassword} />
-    <input type="password" placeholder="New password" bind:value={newPassword} />
-    <input type="password" placeholder="Repeat new" bind:value={confirmPassword} />
-    <button type="button" disabled={!canChangePassword} onclick={onchangepassword}>
-      Change master password
-    </button>
-  </div>
-  {#if passwordStatus}
-    <div class:error={!passwordStatus.endsWith("✓")} class:ok={passwordStatus.endsWith("✓")}>
-      {passwordStatus}
-    </div>
-  {/if}
+  <MasterPasswordBlock />
   <hr class="divider" />
   <div class="export">
     <button type="button" onclick={onexport}>Export config (no secrets)…</button>

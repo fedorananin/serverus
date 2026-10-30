@@ -60,15 +60,7 @@
     if (!committed) setThemePreference(savedTheme);
   });
 
-  // Change master password block.
-  let currentPassword = $state("");
-  let newPassword = $state("");
-  let confirmPassword = $state("");
-  let passwordStatus = $state<string | null>(null);
   let exportStatus = $state<string | null>(null);
-  const canChangePassword = $derived(
-    currentPassword !== "" && newPassword !== "" && newPassword === confirmPassword,
-  );
 
   let newVaultPath = $state("");
   let moveStatus = $state<string | null>(null);
@@ -166,17 +158,6 @@
     onclose();
   }
 
-  async function changePassword() {
-    passwordStatus = null;
-    try {
-      await unwrap(commands.vaultChangePassword(currentPassword, newPassword));
-      passwordStatus = "Master password changed ✓";
-      currentPassword = newPassword = confirmPassword = "";
-    } catch (e) {
-      passwordStatus = errorMessage(e);
-    }
-  }
-
   const knownHosts = $derived(Object.entries(vault.data?.known_hosts ?? {}));
 
   let appVersion = $state("");
@@ -199,6 +180,7 @@
       bind:value={settings.security}
       biometryAvailable={vault.info?.biometry_available ?? false}
       quickUnlockMethod={vault.info?.quick_unlock_method ?? "biometrics"}
+      passwordless={vault.info?.passwordless ?? false}
     />
     <TransfersSection bind:value={settings.transfers} />
     <EditorSection bind:value={settings.editor} />
@@ -209,16 +191,10 @@
       path={vault.info?.path}
       bind:newVaultPath
       {moveStatus}
-      bind:currentPassword
-      bind:newPassword
-      bind:confirmPassword
-      {canChangePassword}
-      {passwordStatus}
       {exportStatus}
       {importStatus}
       onpickpath={() => void pickVaultPath()}
       onmove={() => void moveVault()}
-      onchangepassword={() => void changePassword()}
       onexport={() => void exportConfig()}
       onimport={() => void importConfig()}
     />

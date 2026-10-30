@@ -1,46 +1,19 @@
 <script lang="ts">
-  import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
+  import VaultFileActions from "$lib/components/VaultFileActions.svelte";
   import { vault } from "$lib/stores/vault.svelte";
 
   let password = $state("");
   let confirm = $state("");
-  let vaultPath = $state("");
   let passwordInput: HTMLInputElement | undefined = $state();
-
-  /** Escape hatches for the lock screen: forgot the password, or the vault
-   *  lives elsewhere — no unlock required to re-point the app. */
-  async function openOtherVault() {
-    const picked = await openFileDialog({
-      multiple: false,
-      directory: false,
-      title: "Open vault",
-      filters: [{ name: "Serverus vault", extensions: ["serverus"] }],
-    });
-    if (typeof picked === "string") await vault.switchVault(picked);
-  }
-
-  async function createNewVault() {
-    const picked = await saveFileDialog({
-      title: "Create new vault",
-      defaultPath: "main.serverus",
-      filters: [{ name: "Serverus vault", extensions: ["serverus"] }],
-    });
-    if (typeof picked === "string") await vault.switchVault(picked);
-  }
-
-  async function useVaultPath(event: SubmitEvent) {
-    event.preventDefault();
-    const path = vaultPath.trim();
-    if (!path || vault.busy) return;
-    await vault.switchVault(path);
-    vaultPath = "";
-  }
 
   function focusOnMount(node: HTMLInputElement) {
     node.focus();
   }
 
   const creating = $derived(vault.info !== null && !vault.info.exists);
+  // Normally opened before this screen shows; it stays up only when that
+  // failed (the error is shown) or the vault was locked by hand.
+  const passwordless = $derived(!creating && vault.info?.passwordless === true);
   const mismatch = $derived(creating && confirm.length > 0 && password !== confirm);
   const canSubmit = $derived(
     password.length > 0 && !vault.busy && (!creating || password === confirm),
@@ -48,6 +21,10 @@
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
+    if (passwordless) {
+      if (!vault.busy) await vault.unlockPassword("");
+      return;
+    }
     if (!canSubmit) return;
     const ok = creating
       ? await vault.create(password)
@@ -73,81 +50,81 @@
       </p>
     {/if}
 
-    <form onsubmit={submit}>
-      <input
-        type="password"
-        aria-label="Master password"
-        placeholder="Master password"
-        bind:value={password}
-        bind:this={passwordInput}
-        disabled={vault.busy}
-        use:focusOnMount
-      />
-      {#if creating}
-        <input
-          type="password"
-          aria-label="Repeat master password"
-          placeholder="Repeat master password"
-          bind:value={confirm}
-          disabled={vault.busy}
-        />
-        {#if mismatch}
-          <div class="error" role="alert">Passwords do not match</div>
+    {#if passwordless}
+      <form onsubmit={submit}>
+        <p class="hint">This vault has no master password.</p>
+        {#if vault.error}
+          <div class="error" role="alert">{vault.error}</div>
         {/if}
-      {/if}
-
-      {#if vault.error}
-        <div class="error" role="alert">{vault.error}</div>
-      {/if}
-
-      <button class="primary" type="submit" disabled={!canSubmit}>
-        {#if vault.busy}
-          {creating ? "Creating…" : "Unlocking…"}
-        {:else}
-          {creating ? "Create vault" : "Unlock"}
-        {/if}
-      </button>
-
-      {#if !creating && vault.info?.quick_unlock_ready}
-        <button
-          type="button"
-          class="touch-id"
-          onclick={() => vault.unlockQuick()}
-          disabled={vault.busy}
-        >
-          Use {vault.info?.quick_unlock_method ?? "biometrics"}
-        </button>
-      {/if}
-    </form>
-
-    <div class="path mono" title={vault.info?.path}>{vault.info?.path}</div>
-    {#if vault.info?.scenario_build}
-      <!-- e2e-only escape hatch: WebDriver cannot drive the native pickers
-           behind "Open another vault… / New vault…", so scenario builds keep
-           a typed path field. Hidden in real builds — the pickers cover it. -->
-      <form class="vault-path-form" onsubmit={useVaultPath}>
-        <input
-          class="vault-path-input mono"
-          type="text"
-          aria-label="Vault path"
-          placeholder="/path/to/main.serverus"
-          bind:value={vaultPath}
-          disabled={vault.busy}
-        />
-        <button type="submit" class="subtle path-submit" disabled={vault.busy || !vaultPath.trim()}>
-          Use path
+        <button class="primary" type="submit" disabled={vault.busy}>
+          {vault.busy ? "Opening…" : "Open vault"}
         </button>
       </form>
+    {:else}
+      <form onsubmit={submit}>
+        <input
+          type="password"
+          aria-label="Master password"
+          placeholder="Master password"
+          bind:value={password}
+          bind:this={passwordInput}
+          disabled={vault.busy}
+          use:focusOnMount
+        />
+        {#if creating}
+          <input
+            type="password"
+            aria-label="Repeat master password"
+            placeholder="Repeat master password"
+            bind:value={confirm}
+            disabled={vault.busy}
+          />
+          {#if mismatch}
+            <div class="error" role="alert">Passwords do not match</div>
+          {/if}
+        {/if}
+
+        {#if vault.error}
+          <div class="error" role="alert">{vault.error}</div>
+        {/if}
+
+        <button class="primary" type="submit" disabled={!canSubmit}>
+          {#if vault.busy}
+            {creating ? "Creating…" : "Unlocking…"}
+          {:else}
+            {creating ? "Create vault" : "Unlock"}
+          {/if}
+        </button>
+
+        {#if !creating && vault.info?.quick_unlock_ready}
+          <button
+            type="button"
+            class="touch-id"
+            onclick={() => vault.unlockQuick()}
+            disabled={vault.busy}
+          >
+            Use {vault.info?.quick_unlock_method ?? "biometrics"}
+          </button>
+        {/if}
+
+        {#if creating}
+          <button
+            type="button"
+            class="subtle no-password"
+            disabled={vault.busy}
+            onclick={() => void vault.create("")}
+          >
+            Continue without a master password
+          </button>
+          <p class="hint small">
+            The vault opens without asking, and anyone who can read its file can read your saved
+            passwords and keys. You can set a password later in Settings → Vault.
+          </p>
+        {/if}
+      </form>
     {/if}
-    <div class="vault-actions">
-      <button type="button" class="subtle" disabled={vault.busy} onclick={() => void openOtherVault()}>
-        Open another vault…
-      </button>
-      <span class="sep">·</span>
-      <button type="button" class="subtle" disabled={vault.busy} onclick={() => void createNewVault()}>
-        New vault…
-      </button>
-    </div>
+
+    <VaultFileActions />
   </div>
 </div>
 
@@ -220,48 +197,19 @@
     font-size: 12px;
   }
 
+  .hint.small {
+    font-size: 10.5px;
+    color: var(--text-2);
+  }
+
+  .no-password {
+    align-self: center;
+  }
+
   .touch-id {
     background: transparent;
     border-color: transparent;
     color: var(--accent);
-  }
-
-  .path {
-    margin-top: 16px;
-    color: var(--text-2);
-    font-size: 10px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .vault-path-form {
-    display: flex;
-    flex-direction: row;
-    gap: 6px;
-  }
-
-  .vault-path-input {
-    min-width: 0;
-    flex: 1;
-    text-align: left;
-    font-size: 10px;
-  }
-
-  .path-submit {
-    flex: 0 0 auto;
-  }
-
-  .vault-actions {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .vault-actions .sep {
-    color: var(--text-2);
-    font-size: 10px;
   }
 
   .subtle {

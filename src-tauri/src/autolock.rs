@@ -9,6 +9,8 @@
 //! ([`ActivityTracker::hold`]): neither the idle timeout nor sleep locks it.
 //! Only an explicit lock does — and switching agent access off in Settings
 //! voids every hold at once.
+//!
+//! A vault without a master password never auto-locks.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -114,16 +116,18 @@ pub fn spawn(app: tauri::AppHandle) {
             tokio::time::sleep(poll_interval()).await;
             let state = app.state::<AppState>();
 
-            let (unlocked, timeout_min, lock_on_sleep, agent_enabled) = {
+            // A vault without a master password is never locked on its own:
+            // the lock screen would only open it again.
+            let (lockable, timeout_min, lock_on_sleep, agent_enabled) = {
                 let mgr = state.vault.lock().unwrap();
                 match mgr.payload() {
-                    Ok(p) => (
+                    Ok(p) if !mgr.is_passwordless() => (
                         true,
                         p.settings.security.auto_lock_minutes,
                         p.settings.security.lock_on_sleep,
                         p.settings.agent.enabled,
                     ),
-                    Err(_) => (false, 0, false, false),
+                    _ => (false, 0, false, false),
                 }
             };
 
@@ -136,7 +140,7 @@ pub fn spawn(app: tauri::AppHandle) {
             prev_wall = SystemTime::now();
             prev_mono = Instant::now();
 
-            if !unlocked {
+            if !lockable {
                 continue;
             }
 

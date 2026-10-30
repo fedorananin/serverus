@@ -200,6 +200,17 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
   points at Settings → Editor). Folders are refused (`open X.app` launches
   it). The lists were checked against Launch Services; scripts whose default
   handler is an editor (`.sh`, `.py` on macOS) stay out on purpose.
+- **A vault may have no master password** (#34) — the user's call, not
+  ours. It is the same file with the DEK wrapped under the empty password
+  and `format::PASSWORDLESS_KDF` (minimal Argon2 params, which also mark it:
+  real passwords never get them, see `vault::kdf_for`), so the payload is
+  still sealed and every write path is shared; it just isn't confidential
+  from anyone who can read the file. `VaultInfo.passwordless` drives the UI:
+  the store opens such a vault at start and after a switch, the lock button
+  and the lock/Touch ID settings go away, and auto-lock skips it. Quick
+  unlock is cleared while passwordless. Setting a password on such a vault
+  replaces the DEK (a copy taken meanwhile must not read later versions);
+  removing one keeps it.
 - `Connection.disable_terminal` = SFTP-only SSH servers (no shell); the UI hides
   the terminal view and the backend never opens a shell channel.
 - **S3 uploads must declare a `Content-Type`.** `aws-sdk-s3` labels every body

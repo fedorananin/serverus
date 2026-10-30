@@ -110,6 +110,11 @@
   gap: 8px;
 }
 
+.settings-dialog-form .hint {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
 .settings-dialog-form .export .hint {
   font-size: 10px;
   color: var(--text-2);

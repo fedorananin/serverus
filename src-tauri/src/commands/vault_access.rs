@@ -1,6 +1,22 @@
 //! Vault lifecycle and quick-unlock commands.
 
 use super::prelude::*;
+use crate::vault::quick_unlock::QuickUnlock;
+use crate::vault::VaultManager;
+
+/// Keep the quick-unlock copy of the DEK in step with the vault: stored
+/// behind biometrics while enabled — which also heals a keychain entry
+/// invalidated by a fingerprint-set change (SPEC §2.3) — and gone while the
+/// vault has no master password, since there is nothing to unlock then.
+/// Best-effort: quick unlock failing must never block vault use.
+fn sync_quick_unlock(mgr: &VaultManager, quick: &dyn QuickUnlock) -> AppResult<()> {
+    if mgr.is_passwordless() {
+        quick.clear(&mgr.vault_id());
+    } else if mgr.payload()?.settings.security.touch_id && quick.is_available() {
+        let _ = quick.store_dek(&mgr.vault_id(), mgr.dek()?);
+    }
+    Ok(())
+}
 
 #[tauri::command]
 #[specta::specta]
@@ -10,13 +26,15 @@ pub async fn vault_get_info(state: State<'_, AppState>) -> ApiResult<VaultInfo> 
     blocking(move || {
         let mgr = vault.lock().unwrap();
         let biometry = quick.is_available();
+        let passwordless = mgr.exists() && mgr.is_passwordless();
         Ok(VaultInfo {
             path: mgr.path().to_string_lossy().into_owned(),
             exists: mgr.exists(),
             unlocked: mgr.is_unlocked(),
             biometry_available: biometry,
-            quick_unlock_ready: biometry && quick.has_dek(&mgr.vault_id()),
+            quick_unlock_ready: biometry && !passwordless && quick.has_dek(&mgr.vault_id()),
             quick_unlock_method: quick.method_name().to_string(),
+            passwordless,
             scenario_build: cfg!(feature = "scenario-tests"),
         })
     })
@@ -35,11 +53,9 @@ pub async fn vault_create(state: State<'_, AppState>, password: String) -> ApiRe
         let _lifecycle = application.lock_lifecycle().await;
         let (public, vault_id) = blocking(move || {
             let mut mgr = vault.lock().unwrap();
+            // An empty password creates a vault without a master password.
             mgr.create(&password, KdfParams::default())?;
-            if mgr.payload()?.settings.security.touch_id && quick.is_available() {
-                // Best-effort: quick unlock failing must never block vault use.
-                let _ = quick.store_dek(&mgr.vault_id(), mgr.dek()?);
-            }
+            sync_quick_unlock(&mgr, quick.as_ref())?;
             let public = mgr.payload()?.to_public();
             activity.touch();
             Ok((public, mgr.vault_id()))
@@ -67,11 +83,7 @@ pub async fn vault_unlock_password(
         let (public, vault_id) = blocking(move || {
             let mut mgr = vault.lock().unwrap();
             mgr.unlock_with_password(&password)?;
-            // Re-arm quick unlock: also heals a keychain entry invalidated by a
-            // fingerprint-set change (SPEC §2.3).
-            if mgr.payload()?.settings.security.touch_id && quick.is_available() {
-                let _ = quick.store_dek(&mgr.vault_id(), mgr.dek()?);
-            }
+            sync_quick_unlock(&mgr, quick.as_ref())?;
             let public = mgr.payload()?.to_public();
             activity.touch();
             Ok((public, mgr.vault_id()))
@@ -127,8 +139,12 @@ pub async fn vault_change_password(
 ) -> ApiResult<()> {
     let current = Zeroizing::new(current_password);
     let new = Zeroizing::new(new_password);
+    let quick = state.quick.clone();
     run_unlocked_vault_operation(&state.application, move |mgr| {
-        mgr.change_password(&current, &new)
+        // An empty `new` removes the master password; setting one on a vault
+        // without it replaces the DEK, so the keychain copy must follow.
+        mgr.change_password(&current, &new, KdfParams::default())?;
+        sync_quick_unlock(mgr, quick.as_ref())
     })
     .await
 }
@@ -144,7 +160,7 @@ pub async fn vault_set_touch_id(state: State<'_, AppState>, enabled: bool) -> Ap
         })?;
         let id = mgr.vault_id();
         if enabled {
-            if quick.is_available() {
+            if quick.is_available() && !mgr.is_passwordless() {
                 quick.store_dek(&id, mgr.dek()?)?;
             }
         } else {

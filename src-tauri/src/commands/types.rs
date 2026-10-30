@@ -18,6 +18,9 @@ pub struct VaultInfo {
     /// UI label for the platform's quick-unlock mechanism
     /// ("Touch ID" / "Windows Hello").
     pub quick_unlock_method: String,
+    /// The vault opens without a master password: the app unlocks it at
+    /// start, and locking it (by hand or automatically) is pointless.
+    pub passwordless: bool,
     /// True only in `scenario-tests` builds. The lock screen shows a typed
     /// vault-path field then — WebDriver cannot drive the native file
     /// pickers — and hides it from real users otherwise.

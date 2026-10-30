@@ -1,6 +1,8 @@
 //! Vault access command tests.
 
-use super::{vault_create, vault_unlock_password, vault_unlock_quick};
+use super::{
+    vault_change_password, vault_create, vault_get_info, vault_unlock_password, vault_unlock_quick,
+};
 use crate::autolock::ActivityTracker;
 use crate::error::AppResult;
 use crate::state::AppState;
@@ -161,4 +163,60 @@ fn locking_revokes_vault_access_without_retiring_the_runtime_context() {
         state.application.require_active().unwrap().context_id(),
         generation
     );
+}
+
+#[test]
+fn a_passwordless_vault_reports_itself_and_offers_no_quick_unlock() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut vault = VaultManager::new(directory.path().join("open.serverus"));
+    vault.create("", test_kdf()).unwrap();
+    let dek = Zeroizing::new(vault.dek().unwrap().to_vec());
+    vault.lock();
+    // A keychain entry left over from before the password was removed.
+    let app = test_app(
+        vault,
+        Arc::new(StoredQuickUnlock { dek }),
+        Arc::new(ActivityTracker::default()),
+    );
+
+    let info = tauri::async_runtime::block_on(vault_get_info(app.state::<AppState>())).unwrap();
+    assert!(info.passwordless);
+    assert!(!info.quick_unlock_ready);
+
+    tauri::async_runtime::block_on(vault_unlock_password(app.state::<AppState>(), "".into()))
+        .unwrap();
+    assert!(app
+        .state::<AppState>()
+        .application
+        .require_unlocked()
+        .is_ok());
+}
+
+#[test]
+fn removing_and_setting_the_password_flips_the_reported_mode() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut vault = VaultManager::new(directory.path().join("flip.serverus"));
+    vault.create("password", test_kdf()).unwrap();
+    vault.lock();
+    let app = test_app(
+        vault,
+        Arc::new(NoQuickUnlock),
+        Arc::new(ActivityTracker::default()),
+    );
+    let state = || app.state::<AppState>();
+    let passwordless = || {
+        tauri::async_runtime::block_on(vault_get_info(state()))
+            .unwrap()
+            .passwordless
+    };
+    tauri::async_runtime::block_on(vault_unlock_password(state(), "password".into())).unwrap();
+    assert!(!passwordless());
+
+    tauri::async_runtime::block_on(vault_change_password(state(), "password".into(), "".into()))
+        .unwrap();
+    assert!(passwordless());
+
+    tauri::async_runtime::block_on(vault_change_password(state(), "".into(), "again".into()))
+        .unwrap();
+    assert!(!passwordless());
 }

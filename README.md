@@ -45,7 +45,8 @@ xattr -dr com.apple.quarantine /Applications/Serverus.app
 ## First run
 
 1. **Create a vault** and choose a master password. There is **no recovery** —
-   this is by design; you're warned at creation.
+   this is by design; you're warned at creation. Or skip the password: the
+   app then opens straight away (see *No master password* below).
 2. Optionally enable **Touch ID** when prompted.
 3. **Add a connection** (SSH / FTP / S3) from the sidebar, give it a name and
    an emoji or color badge, and drop it into a folder.
@@ -75,6 +76,13 @@ Handy shortcuts: `⌘T` new tab · `⌘W` close tab · `⌘1..9` switch tabs ·
   file, so backups and machine moves carry your keys too.
 - The lock screen can **switch to another vault file or create a fresh one** —
   a forgotten master password never locks you out of the app itself.
+- **No master password, if you prefer**: choose *Continue without a master
+  password* when creating the vault, or *Remove master password* in Settings →
+  Vault. The app then opens without asking and never locks. The file keeps its
+  format, but anyone who can read it can read your saved passwords and keys —
+  disk encryption, backups and sync are then on you. Setting a password later
+  also replaces the vault's data key, so a copy taken meanwhile can't read
+  what's written after.
 
 ### 👆 Touch ID / Windows Hello unlock
 - After the first master‑password unlock, everyday launch is just biometrics:
@@ -159,7 +167,8 @@ open — apps, `.command`, `.exe`, `.bat`, installers, shortcuts, extensionless
 executables — opens as plain text instead.
 
 ### 🔒 Auto‑lock
-Locks on an inactivity timeout (default 15 min; 0 = never) and on sleep.
+Locks on an inactivity timeout (default 15 min; 0 = never) and on sleep —
+unless the vault has no master password, which never locks.
 Locking zeroizes all decrypted secrets from memory, but **live sessions keep
 running** — you just can't pull new secrets until you unlock.
 
@@ -321,6 +330,8 @@ cargo test --workspace # unit + integration against real local sshd/FTP/S3 — n
 - Audited crypto crates only; **no hand‑rolled cryptography**.
 - The **master password is never persisted** anywhere and has **no recovery
   path** — losing it means losing the vault (you're warned at creation).
+- A vault **without** a master password is protected only by who can read the
+  file: its data key is wrapped under the empty password.
 - Secrets are zeroized from memory on lock and drop, and are kept out of logs,
   errors and command return values.
 - AI agent access is off by default. The agent socket is owner‑only (`0600`,

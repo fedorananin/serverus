@@ -25,6 +25,11 @@
 //! The header (bytes 0..33) is authenticated as AAD of the DEK wrap; the
 //! header plus the wrapped DEK (bytes 0..93) is the AAD of the payload. Any
 //! tampering with KDF params, salt or wrapped key fails decryption.
+//!
+//! A vault without a master password is the same file with the DEK wrapped
+//! under the empty password and [`PASSWORDLESS_KDF`]: one format, one write
+//! path, and the payload still never touches the disk in the clear — but
+//! anyone who can read the file can open it, which is the user's call.
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
@@ -62,6 +67,22 @@ impl Default for KdfParams {
             p_cost: 4,
         }
     }
+}
+
+/// KDF params of a vault without a master password. An empty password has
+/// no entropy to stretch, so a memory-hard KDF would only slow every launch
+/// down. Real passwords always get [`KdfParams::default`], so these params
+/// also mark such a vault without guessing.
+pub const PASSWORDLESS_KDF: KdfParams = KdfParams {
+    m_cost_kib: 8,
+    t_cost: 1,
+    p_cost: 1,
+};
+
+/// Whether the DEK opens with the empty password — the vault has no master
+/// password. Cheap: only [`PASSWORDLESS_KDF`] headers are tried.
+pub fn is_passwordless(header: &VaultHeader) -> bool {
+    header.kdf == PASSWORDLESS_KDF && unwrap_dek(header, "").is_ok()
 }
 
 /// Everything needed to re-encrypt and save the vault without re-deriving

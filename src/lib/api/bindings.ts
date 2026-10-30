@@ -790,6 +790,11 @@ export type VaultInfo = {
 	 */
 	quick_unlock_method: string,
 	/**
+	 *  The vault opens without a master password: the app unlocks it at
+	 *  start, and locking it (by hand or automatically) is pointless.
+	 */
+	passwordless: boolean,
+	/**
 	 *  True only in `scenario-tests` builds. The lock screen shows a typed
 	 *  vault-path field then — WebDriver cannot drive the native file
 	 *  pickers — and hides it from real users otherwise.

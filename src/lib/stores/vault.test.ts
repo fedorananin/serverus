@@ -8,6 +8,8 @@ const apiMocks = vi.hoisted(() => ({
   vaultGetInfo: vi.fn(),
   vaultLock: vi.fn(),
   vaultSwitchPath: vi.fn(),
+  vaultUnlockPassword: vi.fn(),
+  vaultUnlockQuick: vi.fn(),
   treeUpdate: vi.fn(),
 }));
 
@@ -222,5 +224,55 @@ describe("VaultStore context retirement", () => {
     expect(vault.data).toBeNull();
     expect(apiMocks.vaultGetInfo).toHaveBeenCalledOnce();
     expect(vault.busy).toBe(false);
+  });
+});
+
+describe("VaultStore without a master password", () => {
+  const passwordlessInfo = { ...vaultInfo, passwordless: true, quick_unlock_ready: true };
+
+  beforeEach(() => {
+    vault.data = null;
+    vault.busy = false;
+    vault.error = null;
+    vault.onContextRetired(() => {});
+    vault.onAccessRevoked(() => {});
+    apiMocks.vaultGetInfo.mockReset();
+    apiMocks.vaultSwitchPath.mockReset();
+    apiMocks.vaultUnlockPassword.mockReset();
+    apiMocks.vaultUnlockQuick.mockReset();
+    apiMocks.vaultUnlockPassword.mockResolvedValue({ status: "ok", data: oldVault });
+    apiMocks.vaultUnlockQuick.mockResolvedValue({ status: "ok", data: oldVault });
+  });
+
+  it("opens the vault at start instead of offering Touch ID", async () => {
+    apiMocks.vaultGetInfo.mockResolvedValue({ status: "ok", data: passwordlessInfo });
+
+    await vault.init();
+
+    expect(apiMocks.vaultUnlockPassword).toHaveBeenCalledWith("");
+    expect(apiMocks.vaultUnlockQuick).not.toHaveBeenCalled();
+    expect(vault.screen).toBe("main");
+  });
+
+  it("still offers Touch ID at start for a vault with a password", async () => {
+    apiMocks.vaultGetInfo.mockResolvedValue({
+      status: "ok",
+      data: { ...vaultInfo, passwordless: false, quick_unlock_ready: true },
+    });
+
+    await vault.init();
+
+    expect(apiMocks.vaultUnlockQuick).toHaveBeenCalledOnce();
+    expect(apiMocks.vaultUnlockPassword).not.toHaveBeenCalled();
+  });
+
+  it("opens a passwordless vault the user switched to", async () => {
+    apiMocks.vaultSwitchPath.mockResolvedValue({ status: "ok", data: null });
+    apiMocks.vaultGetInfo.mockResolvedValue({ status: "ok", data: passwordlessInfo });
+
+    await vault.switchVault(passwordlessInfo.path);
+
+    expect(apiMocks.vaultUnlockPassword).toHaveBeenCalledWith("");
+    expect(vault.data).toEqual(oldVault);
   });
 });

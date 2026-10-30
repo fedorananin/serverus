@@ -144,7 +144,10 @@
   </div>
   <AgentFullAccessBadge onclick={onOpenSettings} />
   <button class="ghost" title="Settings (⌘,)" aria-label="Settings" onclick={onOpenSettings}>⚙</button>
-  <button class="ghost" title="Lock vault" aria-label="Lock vault" onclick={() => void vault.lock()}>🔒</button>
+  {#if !vault.info?.passwordless}
+    <!-- Without a master password the lock screen would only open it again. -->
+    <button class="ghost" title="Lock vault" aria-label="Lock vault" onclick={() => void vault.lock()}>🔒</button>
+  {/if}
 </div>
 
 <style>

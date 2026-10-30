@@ -1,3 +1,4 @@
+use super::persist::bak_path;
 use super::*;
 use crate::vault::model::{AuthConfig, AuthMethod, Connection, Protocol};
 
@@ -85,10 +86,10 @@ fn change_password_keeps_data() {
     })
     .unwrap();
     assert!(matches!(
-        mgr.change_password("wrong", "new"),
+        mgr.change_password("wrong", "new", test_kdf()),
         Err(AppError::InvalidPassword)
     ));
-    mgr.change_password("old", "new").unwrap();
+    mgr.change_password("old", "new", test_kdf()).unwrap();
     mgr.lock();
     assert!(mgr.unlock_with_password("old").is_err());
     mgr.unlock_with_password("new").unwrap();
@@ -105,7 +106,7 @@ fn change_password_rekeys_primary_and_backup() {
     })
     .unwrap();
 
-    mgr.change_password("old", "new").unwrap();
+    mgr.change_password("old", "new", test_kdf()).unwrap();
 
     for path in [mgr.path().to_path_buf(), bak_path(mgr.path())] {
         let mut copy = VaultManager::new(path);
@@ -136,7 +137,7 @@ fn change_password_failure_keeps_the_old_header_and_primary_usable() {
     fs::create_dir(&blocked_path).unwrap();
     mgr.path = blocked_path.clone();
 
-    assert!(mgr.change_password("old", "new").is_err());
+    assert!(mgr.change_password("old", "new", test_kdf()).is_err());
     assert!(mgr.is_unlocked());
     assert_eq!(fs::read(&primary_path).unwrap(), primary_before);
     assert!(format::unwrap_dek(mgr.header.as_ref().unwrap(), "old").is_ok());
