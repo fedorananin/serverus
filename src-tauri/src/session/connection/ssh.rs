@@ -16,6 +16,7 @@ impl SessionManager {
         app: &AppHandle,
         connection_id: &str,
         chain: Vec<Hop>,
+        shell: bool,
     ) -> AppResult<Result<Arc<SessionEntry>, Box<HostKeyIssue>>> {
         let session_id = uuid::Uuid::new_v4().to_string();
         emit_session_state(app, &session_id, connection_id, "connecting", None);
@@ -44,6 +45,7 @@ impl SessionManager {
                     SshSession {
                         handle: tokio::sync::Mutex::new(handle),
                     },
+                    shell,
                 ));
                 self.sessions
                     .lock()

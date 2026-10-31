@@ -111,7 +111,7 @@ fn known_hosts_existing_wins_and_settings_replace() {
 }
 
 #[test]
-fn import_never_grants_agent_access() {
+fn import_never_grants_agent_access_nor_changes_editor_or_security() {
     let mut p = VaultPayload::default();
     p.settings.agent.enabled = false;
     apply(
@@ -121,12 +121,13 @@ fn import_never_grants_agent_access() {
                       "children": [ { "type": "connection", "id": "c1" } ] } ],
           "connections": { "c1": { "protocol": "ssh", "host": "h", "agent_access": "full" } },
           "settings": {
-            "security": { "auto_lock_minutes": 5, "lock_on_sleep": true, "touch_id": false },
+            "security": { "auto_lock_minutes": 0, "lock_on_sleep": false, "touch_id": false },
             "transfers": { "max_parallel_per_server": 2, "conflict_policy": "ask",
                            "preserve_mtime": true, "tar_acceleration": true },
-            "editor": { "use_system_default": true, "custom_app": null },
+            "editor": { "use_system_default": false, "custom_app": "Terminal" },
             "terminal": { "font_family": "Menlo", "font_size": 12, "scrollback": 1000 },
-            "panels": { "show_hidden": false, "size_format": "kib", "default_local_dir": null },
+            "panels": { "show_hidden": false, "size_format": "kib", "default_local_dir": null,
+                        "sidebar_width": 5000 },
             "agent": { "enabled": true, "full_access": true }
           }
         }"#,
@@ -140,10 +141,18 @@ fn import_never_grants_agent_access() {
             ..
         }
     ));
-    // Other settings are imported; the agent switches are not.
-    assert_eq!(p.settings.security.auto_lock_minutes, 5);
+    // Other settings are imported (and clamped); the agent switches, the
+    // editor and security are not — "Edit…" must not start running files
+    // in an app the file picked, nor auto-lock switch off.
+    assert_eq!(p.settings.transfers.max_parallel_per_server, 2);
+    assert!(p.settings.panels.sidebar_width < 5000);
     assert!(!p.settings.agent.enabled);
     assert!(!p.settings.agent.full_access);
+    assert_eq!(p.settings.editor.custom_app, None);
+    assert!(p.settings.editor.use_system_default);
+    assert_eq!(p.settings.security.auto_lock_minutes, 15);
+    assert!(p.settings.security.lock_on_sleep);
+    assert!(p.settings.security.touch_id);
 }
 
 #[test]

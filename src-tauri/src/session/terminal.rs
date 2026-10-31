@@ -27,6 +27,9 @@ impl SessionManager {
         rows: u16,
         output: Channel<TerminalStreamEvent>,
     ) -> AppResult<String> {
+        if !entry.shell {
+            return Err(AppError::Other("this connection has no terminal".into()));
+        }
         let ssh = entry
             .ssh
             .clone()

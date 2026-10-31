@@ -22,6 +22,9 @@ pub struct SessionEntry {
     pub(super) tar_available: tokio::sync::OnceCell<bool>,
     /// Whether the remote side has `rm` and `find` (probed once).
     pub(super) rm_available: tokio::sync::OnceCell<bool>,
+    /// Whether terminals may open: SSH, and not an SFTP-only account. The
+    /// backend enforces it — the UI must not be the only guard.
+    pub(super) shell: bool,
 }
 
 impl SessionEntry {
@@ -42,10 +45,16 @@ impl SessionEntry {
             s3,
             tar_available: tokio::sync::OnceCell::new(),
             rm_available: tokio::sync::OnceCell::new(),
+            shell: false,
         }
     }
 
-    pub(super) fn ssh(id: String, connection_id: String, session: ssh::SshSession) -> Self {
+    pub(super) fn ssh(
+        id: String,
+        connection_id: String,
+        session: ssh::SshSession,
+        shell: bool,
+    ) -> Self {
         Self {
             id,
             connection_id,
@@ -56,6 +65,7 @@ impl SessionEntry {
             s3: None,
             tar_available: tokio::sync::OnceCell::new(),
             rm_available: tokio::sync::OnceCell::new(),
+            shell,
         }
     }
 

@@ -10,6 +10,7 @@ use serverus_domain::transfers::{
 use crate::error::{AppError, AppResult};
 use crate::session::remote_fs::{RemoteEntry, RemoteFs};
 use crate::session::ssh::SshSession;
+use crate::vault::model::ConflictPolicy;
 
 use super::tar_stream;
 use super::{
@@ -171,7 +172,12 @@ impl TransferManager {
             return Ok(());
         }
 
-        if settings.tar_acceleration {
+        // tar overwrites whatever it unpacks onto, so it may only run where
+        // there is nothing to ask about; otherwise the per-file walk below
+        // settles each conflict under the chosen policy.
+        let tar_safe = settings.conflict_policy == ConflictPolicy::Overwrite
+            || destination_root.symlink_metadata(&top_relative).is_err();
+        if settings.tar_acceleration && tar_safe {
             if let Some(ssh) = tar_ssh {
                 let total = remote_tree_size(fs.as_ref(), remote_path).await?;
                 let Some(item) = self.add_item(

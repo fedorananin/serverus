@@ -212,11 +212,18 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
   replaces the DEK (a copy taken meanwhile must not read later versions);
   removing one keeps it.
 - `Connection.disable_terminal` = SFTP-only SSH servers (no shell); the UI hides
-  the terminal view and the backend never opens a shell channel.
-- **tar downloads** (`transfer/tar_stream.rs`) run `tar -cf - -C <dir> .`
-  and unpack into a capability handle on the local folder itself, never its
-  parent (the stream is untrusted); a symlinked top folder is followed like
-  the per-file walk does.
+  the terminal view and the backend never opens a shell channel —
+  `SessionEntry::shell` is fixed at connect and `term_open` refuses without
+  it. While the vault is locked `vault.data` is null, so `SessionView` keeps
+  the last known connection rather than mounting a terminal.
+- **tar transfers** (`transfer/tar_stream.rs`): a download runs
+  `tar -cf - -C <dir> .` and unpacks into a capability handle on the local
+  folder itself, never its parent (the stream is untrusted), and follows a
+  symlinked top folder like the per-file walk. tar runs only when nothing
+  would be overwritten unasked (destination absent, or policy Overwrite);
+  otherwise the per-file walk settles conflicts. tar uploads pause by
+  starving the stream; tar downloads can't pause (`TransferItem::pausable`):
+  russh stops reading *every* channel while one consumer lags.
 - **Partials and retries** (`transfer/single_transfer.rs`): a target is
   marked partial only after this transfer opened it, and never on S3
   (`RemoteFs::writes_atomically` — the object changes only on finalize), so
@@ -228,6 +235,8 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
   the option or lists nothing with it falls back to bare `LIST` for good.
   Not MLSD: some servers report a symlinked dir there as a plain dir, and
   recursive deletes would descend into the target.
+- Config import never takes `settings.agent`, `settings.editor` (a custom
+  app would turn Edit… into running files) or `settings.security`.
 - **S3 uploads must declare a `Content-Type`.** `aws-sdk-s3` labels every body
   `application/octet-stream` and never infers a type from the key, which
   silently breaks any site published through the panel (browsers reject CSS

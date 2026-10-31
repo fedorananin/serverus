@@ -11,6 +11,7 @@ use super::{
 use crate::error::{AppError, AppResult};
 use crate::session::remote_fs::join_remote;
 use crate::session::ssh::SshSession;
+use crate::vault::model::ConflictPolicy;
 
 impl TransferManager {
     /// Enqueue a local file or directory tree into `remote_dir`.
@@ -129,7 +130,13 @@ impl TransferManager {
             return Ok(());
         }
 
-        if settings.tar_acceleration {
+        // tar overwrites whatever it unpacks onto, so it may only run where
+        // there is nothing to ask about; otherwise the per-file walk below
+        // settles each conflict under the chosen policy.
+        let remote_root = join_remote(remote_dir, &base_name);
+        let tar_safe = settings.conflict_policy == ConflictPolicy::Overwrite
+            || !fs.exists(&remote_root).await.unwrap_or(true);
+        if settings.tar_acceleration && tar_safe {
             if let Some(ssh) = tar_ssh {
                 let total = local_tree_size(&root, skip_junk).await;
                 let Some(item) = self.add_item(
@@ -138,7 +145,7 @@ impl TransferManager {
                     session_id,
                     TransferKind::Upload,
                     root.clone(),
-                    join_remote(remote_dir, &base_name),
+                    remote_root.clone(),
                     total,
                     fs,
                     settings,
@@ -153,7 +160,6 @@ impl TransferManager {
             }
         }
 
-        let remote_root = join_remote(remote_dir, &base_name);
         let _ = fs.mkdir(&remote_root).await;
         let mut pending = vec![(root.clone(), remote_root)];
         while let Some((local_dir, remote_dir)) = pending.pop() {

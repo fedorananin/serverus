@@ -113,7 +113,10 @@ Import **merges** into the current vault — nothing is deleted:
   is detached.
 - **Known hosts** merge; on conflict the existing (already verified) entry wins.
 - **Settings**, when present, replace the current ones wholesale — except the
-  AI agent switches (`settings.agent`), which are always kept.
+  AI agent switches (`settings.agent`), the editor (`settings.editor`) and
+  security (`settings.security`: auto-lock, lock on sleep, Touch ID), which
+  are always kept. A shared file must not be able to make **Edit…** open
+  files in an app of its choosing, or switch auto-lock off.
 - **AI agent access is never imported.** An export carries each connection's
   and folder's `agent_access`, but an import ignores it: new connections and
   folders start at "inherit", existing ones keep the level you gave them. A

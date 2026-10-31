@@ -6,6 +6,8 @@ pub(crate) enum ConnectionPlan {
     Ssh {
         chain: Vec<super::super::ssh::Hop>,
         autostart_tunnels: Vec<TunnelConfig>,
+        /// False for SFTP-only accounts (`disable_terminal`).
+        shell: bool,
     },
     Ftp {
         config: ftp::FtpConfig,

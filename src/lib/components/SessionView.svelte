@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { PublicConnection } from "$lib/api";
   import type { Tab } from "$lib/stores/tabs.svelte";
   import { tabs } from "$lib/stores/tabs.svelte";
   import { vault } from "$lib/stores/vault.svelte";
@@ -15,7 +16,15 @@
 
   let terminalPanel = $state<TerminalPanel>();
 
-  const connection = $derived(vault.data?.connections[tab.connectionId] ?? null);
+  // While the vault is locked `vault.data` is null, but the session (and
+  // its kind) lives on: keep the last known connection, or an SFTP-only,
+  // FTP or S3 tab would mount a terminal and ask the server for a shell.
+  let lastKnown: PublicConnection | null = null;
+  const connection = $derived.by(() => {
+    const current = vault.data?.connections[tab.connectionId];
+    if (current) lastKnown = current;
+    return current ?? lastKnown;
+  });
   // FTP and S3 sessions have no shell or tunnels — Files is the only view.
   const filesOnly = $derived(connection?.protocol === "ftp" || connection?.protocol === "s3");
   const terminalDisabled = $derived(connection?.disable_terminal ?? false);
@@ -24,6 +33,7 @@
 
   // If the active view's tab disappeared (settings changed), fall back.
   $effect(() => {
+    if (!connection) return;
     if (tab.view === "terminal" && (filesOnly || terminalDisabled)) tab.view = "files";
     if (tab.view === "tunnels" && (filesOnly || !hasTunnels)) tab.view = "files";
   });
@@ -107,7 +117,7 @@
       {#key tab.sessionId}
         <!-- All views stay mounted; switching hides them. Unmounting the
              terminal would close its shell channel and lose the session. -->
-        {#if !filesOnly && !terminalDisabled}
+        {#if connection && !filesOnly && !terminalDisabled}
           <div class="view-pane" style:display={tab.view === "terminal" ? "flex" : "none"}>
             <TerminalPanel bind:this={terminalPanel} sessionId={tab.sessionId} />
           </div>

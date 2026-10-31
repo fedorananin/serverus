@@ -233,9 +233,11 @@ async fn tar_upload_preserves_exact_mtime() {
     );
 }
 
-/// A symlinked folder (`current -> release`) downloads its contents.
+/// A symlinked folder (`current -> release`) downloads its contents, and an
+/// existing local copy under a non-overwrite policy goes per-file instead
+/// of being overwritten by tar.
 #[tokio::test]
-async fn tar_download_follows_a_linked_folder() {
+async fn tar_download_follows_a_linked_folder_and_respects_the_policy() {
     let sshd = TestSshd::spawn();
     let ssh = connect(&sshd).await;
     let fs_remote: Arc<dyn RemoteFs> = Arc::new(SftpFs::open(&ssh).await.unwrap());
@@ -255,7 +257,10 @@ async fn tar_download_follows_a_linked_folder() {
     let sink: Arc<dyn ProgressSink> = Arc::new(NullSink);
     let dst = tempfile::tempdir().unwrap();
     let copied = dst.path().join("current/sub/a.txt");
-    for (policy, accelerated, expected) in [(ConflictPolicy::Overwrite, true, "new")] {
+    for (policy, accelerated, expected) in [
+        (ConflictPolicy::Overwrite, true, "new"),
+        (ConflictPolicy::Skip, false, "mine"),
+    ] {
         let mut request_settings = settings();
         request_settings.conflict_policy = policy;
         let request = DownloadRequest::new(

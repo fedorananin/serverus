@@ -45,6 +45,18 @@ pub struct TransferItem {
 }
 
 impl TransferItem {
+    /// A server-side rm and a tar download can only be cancelled. Holding
+    /// back a tar stream would stall the whole SSH connection: russh stops
+    /// reading every channel while one consumer lags.
+    pub(super) fn pausable(&self) -> bool {
+        let tar_download = self.tar.is_some() && matches!(self.kind, TransferKind::Download);
+        let server_rm = self
+            .tree
+            .as_ref()
+            .is_some_and(|tree| tree.accelerated.load(std::sync::atomic::Ordering::Relaxed));
+        !tar_download && !server_rm
+    }
+
     pub(super) fn domain_state_kind(&self) -> DomainTransferStateKind {
         self.lifecycle.lock().unwrap().domain_state_kind()
     }

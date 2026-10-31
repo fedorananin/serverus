@@ -238,11 +238,18 @@ pub fn apply(payload: &mut VaultPayload, json: &str) -> AppResult<u32> {
     }
 
     if let Some(settings) = file.settings {
-        // AI agent switches are never imported: a config file must not be
-        // able to hand an agent access to the user's servers.
-        let agent = next.settings.agent.clone();
-        next.settings = settings;
-        next.settings.agent = agent;
+        // Kept from the current settings, never imported: the AI agent
+        // switches (a config file must not hand an agent the user's
+        // servers), the editor (a custom app would turn "Edit…" into
+        // running the file) and security (auto-lock, Touch ID).
+        let current = &next.settings;
+        next.settings = Settings {
+            agent: current.agent.clone(),
+            editor: current.editor.clone(),
+            security: current.security.clone(),
+            ..settings
+        };
+        next.settings.clamp();
     }
 
     let tree_copy = next.tree.clone();

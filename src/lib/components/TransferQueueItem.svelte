@@ -16,8 +16,12 @@
   /** Delete / chmod: `done`/`total` count entries, not bytes. */
   const treeOp = $derived(item.kind === "delete" || item.kind === "chmod");
   const verb = $derived(item.kind === "delete" ? "deleted" : "changed");
-  // A server-side rm cannot be paused promptly — only cancelled.
-  const pausable = $derived(!(item.kind === "delete" && item.accelerated));
+  // A server-side rm cannot be paused promptly, nor a tar download (holding
+  // the stream back would stall the whole SSH connection) — only cancelled.
+  // Mirrors `TransferItem::pausable`, which ignores such pause requests.
+  const pausable = $derived(
+    !(item.accelerated && (item.kind === "delete" || item.kind === "download")),
+  );
   const amount = $derived(
     treeOp
       ? `${formatCount(item.done)} / ${formatCount(item.total)} items`

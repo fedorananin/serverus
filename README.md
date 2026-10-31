@@ -138,6 +138,9 @@ hard warning on key change, keep‑alive and auto‑reconnect.
 - **tar‑stream acceleration**: when the remote host has `tar`, a folder of
   thousands of small files moves as a single tar stream over the SSH channel
   instead of per‑file round‑trips — with a "force plain transfer" escape hatch.
+  It is used only where nothing would be overwritten without asking (no
+  existing copy at the destination, or the Overwrite policy); a tar download
+  can be cancelled but not paused.
 - **Deletes and recursive chmod run in the same queue**: a live
   "412 / 1,318 items" counter after a quick scan, cancel/retry, and a finished
   entry that tells you the folder is really gone. Rows being deleted are dimmed

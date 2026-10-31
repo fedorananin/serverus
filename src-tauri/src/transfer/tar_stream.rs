@@ -11,13 +11,11 @@ mod archive;
 mod tests;
 
 use std::path::Path;
-use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 
 use russh::ChannelMsg;
-use tokio::io::{AsyncRead, AsyncWriteExt, DuplexStream, ReadBuf};
+use tokio::io::AsyncWriteExt;
 use tokio_util::io::SyncIoBridge;
 
 use crate::error::{AppError, AppResult};
@@ -99,11 +97,17 @@ async fn download(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferS
     let mut exit_status: Option<u32> = None;
     let mut cancelled = false;
 
-    while let Some(msg) = read.wait().await {
-        if *ctrl.borrow_and_update() == Control::Cancel {
-            cancelled = true;
-            break;
-        }
+    loop {
+        // Cancel must land even while the remote tar is silent. There is no
+        // pause here (see `TransferItem::pausable`).
+        let msg = tokio::select! {
+            msg = read.wait() => msg,
+            _ = ctrl.wait_for(|control| *control == Control::Cancel) => {
+                cancelled = true;
+                break;
+            }
+        };
+        let Some(msg) = msg else { break };
         match msg {
             ChannelMsg::Data { data } => {
                 if pipe_w.write_all(&data).await.is_err() {
@@ -181,16 +185,18 @@ async fn upload(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferSta
         Ok(())
     });
 
-    let reader = CountingReader {
-        inner: pipe_r,
-        item: item.clone(),
-        ctrl: item.control.subscribe(),
-    };
     let (mut read, write) = channel.split();
 
-    // Stream the archive; a cancel surfaces as a read error.
-    let send = write.data(reader).await;
-    let cancelled = matches!(*item.control.subscribe().borrow(), Control::Cancel);
+    // Stream the archive. Pausing simply stops feeding it: the remote tar
+    // waits on its stdin and the packer on the full pipe.
+    let mut pipe_r = pipe_r;
+    let mut ctrl = item.control.subscribe();
+    let mut sink = write.make_writer();
+    let send = super::copy_loop(item, &mut ctrl, &mut pipe_r, &mut sink).await;
+    drop(pipe_r); // unblocks the packer if the stream stopped early
+    let _ = sink.flush().await;
+    drop(sink);
+    let cancelled = matches!(send, Ok(true));
     let _ = write.eof().await;
 
     let mut stderr: Vec<u8> = Vec::new();
@@ -213,7 +219,7 @@ async fn upload(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferSta
     if cancelled {
         return Ok(TransferState::Cancelled);
     }
-    send.map_err(|e| AppError::Transfer(format!("tar stream: {e}")))?;
+    send?;
     pack_result
         .map_err(|e| AppError::Transfer(format!("pack task: {e}")))?
         .map_err(|e| AppError::Transfer(format!("pack: {e}")))?;
@@ -228,30 +234,4 @@ async fn upload(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferSta
     item.done
         .store(item.total.load(Ordering::Relaxed), Ordering::Relaxed);
     Ok(TransferState::Done)
-}
-
-/// Progress + cancellation adapter around the archive pipe.
-struct CountingReader {
-    inner: DuplexStream,
-    item: Arc<TransferItem>,
-    ctrl: tokio::sync::watch::Receiver<Control>,
-}
-
-impl AsyncRead for CountingReader {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        if *self.ctrl.borrow() == Control::Cancel {
-            return Poll::Ready(Err(std::io::Error::other("cancelled")));
-        }
-        let before = buf.filled().len();
-        let result = Pin::new(&mut self.inner).poll_read(cx, buf);
-        if let Poll::Ready(Ok(())) = &result {
-            let n = buf.filled().len() - before;
-            self.item.done.fetch_add(n as u64, Ordering::Relaxed);
-        }
-        result
-    }
 }

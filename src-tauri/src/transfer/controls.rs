@@ -5,7 +5,7 @@ use super::{domain_conflict_decision, ConflictAction, TransferManager};
 
 impl TransferManager {
     pub fn pause(&self, id: &str) {
-        if let Some(item) = self.find(id) {
+        if let Some(item) = self.find(id).filter(|item| item.pausable()) {
             let _ = item.apply_and_dispatch(DomainTransferEvent::PauseRequested, None, None);
         }
     }
@@ -42,7 +42,11 @@ impl TransferManager {
         event: DomainTransferEvent,
     ) -> bool {
         self.mutate_items_for_context(context_id, |items| {
-            for item in items.iter().filter(|item| item.session_id == session_id) {
+            let pausing = matches!(event, DomainTransferEvent::PauseRequested);
+            for item in items
+                .iter()
+                .filter(|item| item.session_id == session_id && (!pausing || item.pausable()))
+            {
                 let _ = item.apply_and_dispatch(event, None, None);
             }
         })

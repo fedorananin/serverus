@@ -34,6 +34,7 @@ fn load_plan(vault: &VaultManager, connection_id: &str) -> AppResult<ConnectionP
                 .filter(|tunnel| tunnel.autostart)
                 .cloned()
                 .collect(),
+            shell: !connection.disable_terminal,
         }),
         Protocol::Ftp => Ok(ConnectionPlan::Ftp {
             config: ftp::FtpConfig::from_connection(connection)?,

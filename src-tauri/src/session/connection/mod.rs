@@ -45,8 +45,8 @@ impl SessionManager {
     ) -> AppResult<Result<Arc<SessionEntry>, Box<HostKeyIssue>>> {
         self.run_connect_admitted(expected_context_id, || async move {
             match plan {
-                ConnectionPlan::Ssh { chain, .. } => {
-                    self.connect_ssh(app, connection_id, chain).await
+                ConnectionPlan::Ssh { chain, shell, .. } => {
+                    self.connect_ssh(app, connection_id, chain, shell).await
                 }
                 storage => self
                     .connect_storage(app, connection_id, storage)
