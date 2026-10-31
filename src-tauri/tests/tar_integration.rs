@@ -236,6 +236,7 @@ async fn tar_upload_preserves_exact_mtime() {
 /// A symlinked folder (`current -> release`) downloads its contents, and an
 /// existing local copy under a non-overwrite policy goes per-file instead
 /// of being overwritten by tar.
+#[cfg(unix)]
 #[tokio::test]
 async fn tar_download_follows_a_linked_folder_and_respects_the_policy() {
     let sshd = TestSshd::spawn();
