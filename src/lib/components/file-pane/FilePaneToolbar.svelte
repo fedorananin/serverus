@@ -191,6 +191,7 @@
     display: flex;
     border-bottom: 1px solid var(--border);
     padding: 0 8px;
+    overflow: hidden;
   }
 
   .col {
@@ -202,9 +203,11 @@
     padding: 3px 4px;
   }
 
+  /* Name never shrinks away: in a pane too narrow for the widened columns,
+     those are clipped at the right edge instead (see FilePaneRow). */
   .col.name {
     flex: 1;
-    min-width: 0;
+    min-width: 64px;
   }
 
   .col.size {

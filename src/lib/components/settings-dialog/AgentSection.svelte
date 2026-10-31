@@ -66,7 +66,8 @@
   {#if value.enabled}
     <p class="hint">
       While an agent is connected and working with Serverus, the vault does not lock on idle or
-      sleep — it locks again once the agent disconnects. The 🔒 button always locks.
+      sleep — it locks again once the agent disconnects. The 🔒 button always locks (a vault
+      without a master password never locks).
     </p>
   {/if}
   {#if setup}

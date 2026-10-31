@@ -6,8 +6,10 @@ import type { PublicVault, Settings } from "$lib/api";
 import { vault } from "$lib/stores/vault.svelte";
 import { DEFAULT_COLUMN_WIDTHS, FileColumnWidths } from "./column-widths.svelte";
 
+let handle: HTMLSpanElement;
+
 function press(clientX: number) {
-  const handle = document.createElement("span");
+  handle = document.createElement("span");
   handle.setPointerCapture = vi.fn();
   return {
     button: 0,
@@ -87,5 +89,26 @@ describe("file pane column resizing", () => {
       date: DEFAULT_COLUMN_WIDTHS.date,
       mode: 60,
     });
+  });
+
+  it("ends the drag when the pointer is cancelled or capture is lost", async () => {
+    for (const end of [
+      () => window.dispatchEvent(new MouseEvent("pointercancel")),
+      () => handle.dispatchEvent(new MouseEvent("lostpointercapture")),
+    ]) {
+      saved = [];
+      const columns = new FileColumnWidths();
+      columns.startResize("date", press(500));
+      move(480);
+      end();
+      await vi.waitFor(() => expect(saved).toHaveLength(1));
+      expect(saved[0].panels.columns?.date).toBe(DEFAULT_COLUMN_WIDTHS.date + 20);
+      // Later movement no longer drags the column (it would clamp to 320).
+      move(100);
+      expect(columns.current.date).not.toBe(320);
+      release();
+      await Promise.resolve();
+      expect(saved).toHaveLength(1);
+    }
   });
 });

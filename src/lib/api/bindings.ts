@@ -11,6 +11,11 @@ export const commands = {
 	vaultUnlockQuick: () => typedError<PublicVault, ApiError>(__TAURI_INVOKE("vault_unlock_quick")),
 	vaultLock: () => typedError<null, ApiError>(__TAURI_INVOKE("vault_lock")),
 	vaultChangePassword: (currentPassword: string, newPassword: string) => typedError<null, ApiError>(__TAURI_INVOKE("vault_change_password", { currentPassword, newPassword })),
+	/**
+	 *  Remove the master password after a Touch ID / Windows Hello check in
+	 *  place of the typed password (see `VaultManager::remove_password_with_dek`).
+	 */
+	vaultRemovePasswordQuick: () => typedError<null, ApiError>(__TAURI_INVOKE("vault_remove_password_quick")),
 	vaultSetTouchId: (enabled: boolean) => typedError<null, ApiError>(__TAURI_INVOKE("vault_set_touch_id", { enabled })),
 	/**
 	 *  Create or update a connection. When creating, the tree node is appended

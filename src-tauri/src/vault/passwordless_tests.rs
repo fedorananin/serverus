@@ -134,3 +134,25 @@ fn a_real_password_never_gets_the_passwordless_kdf() {
     );
     assert_eq!(kdf_for("master", test_kdf()), test_kdf());
 }
+
+#[test]
+fn the_vaults_own_dek_removes_the_password_and_any_other_is_refused() {
+    let (_dir, mut mgr) = temp_vault();
+    mgr.create("master", test_kdf()).unwrap();
+    add_connection(&mut mgr);
+    let dek = mgr.dek().unwrap().to_vec();
+
+    let mut wrong = dek.clone();
+    wrong[0] ^= 1;
+    assert!(matches!(
+        mgr.remove_password_with_dek(&wrong),
+        Err(AppError::InvalidPassword)
+    ));
+    assert!(!mgr.is_passwordless());
+
+    mgr.remove_password_with_dek(&dek).unwrap();
+    assert!(mgr.is_passwordless());
+    mgr.lock();
+    mgr.unlock_with_password("").unwrap();
+    assert!(mgr.payload().unwrap().connections.contains_key("c1"));
+}

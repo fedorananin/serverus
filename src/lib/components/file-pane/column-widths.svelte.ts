@@ -46,9 +46,17 @@ export class FileColumnWidths {
     const onMove = (ev: PointerEvent) => {
       this.drag = { ...start, [column]: clampWidth(start[column] - (ev.clientX - startX)) };
     };
-    const onUp = async () => {
+    // A drag also ends without a pointerup — ⌘Tab away, a system gesture —
+    // and the column must not keep following a pointer with no button down.
+    // Lost capture follows every pointerup too, hence the guard.
+    let ended = false;
+    const onEnd = async () => {
+      if (ended) return;
+      ended = true;
       window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointerup", onEnd);
+      window.removeEventListener("pointercancel", onEnd);
+      handle.removeEventListener("lostpointercapture", onEnd);
       const final = this.drag;
       if (final === null) return; // press without movement
       await this.persist(final);
@@ -57,7 +65,9 @@ export class FileColumnWidths {
       this.drag = null;
     };
     window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointerup", onEnd);
+    window.addEventListener("pointercancel", onEnd);
+    handle.addEventListener("lostpointercapture", onEnd);
   }
 
   /** Double-click on a handle: back to the default width. */

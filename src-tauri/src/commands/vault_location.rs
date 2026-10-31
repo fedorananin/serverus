@@ -41,10 +41,8 @@ async fn set_vault_path_application(
                 Ok(())
             })?;
             // Quick-unlock entries are keyed by path — move them along.
-            if mgr.payload()?.settings.security.touch_id && quick.is_available() {
-                quick.clear(&old_id);
-                let _ = quick.store_dek(&mgr.vault_id(), mgr.dek()?);
-            }
+            quick.clear(&old_id);
+            super::vault_access::sync_quick_unlock(&mgr, quick.as_ref())?;
             Ok(mgr.vault_id())
         })
         .await?;

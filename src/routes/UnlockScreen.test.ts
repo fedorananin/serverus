@@ -77,6 +77,18 @@ describe("UnlockScreen without a master password", () => {
     expect(vaultMock.create).toHaveBeenCalledWith("");
   });
 
+  it("does not skip a password the user already started typing", async () => {
+    vaultMock.info.exists = false;
+    render(UnlockScreen);
+    await fireEvent.input(screen.getByLabelText("Master password"), {
+      target: { value: "half" },
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Continue without a master password" }),
+    ).toBeDisabled();
+  });
+
   it("opens a passwordless vault with one click and no password field", async () => {
     vaultMock.info.passwordless = true;
     render(UnlockScreen);

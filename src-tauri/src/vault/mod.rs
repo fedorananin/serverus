@@ -215,6 +215,28 @@ impl VaultManager {
     pub fn change_password(&mut self, current: &str, new: &str, kdf: KdfParams) -> AppResult<()> {
         let header = self.header.as_ref().ok_or(AppError::VaultLocked)?;
         format::unwrap_dek(header, current)?;
+        self.rewrap(new, kdf)
+    }
+
+    /// Remove the master password, proven by the DEK itself instead of the
+    /// typed password — the quick-unlock copy, which only comes out of the
+    /// keychain through the biometric prompt. It must match the open vault's.
+    pub fn remove_password_with_dek(&mut self, dek: &[u8]) -> AppResult<()> {
+        let current = self.dek.as_ref().ok_or(AppError::VaultLocked)?;
+        let differs = current.len() != dek.len()
+            || current
+                .iter()
+                .zip(dek)
+                .fold(0_u8, |acc, (a, b)| acc | (a ^ b))
+                != 0;
+        if differs {
+            return Err(AppError::InvalidPassword);
+        }
+        self.rewrap("", KdfParams::default())
+    }
+
+    fn rewrap(&mut self, new: &str, kdf: KdfParams) -> AppResult<()> {
+        let header = self.header.as_ref().ok_or(AppError::VaultLocked)?;
         let payload = self.payload.as_ref().ok_or(AppError::VaultLocked)?;
         let dek = if format::is_passwordless(header) && !new.is_empty() {
             Zeroizing::new(format::random_bytes::<32>())

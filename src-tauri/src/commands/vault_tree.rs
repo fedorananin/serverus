@@ -191,9 +191,8 @@ pub async fn settings_update(
         if was_touch_id != now_touch_id {
             let id = mgr.vault_id();
             if now_touch_id {
-                if quick.is_available() {
-                    let _ = quick.store_dek(&id, mgr.dek()?);
-                }
+                // Not for a vault without a master password: nothing to unlock.
+                super::vault_access::sync_quick_unlock(mgr, quick.as_ref())?;
             } else {
                 quick.clear(&id);
             }

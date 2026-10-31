@@ -1,12 +1,14 @@
 <script lang="ts">
   import { commands, errorMessage, unwrap } from "$lib/api";
   import { vault } from "$lib/stores/vault.svelte";
+  import RemovePasswordDialog from "./RemovePasswordDialog.svelte";
 
   let currentPassword = $state("");
   let newPassword = $state("");
   let confirmPassword = $state("");
   let status = $state<string | null>(null);
   let busy = $state(false);
+  let removing = $state(false);
 
   const passwordless = $derived(vault.info?.passwordless === true);
   const canChange = $derived(
@@ -15,12 +17,6 @@
       newPassword !== "" &&
       newPassword === confirmPassword,
   );
-  // Removing takes the current password, and only while no new one is typed.
-  const canRemove = $derived(
-    !busy && !passwordless && currentPassword !== "" && newPassword === "" && confirmPassword === "",
-  );
-
-  /** An empty `next` removes the master password. */
   async function apply(next: string, done: string) {
     busy = true;
     status = null;
@@ -67,11 +63,13 @@
     </button>
     <button
       type="button"
-      disabled={!canRemove}
-      title="Enter the current password only, then remove it"
-      onclick={() => void apply("", "Master password removed ✓")}
+      disabled={busy}
+      onclick={() => {
+        status = null;
+        removing = true;
+      }}
     >
-      Remove master password
+      Remove master password…
     </button>
   {/if}
 </div>
@@ -79,4 +77,13 @@
   <div class:error={!status.endsWith("✓")} class:ok={status.endsWith("✓")}>
     {status}
   </div>
+{/if}
+{#if removing}
+  <RemovePasswordDialog
+    onclose={() => (removing = false)}
+    ondone={() => {
+      status = "Master password removed ✓";
+      currentPassword = newPassword = confirmPassword = "";
+    }}
+  />
 {/if}

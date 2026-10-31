@@ -210,7 +210,9 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
   and the lock/Touch ID settings go away, and auto-lock skips it. Quick
   unlock is cleared while passwordless. Setting a password on such a vault
   replaces the DEK (a copy taken meanwhile must not read later versions);
-  removing one keeps it.
+  removing one keeps it, and asks again in a dialog: the current password,
+  or Touch ID / Windows Hello (`vault_remove_password_quick` — the
+  keychain DEK must equal the open vault's).
 - `Connection.disable_terminal` = SFTP-only SSH servers (no shell); the UI hides
   the terminal view and the backend never opens a shell channel —
   `SessionEntry::shell` is fixed at connect and `term_open` refuses without

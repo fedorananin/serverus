@@ -9,7 +9,7 @@ use crate::vault::VaultManager;
 /// invalidated by a fingerprint-set change (SPEC §2.3) — and gone while the
 /// vault has no master password, since there is nothing to unlock then.
 /// Best-effort: quick unlock failing must never block vault use.
-fn sync_quick_unlock(mgr: &VaultManager, quick: &dyn QuickUnlock) -> AppResult<()> {
+pub(super) fn sync_quick_unlock(mgr: &VaultManager, quick: &dyn QuickUnlock) -> AppResult<()> {
     if mgr.is_passwordless() {
         quick.clear(&mgr.vault_id());
     } else if mgr.payload()?.settings.security.touch_id && quick.is_available() {
@@ -144,6 +144,23 @@ pub async fn vault_change_password(
         // An empty `new` removes the master password; setting one on a vault
         // without it replaces the DEK, so the keychain copy must follow.
         mgr.change_password(&current, &new, KdfParams::default())?;
+        sync_quick_unlock(mgr, quick.as_ref())
+    })
+    .await
+}
+
+/// Remove the master password after a Touch ID / Windows Hello check in
+/// place of the typed password (see `VaultManager::remove_password_with_dek`).
+#[tauri::command]
+#[specta::specta]
+pub async fn vault_remove_password_quick(state: State<'_, AppState>) -> ApiResult<()> {
+    let vault_id = state.vault.lock().unwrap().vault_id();
+    let quick = state.quick.clone();
+    // Prompt outside the vault lock, as quick unlock does.
+    let dek = blocking(move || quick.retrieve_dek(&vault_id)).await?;
+    let quick = state.quick.clone();
+    run_unlocked_vault_operation(&state.application, move |mgr| {
+        mgr.remove_password_with_dek(&dek)?;
         sync_quick_unlock(mgr, quick.as_ref())
     })
     .await

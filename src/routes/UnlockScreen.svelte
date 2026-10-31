@@ -108,10 +108,14 @@
         {/if}
 
         {#if creating}
+          <!-- Never silently drops a password the user started typing. -->
           <button
             type="button"
             class="subtle no-password"
-            disabled={vault.busy}
+            disabled={vault.busy || password !== "" || confirm !== ""}
+            title={password !== "" || confirm !== ""
+              ? "Clear the password fields to continue without one"
+              : undefined}
             onclick={() => void vault.create("")}
           >
             Continue without a master password

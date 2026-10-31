@@ -88,6 +88,7 @@
 <style>
   .row {
     display: flex;
+    overflow: hidden;
     height: 24px;
     align-items: center;
     padding: 0 8px;
@@ -121,6 +122,7 @@
 
   .cell.name {
     flex: 1;
+    min-width: 64px;
     display: flex;
     gap: 6px;
     align-items: center;

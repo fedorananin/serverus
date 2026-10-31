@@ -24,6 +24,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::vault_unlock_quick,
             commands::vault_lock,
             commands::vault_change_password,
+            commands::vault_remove_password_quick,
             commands::vault_set_touch_id,
             commands::connection_upsert,
             commands::connection_secrets,

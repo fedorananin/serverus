@@ -39,6 +39,36 @@ impl QuickUnlock for StoredQuickUnlock {
     fn clear(&self, _vault_id: &str) {}
 }
 
+/// Counts what reaches the keychain.
+#[derive(Default)]
+struct RecordingQuickUnlock {
+    stored: std::sync::atomic::AtomicUsize,
+}
+
+impl QuickUnlock for RecordingQuickUnlock {
+    fn is_available(&self) -> bool {
+        true
+    }
+
+    fn has_dek(&self, _vault_id: &str) -> bool {
+        false
+    }
+
+    fn store_dek(&self, _vault_id: &str, _dek: &[u8]) -> AppResult<()> {
+        self.stored
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn retrieve_dek(&self, _vault_id: &str) -> AppResult<Zeroizing<Vec<u8>>> {
+        Err(crate::error::AppError::QuickUnlockUnavailable(
+            "none".into(),
+        ))
+    }
+
+    fn clear(&self, _vault_id: &str) {}
+}
+
 fn test_kdf() -> KdfParams {
     KdfParams {
         m_cost_kib: 8 * 1024,
@@ -219,4 +249,31 @@ fn removing_and_setting_the_password_flips_the_reported_mode() {
     tauri::async_runtime::block_on(vault_change_password(state(), "".into(), "again".into()))
         .unwrap();
     assert!(!passwordless());
+}
+
+#[test]
+fn a_passwordless_vault_never_reaches_the_keychain() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut vault = VaultManager::new(directory.path().join("open.serverus"));
+    vault.create("", test_kdf()).unwrap();
+    vault.lock();
+    let quick = Arc::new(RecordingQuickUnlock::default());
+    let app = test_app(vault, quick.clone(), Arc::new(ActivityTracker::default()));
+    let state = || app.state::<AppState>();
+    tauri::async_runtime::block_on(vault_unlock_password(state(), "".into())).unwrap();
+
+    let mut settings = state()
+        .vault
+        .lock()
+        .unwrap()
+        .payload()
+        .unwrap()
+        .settings
+        .clone();
+    for touch_id in [false, true] {
+        settings.security.touch_id = touch_id;
+        tauri::async_runtime::block_on(super::super::settings_update(state(), settings.clone()))
+            .unwrap();
+    }
+    assert_eq!(quick.stored.load(std::sync::atomic::Ordering::Relaxed), 0);
 }
