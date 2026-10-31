@@ -354,7 +354,13 @@ local files open in the editor too (double click / Edit… in the local
 pane, edited in place), and nothing the system opener would execute is
 ever run — it opens as text (see Gotchas); Linux arm64 (aarch64) builds
 and runs the full CI suite on GitHub's native `ubuntu-*-arm` runners and
-ships in releases. v1.5.1: the
+ships in releases. v1.8.0: the master password is optional (#34, see
+Gotchas); file-pane Size/Date/Mode columns are drag-resizable
+(`PanelSettings::columns`, clamped like the sidebar) and the Date column
+fits its dates (#35); transfer fixes — tar confined to the downloaded
+folder and only where nothing is overwritten unasked, partials only once
+opened, retries keep a Rename, FTP `LIST -a`; dialogs stack (see
+Gotchas). v1.5.1: the
 "hide local junk" setting also keeps `.DS_Store`/`Thumbs.db` out of recursive
 uploads and downloads (per-file walks and tar: `tar_stream/archive.rs`
 `pack_tree` / `unpack_confined`); comparison unchanged. Also v1.4.0: settings-dialog polish —
