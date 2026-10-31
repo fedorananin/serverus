@@ -7,5 +7,6 @@ mod names;
 mod pacing;
 mod progress;
 mod races;
+mod resume;
 mod retries;
 mod support;

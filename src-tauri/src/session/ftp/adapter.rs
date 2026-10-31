@@ -4,21 +4,14 @@ use crate::session::remote_fs::{
 };
 
 use super::pool::ftp_err;
-use super::{listing, streams, FtpPool};
+use super::{streams, FtpPool};
 
 #[async_trait::async_trait]
 impl RemoteFs for FtpPool {
     async fn list(&self, path: &str) -> AppResult<Vec<RemoteEntry>> {
         let mut pooled = self.checkout().await?;
         let conn = pooled.conn.as_mut().unwrap();
-        let lines = conn
-            .list(Some(path))
-            .await
-            .map_err(|error| ftp_err(path, error))?;
-        let entries = lines
-            .iter()
-            .filter_map(|line| listing::parse_entry(path, line))
-            .collect();
+        let entries = self.read_dir(conn, path).await?;
         let conn = pooled.conn.take().unwrap();
         self.give_back(conn).await;
         Ok(entries)

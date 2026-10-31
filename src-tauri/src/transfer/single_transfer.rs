@@ -12,6 +12,7 @@ use crate::error::{AppError, AppResult};
 use crate::session::remote_fs::join_remote;
 use crate::vault::model::ConflictPolicy;
 
+use super::partial::ResolvedTarget;
 use super::{
     domain_conflict_decision, local_target_exists, open_local_download, ConflictAction, Direction,
     ServerQueue, TransferItem, TransferManager, TransferState,
@@ -36,18 +37,32 @@ pub(super) async fn run_single(
     };
     let fs = item.fs.as_ref();
     let settings = &item.settings;
-    let mut local_target = item.local_target.clone();
     // Failed-name placeholders intentionally have no writable capability.
     // A manual retry must fail explicitly instead of probing the display path.
-    if direction == Direction::Download && local_target.is_none() && item.tar.is_none() {
+    if direction == Direction::Download && item.local_target.is_none() && item.tar.is_none() {
         return Err(AppError::Transfer(
             "this entry's remote name cannot be stored locally".into(),
         ));
     }
-    let resuming = item.resume.swap(false, Ordering::Relaxed);
+    // A retry goes back to where the previous attempt decided to write — a
+    // Rename choice included — without asking again. One that never got
+    // that far starts over, conflict check and all.
+    let resolved = if item.resume.swap(false, Ordering::Relaxed) {
+        item.resolved_target()
+    } else {
+        None
+    };
+    let resuming = resolved.is_some();
+    let (mut remote_path, mut local_target) = match resolved {
+        Some(target) => (target.remote_path, target.local_target),
+        None => (item.remote_path.clone(), item.local_target.clone()),
+    };
+    let mut local_path = item.local_path.clone();
 
     let mut offset = 0_u64;
-    if resuming {
+    // Resume only into bytes this transfer wrote: a target it never opened
+    // is still the user's original, never a prefix of the new file.
+    if resuming && item.has_partial() {
         let total = item.total.load(Ordering::Relaxed);
         offset = match direction {
             Direction::Download => local_target
@@ -57,10 +72,7 @@ pub(super) async fn run_single(
                 .map(|metadata| metadata.len())
                 .unwrap_or(0),
             Direction::Upload if !fs.supports_write_resume() => 0,
-            Direction::Upload => fs
-                .stat(&item.remote_path)
-                .await
-                .map_or(0, |entry| entry.size),
+            Direction::Upload => fs.stat(&remote_path).await.map_or(0, |entry| entry.size),
         };
         if offset >= total {
             offset = 0;
@@ -70,14 +82,12 @@ pub(super) async fn run_single(
 
     let target_exists = !resuming
         && match direction {
-            Direction::Upload => fs.exists(&item.remote_path).await?,
+            Direction::Upload => fs.exists(&remote_path).await?,
             Direction::Download => local_target
                 .as_ref()
                 .map(local_target_exists)
-                .unwrap_or_else(|| item.local_path.exists()),
+                .unwrap_or_else(|| local_path.exists()),
         };
-    let mut remote_path = item.remote_path.clone();
-    let mut local_path = item.local_path.clone();
 
     if target_exists {
         let batch_action = item.batch.policy_override();
@@ -168,6 +178,11 @@ pub(super) async fn run_single(
         }
     }
 
+    item.set_resolved_target(ResolvedTarget {
+        remote_path: remote_path.clone(),
+        local_target: local_target.clone(),
+    });
+
     let mut control = item.control.subscribe();
     let mtime;
     match direction {
@@ -189,8 +204,10 @@ pub(super) async fn run_single(
                     .await
                     .map_err(|error| AppError::Transfer(error.to_string()))?;
             }
-            item.mark_remote_partial(remote_path.clone());
             let mut destination = fs.open_write(&remote_path, offset).await?;
+            if !fs.writes_atomically() {
+                item.mark_remote_partial(remote_path.clone());
+            }
             if super::copy_loop(item, &mut control, &mut source, &mut destination).await? {
                 return Ok(TransferState::Cancelled);
             }
@@ -211,8 +228,8 @@ pub(super) async fn run_single(
             let target = local_target.as_ref().ok_or_else(|| {
                 AppError::Transfer("download is missing its local capability".into())
             })?;
-            item.mark_local_partial(target.clone());
             let mut destination = open_local_download(target, offset)?;
+            item.mark_local_partial(target.clone());
             if super::copy_loop(item, &mut control, &mut source, &mut destination).await? {
                 drop(destination);
                 return Ok(TransferState::Cancelled);

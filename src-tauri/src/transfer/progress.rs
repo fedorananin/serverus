@@ -141,6 +141,7 @@ impl TransferManager {
             tree,
             local_target,
             partial_target: Mutex::new(None),
+            resolved_target: Mutex::new(None),
         });
         let mut items = self.items.lock().unwrap();
         let activity = self.activity.state.lock().unwrap();

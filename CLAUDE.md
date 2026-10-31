@@ -213,6 +213,21 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
   removing one keeps it.
 - `Connection.disable_terminal` = SFTP-only SSH servers (no shell); the UI hides
   the terminal view and the backend never opens a shell channel.
+- **tar downloads** (`transfer/tar_stream.rs`) run `tar -cf - -C <dir> .`
+  and unpack into a capability handle on the local folder itself, never its
+  parent (the stream is untrusted); a symlinked top folder is followed like
+  the per-file walk does.
+- **Partials and retries** (`transfer/single_transfer.rs`): a target is
+  marked partial only after this transfer opened it, and never on S3
+  (`RemoteFs::writes_atomically` — the object changes only on finalize), so
+  cancel/tab close never deletes an untouched original. A retry reuses the
+  target the first attempt resolved (a Rename choice included) and resumes
+  only into bytes it wrote.
+- **FTP lists with `LIST -a`** (`session/ftp/listing.rs`) — a bare `LIST`
+  hides dot-files on stock vsftpd/Pure-FTPd/ProFTPD. A server that rejects
+  the option or lists nothing with it falls back to bare `LIST` for good.
+  Not MLSD: some servers report a symlinked dir there as a plain dir, and
+  recursive deletes would descend into the target.
 - **S3 uploads must declare a `Content-Type`.** `aws-sdk-s3` labels every body
   `application/octet-stream` and never infers a type from the key, which
   silently breaks any site published through the panel (browsers reject CSS

@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, OnceLock};
 
 use suppaftp::tokio::{AsyncRustlsConnector, AsyncRustlsFtpStream};
@@ -23,6 +24,9 @@ pub struct FtpPool {
     /// Unset when FEAT itself failed — treated as "assume yes" so a quirky
     /// server degrades to today's best-effort behavior, not a worse one.
     mfmt: OnceLock<bool>,
+    /// Whether `LIST -a` works here (see `listing::read_dir`); cleared for
+    /// good the first time the server shows it doesn't take options.
+    pub(super) list_all: AtomicBool,
 }
 
 pub(super) fn ftp_err(op: &str, error: suppaftp::FtpError) -> AppError {
@@ -54,6 +58,7 @@ impl FtpPool {
             limit: Arc::new(Semaphore::new(max_connections.max(2))),
             max_connections: max_connections.max(2),
             mfmt: OnceLock::new(),
+            list_all: AtomicBool::new(true),
         })
     }
 

@@ -802,4 +802,8 @@ impl RemoteFs for S3Fs {
     fn supports_write_resume(&self) -> bool {
         false
     }
+
+    fn writes_atomically(&self) -> bool {
+        true
+    }
 }

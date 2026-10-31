@@ -232,3 +232,51 @@ async fn tar_upload_preserves_exact_mtime() {
         "tar upload must preserve the exact mtime the Compare feature checks"
     );
 }
+
+/// A symlinked folder (`current -> release`) downloads its contents.
+#[tokio::test]
+async fn tar_download_follows_a_linked_folder() {
+    let sshd = TestSshd::spawn();
+    let ssh = connect(&sshd).await;
+    let fs_remote: Arc<dyn RemoteFs> = Arc::new(SftpFs::open(&ssh).await.unwrap());
+    let release = sshd.dir.path().join("release");
+    fs::create_dir_all(release.join("sub")).unwrap();
+    fs::write(release.join("sub/a.txt"), "new").unwrap();
+    std::os::unix::fs::symlink(&release, sshd.dir.path().join("current")).unwrap();
+    let remote = sshd
+        .dir
+        .path()
+        .join("current")
+        .to_string_lossy()
+        .into_owned();
+
+    let manager = Arc::new(TransferManager::default());
+    let context_id = transfer_context::activate(&manager);
+    let sink: Arc<dyn ProgressSink> = Arc::new(NullSink);
+    let dst = tempfile::tempdir().unwrap();
+    let copied = dst.path().join("current/sub/a.txt");
+    for (policy, accelerated, expected) in [(ConflictPolicy::Overwrite, true, "new")] {
+        let mut request_settings = settings();
+        request_settings.conflict_policy = policy;
+        let request = DownloadRequest::new(
+            fs_remote.clone(),
+            "s",
+            &remote,
+            dst.path().to_str().unwrap(),
+            request_settings,
+        );
+        manager
+            .enqueue_download_accelerated(context_id, &sink, request, Some(ssh.clone()))
+            .await
+            .unwrap();
+        wait_for_drain(&manager).await;
+        let items = manager.snapshot().items;
+        assert!(
+            items.iter().all(|i| i.accelerated == accelerated),
+            "{items:#?}"
+        );
+        assert_eq!(fs::read_to_string(&copied).unwrap(), expected);
+        manager.clear_finished(context_id, "s");
+        fs::write(&copied, "mine").unwrap();
+    }
+}

@@ -9,7 +9,7 @@ use crate::session::remote_fs::RemoteFs;
 use crate::vault::model::TransferSettings;
 
 use super::lifecycle::PendingRetry;
-use super::partial::PartialTransferTarget;
+use super::partial::{PartialTransferTarget, ResolvedTarget};
 use super::tar_stream;
 use super::{
     AdmissionToken, ConflictAction, Control, LocalDownloadTarget, TransferBatch, TransferKind,
@@ -41,6 +41,7 @@ pub struct TransferItem {
     pub(super) tree: Option<super::tree_job::TreeJob>,
     pub(super) local_target: Option<LocalDownloadTarget>,
     pub(super) partial_target: Mutex<Option<PartialTransferTarget>>,
+    pub(super) resolved_target: Mutex<Option<ResolvedTarget>>,
 }
 
 impl TransferItem {

@@ -10,6 +10,7 @@ mod archive;
 #[cfg(test)]
 mod tests;
 
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -23,7 +24,9 @@ use crate::error::{AppError, AppResult};
 use crate::session::remote_fs::parent_remote;
 use crate::session::ssh::SshSession;
 
-use super::{Control, Direction, TransferItem, TransferState};
+use super::{
+    ensure_download_directory, open_download_root, Control, Direction, TransferItem, TransferState,
+};
 use archive::{pack_tree, unpack_confined};
 
 pub struct TarJob {
@@ -46,24 +49,29 @@ pub async fn run(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferSt
     }
 }
 
-/// `tar -cf - -C <remote parent> <name>` → unpack locally.
+/// `tar -cf - -C <remote dir> .` → unpack into the local folder.
+///
+/// Archiving the folder's *contents* keeps every entry under the folder the
+/// user downloads — the stream is untrusted, so the unpacker is confined to
+/// that folder, never its parent — and follows the folder itself when it is
+/// a symlink, as the per-file walk does.
 async fn download(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferState> {
-    let remote_parent = parent_remote(&item.remote_path);
-    let name = item
-        .remote_path
-        .trim_end_matches('/')
-        .rsplit('/')
-        .next()
-        .unwrap_or("")
-        .to_string();
     let local_parent = item
         .local_path
         .parent()
-        .ok_or_else(|| AppError::Transfer("bad local path".into()))?
-        .to_path_buf();
-    tokio::fs::create_dir_all(&local_parent)
+        .ok_or_else(|| AppError::Transfer("bad local path".into()))?;
+    let local_name = item
+        .local_path
+        .file_name()
+        .ok_or_else(|| AppError::Transfer("bad local path".into()))?;
+    tokio::fs::create_dir_all(local_parent)
         .await
         .map_err(|e| AppError::Transfer(e.to_string()))?;
+    let parent = open_download_root(local_parent)?;
+    ensure_download_directory(&parent, Path::new(local_name))?;
+    let root = parent
+        .open_dir(local_name)
+        .map_err(|e| AppError::Transfer(format!("{}: {e}", item.local_path.display())))?;
 
     let channel = {
         let handle = job.ssh.handle.lock().await;
@@ -73,10 +81,7 @@ async fn download(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferS
             .map_err(|e| AppError::Transfer(format!("tar channel: {e}")))?
     };
     channel
-        .exec(
-            true,
-            format!("tar -cf - -C {} {}", shq(&remote_parent), shq(&name)),
-        )
+        .exec(true, format!("tar -cf - -C {} .", shq(&item.remote_path)))
         .await
         .map_err(|e| AppError::Transfer(format!("tar exec: {e}")))?;
 
@@ -85,7 +90,6 @@ async fn download(item: &Arc<TransferItem>, job: &TarJob) -> AppResult<TransferS
     let bridge = SyncIoBridge::new(pipe_r);
     let skip_junk = job.skip_junk;
     let unpack = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-        let root = cap_std::fs::Dir::open_ambient_dir(&local_parent, cap_std::ambient_authority())?;
         unpack_confined(tar::Archive::new(bridge), &root, skip_junk)
     });
 

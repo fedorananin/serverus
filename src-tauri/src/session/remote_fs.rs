@@ -84,6 +84,13 @@ pub trait RemoteFs: Send + Sync {
     fn supports_write_resume(&self) -> bool {
         true
     }
+    /// Whether an upload replaces the target only once its writer finishes
+    /// (S3: `PutObject` / `CompleteMultipartUpload`). An interrupted one then
+    /// leaves the existing object untouched, so there is no partial to clean
+    /// up — deleting the key would destroy the live original.
+    fn writes_atomically(&self) -> bool {
+        false
+    }
     /// Whether uploads can preserve the source modification time, i.e.
     /// `set_mtime` actually takes effect. S3 never can (`LastModified` is
     /// server-managed); FTP only when the server advertises MFMT. Folder

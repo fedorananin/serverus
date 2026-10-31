@@ -124,18 +124,56 @@ fn item_with_batch_and_fs(
     batch: Arc<TransferBatch>,
     fs: Arc<dyn RemoteFs>,
 ) -> Arc<TransferItem> {
+    item_with_shape(session_id, batch, fs, Shape::fixture())
+}
+
+/// What a byte transfer moves where; `fixture()` is a 10-byte upload.
+pub(super) struct Shape {
+    pub(super) kind: TransferKind,
+    pub(super) local_path: PathBuf,
+    pub(super) remote_path: String,
+    pub(super) total: u64,
+    pub(super) settings: TransferSettings,
+    pub(super) local_target: Option<LocalDownloadTarget>,
+}
+
+impl Shape {
+    pub(super) fn fixture() -> Self {
+        Self {
+            kind: TransferKind::Upload,
+            local_path: PathBuf::from("fixture.txt"),
+            remote_path: "/fixture.txt".into(),
+            total: 10,
+            settings: settings(),
+            local_target: None,
+        }
+    }
+}
+
+pub(super) fn item_with_shape(
+    session_id: &str,
+    batch: Arc<TransferBatch>,
+    fs: Arc<dyn RemoteFs>,
+    shape: Shape,
+) -> Arc<TransferItem> {
     let numeric_id = u128::from(NEXT_ID.fetch_add(1, Ordering::Relaxed));
     let domain_id = DomainTransferId::try_from(numeric_id).expect("test transfer ID is non-zero");
+    let name = shape
+        .remote_path
+        .rsplit('/')
+        .next()
+        .unwrap_or_default()
+        .to_string();
     Arc::new(TransferItem {
         id: numeric_id.to_string(),
         session_id: session_id.to_string(),
         batch,
-        kind: TransferKind::Upload,
-        local_path: PathBuf::from("fixture.txt"),
-        remote_path: "/fixture.txt".into(),
-        name: "fixture.txt".into(),
+        kind: shape.kind,
+        local_path: shape.local_path,
+        remote_path: shape.remote_path,
+        name,
         admission: admission(session_id),
-        total: AtomicU64::new(10),
+        total: AtomicU64::new(shape.total),
         done: AtomicU64::new(0),
         lifecycle: Mutex::new(TransferLifecycle::new(domain_id, DomainRetryBudget::new(2))),
         control: new_control_channel(),
@@ -144,12 +182,13 @@ fn item_with_batch_and_fs(
         last_done: AtomicU64::new(0),
         speed_bps: AtomicU64::new(0),
         fs,
-        settings: settings(),
+        settings: shape.settings,
         resume: AtomicBool::new(false),
         tar: None,
         tree: None,
-        local_target: None::<LocalDownloadTarget>,
+        local_target: shape.local_target,
         partial_target: Mutex::new(None),
+        resolved_target: Mutex::new(None),
     })
 }
 

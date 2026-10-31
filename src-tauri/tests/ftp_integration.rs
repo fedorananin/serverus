@@ -279,5 +279,7 @@ async fn ftp_read_with_offset() {
 
 #[path = "ftp_integration/compare.rs"]
 mod compare;
+#[path = "ftp_integration/hidden.rs"]
+mod hidden;
 #[path = "ftp_integration/junk.rs"]
 mod junk;
