@@ -97,6 +97,14 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
   back in the window arrive via Tauri's `onDragDropEvent` and are routed by
   cursor position. Remote pane uses pointer-drag (remote files aren't on disk).
   Never reach for `draggable`/`dataTransfer`.
+- **Dialogs are layers** (`src/lib/stores/modal-stack.ts`, action
+  `use:modalLayer`): one capture listener gives Escape to the topmost only,
+  per-dialog `<svelte:window onkeydown>` Escape handlers can't (same target,
+  outer one runs first). App-wide shortcuts (⌘W/⌘T/⌘1..9/⌘,/⌘⇧←→, ⌘←/→
+  transfers) check `hasOpenModal()`. `Modal` and the paste dialog trap Tab
+  and restore focus; agent and host-key prompts appear unasked, so they
+  never take focus or Tab from a terminal. A new dialog that isn't a
+  `Modal` must use the action too.
 - **Terminal views stay mounted when hidden** (SessionView toggles `display`),
   because unmounting closes the SSH channel and loses the shell. Guard
   `FitAddon.fit()` against 0×0. This needs xterm.js ≥ 6: xterm 5's native

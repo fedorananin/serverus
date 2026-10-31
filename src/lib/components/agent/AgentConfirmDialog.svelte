@@ -4,6 +4,7 @@
   // the dialog pops up while the user may be typing, and a stray Enter or
   // space must neither approve the action nor reach the terminal behind.
   import { useAppModel } from "$lib/app/model.svelte";
+  import { modalLayer } from "$lib/stores/modal-stack";
 
   const agent = useAppModel().agent;
   const pending = $derived(agent.confirmations[0] ?? null);
@@ -13,21 +14,22 @@
     if (pending && document.activeElement instanceof HTMLElement) document.activeElement.blur();
   });
 
-  function onkeydown(event: KeyboardEvent) {
-    if (!pending) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      void agent.decide(pending.requestId, "deny");
-    }
+  function deny() {
+    if (pending) void agent.decide(pending.requestId, "deny");
   }
 </script>
 
-<svelte:window {onkeydown} />
-
 {#if pending}
   <div class="backdrop" role="presentation">
-    <div class="dialog" role="dialog" aria-label="AI agent request">
+    <!-- No focus trap: Tab or Enter typed into a terminal must never land
+         on these buttons. -->
+    <div
+      class="dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-label="AI agent request"
+      use:modalLayer={{ onescape: deny }}
+    >
       <h2>🤖 The AI agent asks for permission</h2>
       <p>
         <strong>{pending.server}</strong> — {pending.action}:

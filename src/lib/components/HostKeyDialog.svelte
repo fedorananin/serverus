@@ -1,5 +1,6 @@
 <script lang="ts">
   import { hostKey } from "$lib/stores/hostkey.svelte";
+  import { modalLayer } from "$lib/stores/modal-stack";
 
   /** Prompts appear unasked and queue behind each other: a click meant for
    *  the previous one (or a double click) must not answer a key unseen. */
@@ -22,7 +23,9 @@
       class="dialog"
       class:changed={p.changed}
       role="dialog"
+      aria-modal="true"
       aria-label={p.changed ? "Host key changed" : "Unknown host"}
+      use:modalLayer
     >
       {#if p.changed}
         <h2>⚠️ Host key changed!</h2>

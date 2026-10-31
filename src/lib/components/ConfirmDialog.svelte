@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isInTopLayer } from "$lib/stores/modal-stack";
   import Modal from "./Modal.svelte";
 
   interface Props {
@@ -25,8 +26,12 @@
     node.focus();
   }
 
+  let messageEl = $state<HTMLParagraphElement>();
+
   function onkeydown(e: KeyboardEvent) {
     if (e.key !== "Enter") return;
+    // An agent request or host-key prompt may pop up over this dialog.
+    if (!isInTopLayer(messageEl)) return;
     // A focused button (e.g. Cancel, reached via Tab) handles Enter natively.
     if (e.target instanceof HTMLButtonElement) return;
     e.preventDefault();
@@ -37,7 +42,7 @@
 <svelte:window {onkeydown} />
 
 <Modal {title} width={380} {onclose}>
-  <p class="message">{message}</p>
+  <p class="message" bind:this={messageEl}>{message}</p>
 
   {#snippet footer()}
     <button onclick={onclose}>Cancel</button>

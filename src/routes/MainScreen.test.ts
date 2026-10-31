@@ -2,6 +2,7 @@
 
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { modalLayer } from "$lib/stores/modal-stack";
 import MainScreen from "./MainScreen.svelte";
 
 const vaultMock = vi.hoisted(() => ({
@@ -114,5 +115,20 @@ describe("MainScreen lock boundary", () => {
 
     expect(tabsMock.move).not.toHaveBeenCalled();
     input.remove();
+  });
+
+  it("leaves the tabs behind an open dialog alone", async () => {
+    vaultMock.screen = "main";
+    render(MainScreen);
+    const dialog = modalLayer(document.body.appendChild(document.createElement("div")));
+
+    await fireEvent.keyDown(window, { key: "w", ctrlKey: true });
+    await fireEvent.keyDown(window, { key: "t", ctrlKey: true });
+    await fireEvent.keyDown(window, { key: "2", ctrlKey: true });
+    dialog.destroy();
+
+    expect(tabsMock.close).not.toHaveBeenCalled();
+    expect(tabsMock.open).not.toHaveBeenCalled();
+    expect(tabsMock.activateIndex).not.toHaveBeenCalled();
   });
 });

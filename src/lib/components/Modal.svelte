@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import { modalLayer } from "$lib/stores/modal-stack";
 
   interface Props {
     title: string;
@@ -10,19 +11,18 @@
   }
 
   let { title, width = 460, onclose, children, footer }: Props = $props();
-
-  function onkeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      onclose();
-    }
-  }
 </script>
 
-<svelte:window onkeydown={onkeydown} />
-
 <div class="backdrop" onmousedown={(e) => e.target === e.currentTarget && onclose()} role="presentation">
-  <div class="modal" style:width="{width}px" role="dialog" aria-label={title}>
+  <div
+    class="modal"
+    style:width="{width}px"
+    role="dialog"
+    aria-modal="true"
+    aria-label={title}
+    tabindex="-1"
+    use:modalLayer={{ onescape: onclose, trapFocus: true }}
+  >
     <header>
       <span class="title">{title}</span>
       <button class="close" onclick={onclose} aria-label="Close">✕</button>
@@ -58,6 +58,11 @@
     display: flex;
     flex-direction: column;
     box-shadow: var(--shadow-lg);
+  }
+
+  /* Focused only as a fallback target on open — no ring around the dialog. */
+  .modal:focus {
+    outline: none;
   }
 
   header {

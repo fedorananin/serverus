@@ -24,6 +24,7 @@
   import UploadAclDialog from "./UploadAclDialog.svelte";
 
   import type { Tab } from "$lib/stores/tabs.svelte";
+  import { hasOpenModal } from "$lib/stores/modal-stack";
 
   interface Props {
     tab: Tab;
@@ -199,6 +200,7 @@
     // Hidden tabs stay mounted and hear window keydowns too — only the
     // visible FilesView may act on the transfer shortcuts.
     if (!root || root.offsetParent === null) return;
+    if (hasOpenModal()) return;
     // Cmd/Ctrl+→ uploads the local selection, Cmd/Ctrl+← downloads the remote one.
     if (isMod(e) && e.key === "ArrowRight" && local.selected.size > 0) {
       e.preventDefault();

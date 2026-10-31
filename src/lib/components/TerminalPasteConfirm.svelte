@@ -1,5 +1,6 @@
 <script lang="ts">
   import { isMac } from "$lib/platform";
+  import { modalLayer } from "$lib/stores/modal-stack";
 
   interface Props {
     text: string;
@@ -21,11 +22,6 @@
   });
 
   function onkeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      oncancel();
-      return;
-    }
     // ⌘⏎ (Ctrl+⏎) sends from anywhere, including mid-edit in the textarea —
     // plain Enter must keep inserting newlines there.
     if (e.key === "Enter" && (isMac ? e.metaKey : e.ctrlKey)) {
@@ -36,7 +32,15 @@
 </script>
 
 <div class="backdrop" role="presentation">
-  <div class="dialog" role="dialog" aria-label="Paste into terminal" tabindex="-1" onkeydown={onkeydown}>
+  <div
+    class="dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Paste into terminal"
+    tabindex="-1"
+    {onkeydown}
+    use:modalLayer={{ onescape: oncancel, trapFocus: true }}
+  >
     <p>
       Paste into the terminal
       {#if lines > 1}<span class="count">— {lines} lines</span>{/if}

@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { commands } from "$lib/api";
+import { modalLayer } from "$lib/stores/modal-stack";
 import MasterPasswordBlock from "./MasterPasswordBlock.svelte";
 import SecuritySection from "./SecuritySection.svelte";
 
@@ -60,6 +61,22 @@ describe("master password settings", () => {
     await waitFor(() => expect(mocks.refreshInfo).toHaveBeenCalledOnce());
     expect(await screen.findByText("Master password removed ✓")).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("closes only the confirmation on Escape, not the settings around it", async () => {
+    const closeSettings = vi.fn();
+    const settings = modalLayer(document.body.appendChild(document.createElement("div")), {
+      onescape: closeSettings,
+    });
+    render(MasterPasswordBlock);
+    await fireEvent.click(screen.getByRole("button", { name: "Remove master password…" }));
+
+    await fireEvent.keyDown(window, { key: "Escape" });
+    settings.destroy();
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(closeSettings).not.toHaveBeenCalled();
+    expect(commands.vaultChangePassword).not.toHaveBeenCalled();
   });
 
   it("can confirm the removal with Touch ID instead of the password", async () => {

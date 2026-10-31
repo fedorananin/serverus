@@ -3,6 +3,7 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
 
+import { modalLayer } from "$lib/stores/modal-stack";
 import ConfirmDialog from "./ConfirmDialog.svelte";
 
 describe("ConfirmDialog", () => {
@@ -46,6 +47,23 @@ describe("ConfirmDialog", () => {
     const cancel = screen.getByRole("button", { name: "Cancel" });
     cancel.focus();
     await fireEvent.keyDown(cancel, { key: "Enter" });
+
+    expect(onconfirm).not.toHaveBeenCalled();
+  });
+
+  it("does not confirm on Enter while another dialog is on top of it", async () => {
+    const onconfirm = vi.fn();
+    render(ConfirmDialog, {
+      title: "Delete",
+      message: "Delete alpha.txt?",
+      onconfirm,
+      onclose: vi.fn(),
+    });
+    // An agent request popping up over it.
+    const agent = modalLayer(document.body.appendChild(document.createElement("div")));
+
+    await fireEvent.keyDown(document.body, { key: "Enter" });
+    agent.destroy();
 
     expect(onconfirm).not.toHaveBeenCalled();
   });

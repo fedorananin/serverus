@@ -12,6 +12,7 @@
   import DragGhost from "$lib/components/DragGhost.svelte";
   import { useAppModel } from "$lib/app/model.svelte";
   import { isMod } from "$lib/platform";
+  import { hasOpenModal } from "$lib/stores/modal-stack";
 
   const appModel = useAppModel();
   const transfers = appModel.transfers;
@@ -34,7 +35,9 @@
 
   function handleKeydown(event: KeyboardEvent) {
     if (vault.screen !== "main") return;
-    if (!isMod(event)) return;
+    // Tab shortcuts act on what is behind a dialog: ⌘W would close the tab
+    // under it. The dialog is the only thing the keyboard talks to.
+    if (!isMod(event) || hasOpenModal()) return;
     if (event.key === "w" && tabs.activeId) {
       event.preventDefault();
       tabs.close(tabs.activeId);
