@@ -62,7 +62,10 @@ async function waitForActiveConnection(): Promise<void> {
 }
 
 async function activeRemotePath(): Promise<string> {
-  return (await displayedElement(remotePath, "The active remote path was not visible.")).getText();
+  // The path bar is breadcrumbs; the current folder's crumb carries the
+  // whole path in its title.
+  const crumb = await displayedElement(remotePath, "The active remote path was not visible.");
+  return (await crumb.getAttribute("title")) ?? "";
 }
 
 async function openRemoteDirectory(

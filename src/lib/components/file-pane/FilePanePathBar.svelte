@@ -81,7 +81,7 @@
             >{crumbs.separator}</span
           >{/if}{/each}<button
         class="crumb current"
-        title="{pane.path} — click to edit"
+        title={pane.path}
         aria-label="{title} path"
         onclick={startPathEdit}>{current}</button
       >

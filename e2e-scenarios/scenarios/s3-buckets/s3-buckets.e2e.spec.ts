@@ -32,11 +32,16 @@ describe("@s3-buckets", () => {
 
     await openFileOption("remote", createdBucket);
     const remotePath = await $("[data-pane='remote'] button[aria-label='Scenario S3 path']");
-    await remotePath.waitUntil(async () => (await remotePath.getText()) === `/${bucket}`, {
-      timeout: 30_000,
-      timeoutMsg: "The created S3 bucket did not open as a visible folder.",
-    });
-    expect(await remotePath.getAttribute("title")).toBe(`/${bucket}`);
+    // Breadcrumbs: the current folder's crumb shows its name and carries
+    // the whole path in its title.
+    await remotePath.waitUntil(
+      async () => (await remotePath.getAttribute("title")) === `/${bucket}`,
+      {
+        timeout: 30_000,
+        timeoutMsg: "The created S3 bucket did not open as a visible folder.",
+      },
+    );
+    expect(await remotePath.getText()).toBe(bucket);
     await remoteRows.waitUntil(async () => (await remoteRows.getText()).trim() === "Empty", {
       timeout: 30_000,
       timeoutMsg: "The new S3 bucket did not show an empty listing.",
