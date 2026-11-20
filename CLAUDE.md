@@ -245,6 +245,15 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
   the option or lists nothing with it falls back to bare `LIST` for good.
   Not MLSD: some servers report a symlinked dir there as a plain dir, and
   recursive deletes would descend into the target.
+- **Window frame memory** (`window_state.rs`, issue #36) is off by default
+  and lives in plaintext `window.json` beside `config.json`, not in the
+  vault (the window opens before unlock). The window starts hidden
+  (`visible: false`) and `restore_and_show` places then shows it; the frame
+  is tracked in memory on move/resize (minimized/fullscreen skipped,
+  maximized keeps the normal frame) and written only on a clean exit.
+  `serverus_domain::window_placement::fit_to_monitors` picks the monitor
+  showing most of it, shrinks and slides it into the work area, or returns
+  `None` (default placement) when no monitor shows any of it.
 - Config import never takes `settings.agent`, `settings.editor` (a custom
   app would turn Edit… into running files) or `settings.security`.
 - **S3 uploads must declare a `Content-Type`.** `aws-sdk-s3` labels every body

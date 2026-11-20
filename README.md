@@ -99,6 +99,9 @@ Handy shortcuts: `⌘T` new tab · `⌘W` close tab · `⌘1..9` switch tabs ·
 - Folders remember their open/closed state; a closed one shows its item count.
 - **Live search** over name and host; **resizable width** (drag the edge,
   double‑click to reset).
+- **Remembers the window**, if you want it to (Settings → Window, off by
+  default): size and position come back at the next start, moved onto the
+  screen and shrunk to fit when that monitor is gone or smaller now.
 
 ### 🖥️ SSH sessions do triple duty
 One SSH connection is multiplexed into three roles over a single TCP session:

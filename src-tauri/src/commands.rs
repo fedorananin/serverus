@@ -22,6 +22,7 @@ mod vault_access;
 mod vault_io;
 mod vault_location;
 mod vault_tree;
+mod window;
 
 pub use agent::*;
 pub use compare::*;
@@ -40,6 +41,7 @@ pub use vault_access::*;
 pub use vault_io::*;
 pub use vault_location::*;
 pub use vault_tree::*;
+pub use window::*;
 
 #[cfg(test)]
 #[path = "commands/vault_context_tests.rs"]

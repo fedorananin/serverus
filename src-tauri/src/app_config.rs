@@ -1,8 +1,9 @@
 //! Tiny plaintext app config: only the pointer to the vault file location.
 //!
 //! All real settings live *inside* the encrypted vault (SPEC §8); the vault
-//! path itself can't (chicken-and-egg), so it is the single exception. It
-//! contains no secrets.
+//! path itself can't (chicken-and-egg), so it is an exception. The other is
+//! the remembered window frame (`crate::window_state`, `window.json`), which
+//! is needed before anything is unlocked. Neither contains secrets.
 
 use std::fs;
 use std::io::Write;
@@ -62,9 +63,16 @@ fn save_to(path: &Path, config: &AppConfig) -> std::io::Result<()> {
     save_to_with(path, config, replace_config_file)
 }
 
+/// Atomically replace the JSON file at `path` (temp file + rename), creating
+/// the config directory when needed. Shared by the other small plaintext
+/// files next to `config.json`.
+pub(crate) fn write_json(path: &Path, value: &impl Serialize) -> std::io::Result<()> {
+    save_to_with(path, value, replace_config_file)
+}
+
 fn save_to_with(
     path: &Path,
-    config: &AppConfig,
+    config: &impl Serialize,
     replace: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
 ) -> std::io::Result<()> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));

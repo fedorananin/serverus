@@ -186,6 +186,13 @@ export const commands = {
 	agentTerminalStates: () => typedError<AgentTerminalEvent[], ApiError>(__TAURI_INVOKE("agent_terminal_states")),
 	/**  How to register Serverus with an MCP client. */
 	agentSetupInfo: () => typedError<AgentSetupInfo, ApiError>(__TAURI_INVOKE("agent_setup_info")),
+	/**  Whether the window frame is remembered across restarts. */
+	windowRestoreGet: () => typedError<boolean, ApiError>(__TAURI_INVOKE("window_restore_get")),
+	/**
+	 *  Turn remembering the window frame on or off. Takes effect at the next
+	 *  quit (saving) and start (restoring).
+	 */
+	windowRestoreSet: (enabled: boolean) => typedError<null, ApiError>(__TAURI_INVOKE("window_restore_set", { enabled })),
 };
 
 /** Events */

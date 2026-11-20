@@ -26,6 +26,8 @@ vi.mock("$lib/api", () => ({
     vaultChangePassword: vi.fn(),
     vaultExportConfig: vi.fn(),
     vaultSetPath: vi.fn(),
+    windowRestoreGet: vi.fn(async () => ({ status: "ok", data: false })),
+    windowRestoreSet: vi.fn(),
   },
   errorMessage: (error: unknown) => (error instanceof Error ? error.message : String(error)),
   unwrap: async (promise: Promise<{ status: "ok"; data: unknown }>) => (await promise).data,
@@ -277,4 +279,5 @@ describe("SettingsDialog transaction", () => {
       agent: { enabled: true, full_access: true, create_connections: "ask" },
     });
   });
+
 });

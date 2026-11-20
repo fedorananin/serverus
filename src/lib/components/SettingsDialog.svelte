@@ -18,6 +18,7 @@
   import TerminalSection from "./settings-dialog/TerminalSection.svelte";
   import TransfersSection from "./settings-dialog/TransfersSection.svelte";
   import VaultSection from "./settings-dialog/VaultSection.svelte";
+  import WindowSection from "./settings-dialog/WindowSection.svelte";
   import "./settings-dialog/settings-dialog.css";
 
   const REPO_URL = "https://github.com/fedorananin/serverus";
@@ -59,6 +60,18 @@
     destroyed = true;
     if (!committed) setThemePreference(savedTheme);
   });
+
+  // Not a vault setting: the window opens before the vault is unlocked, so
+  // the switch lives in the plaintext app config (see window_state.rs).
+  let rememberWindow = $state<boolean | null>(null);
+  let savedRememberWindow: boolean | null = null;
+  void unwrap(commands.windowRestoreGet())
+    .then((enabled) => {
+      if (rememberWindow === null) rememberWindow = savedRememberWindow = enabled;
+    })
+    .catch(() => {
+      /* the switch stays disabled */
+    });
 
   let exportStatus = $state<string | null>(null);
 
@@ -134,7 +147,12 @@
     saving = true;
     error = null;
     const submitted = $state.snapshot(settings) as SettingsDraft;
+    const submittedWindow = rememberWindow;
     try {
+      if (submittedWindow !== null && submittedWindow !== savedRememberWindow) {
+        await unwrap(commands.windowRestoreSet(submittedWindow));
+        savedRememberWindow = submittedWindow;
+      }
       await vault.updateSettings(submitted);
       if (destroyed) return;
       committed = true;
@@ -176,6 +194,7 @@
 <Modal title="Settings" width={540} onclose={cancel}>
   <div class="form settings-dialog-form" inert={saving} aria-busy={saving}>
     <AppearanceSection value={settings.appearance.theme} onchange={previewTheme} />
+    <WindowSection bind:value={rememberWindow} />
     <SecuritySection
       bind:value={settings.security}
       biometryAvailable={vault.info?.biometry_available ?? false}

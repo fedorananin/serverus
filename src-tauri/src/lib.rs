@@ -12,6 +12,7 @@ pub mod state;
 pub mod transfer;
 pub mod vault;
 pub mod watcher;
+pub mod window_state;
 
 use tauri_specta::{collect_commands, collect_events, Builder};
 
@@ -96,6 +97,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::agent_hand_back,
             commands::agent_terminal_states,
             commands::agent_setup_info,
+            commands::window_restore_get,
+            commands::window_restore_set,
         ])
         .events(collect_events![
             events::VaultLockedEvent,
@@ -135,18 +138,22 @@ pub fn run() {
         .plugin(tauri_plugin_drag::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(state::AppState::new())
+        .manage(window_state::WindowTracker::default())
+        .on_window_event(window_state::on_window_event)
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             use tauri::Manager;
             builder.mount_events(app.app_handle());
+            window_state::restore_and_show(app.app_handle());
             autolock::spawn(app.app_handle().clone());
             agent::spawn(app.app_handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, event| {
+        .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
+                window_state::save_on_exit(app);
                 // Temp copies of remote-edited files never outlive the app.
                 watcher::cleanup_all();
                 agent::shutdown();
