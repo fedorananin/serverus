@@ -116,7 +116,8 @@ Plus: password / key / `ssh-agent` auth, **jump‑host chains** of any length
 hard warning on key change, keep‑alive and auto‑reconnect.
 
 ### 🗂️ Dual‑pane file manager
-- Local left, remote right; editable path bars, column sort, resizable
+- Local left, remote right; **breadcrumb path bars** (click any parent
+  folder to jump there, click the current one to type a path), column sort, resizable
   Size/Date/Mode columns (drag the header edge, double‑click to reset),
   hidden‑file toggle, live filter, and virtual scrolling for 10k+ listings.
 - Native‑feeling selection (`⌘`‑click, `Shift`‑click, `⌘A`, marquee) and

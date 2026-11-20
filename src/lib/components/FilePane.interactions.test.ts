@@ -111,6 +111,25 @@ describe("FilePane interactions", () => {
     expect(container.querySelector("[data-pane='remote']")).toBeInTheDocument();
   });
 
+  it("opens a parent folder from its breadcrumb", async () => {
+    const pane = remotePane();
+    pane.path = "/var/www/site";
+    const navigate = vi.spyOn(pane, "navigate").mockResolvedValue();
+    render(FilePane, { pane, title: "Remote", ontransfer: vi.fn() });
+
+    const folders = screen.getByRole("navigation", { name: "Remote folders" });
+    expect(folders).toHaveTextContent("/var/www/site");
+    await fireEvent.click(within(folders).getByRole("button", { name: "www" }));
+    expect(navigate).toHaveBeenCalledWith("/var/www");
+    await fireEvent.click(within(folders).getByRole("button", { name: "/" }));
+    expect(navigate).toHaveBeenLastCalledWith("/");
+
+    // The current folder's crumb edits the whole path instead.
+    await fireEvent.click(within(folders).getByRole("button", { name: "Remote path" }));
+    expect(screen.getByLabelText("Remote path input")).toHaveValue("/var/www/site");
+    expect(navigate).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps transfer and rename actions attached to the current selection", async () => {
     const pane = remotePane();
     const rename = vi.spyOn(pane, "rename").mockResolvedValue();

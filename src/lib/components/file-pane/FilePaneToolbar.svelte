@@ -2,6 +2,7 @@
   import type { S3UploadAcl } from "$lib/api";
   import type { PaneController, SortKey } from "$lib/stores/pane.svelte";
   import type { FileColumn, FileColumnWidths } from "./column-widths.svelte";
+  import FilePanePathBar from "./FilePanePathBar.svelte";
 
   interface Props {
     pane: PaneController;
@@ -13,28 +14,9 @@
   }
 
   let { pane, title, columns, uploadMode, onuploadmode, onactions }: Props = $props();
-  let pathInput = $state("");
-  let editingPath = $state(false);
-
-  function startPathEdit() {
-    pathInput = pane.path;
-    editingPath = true;
-  }
-
-  function commitPath(event: Event) {
-    event.preventDefault();
-    editingPath = false;
-    const target = pathInput.trim();
-    if (target && target !== pane.path) void pane.navigate(target);
-  }
 
   function sortIndicator(key: SortKey) {
     return pane.sortKey === key ? (pane.sortAsc ? " ↑" : " ↓") : "";
-  }
-
-  function autofocus(node: HTMLInputElement) {
-    node.focus();
-    node.select();
   }
 </script>
 
@@ -71,25 +53,7 @@
   >
 </div>
 
-<div class="pathbar">
-  {#if editingPath}
-    <form onsubmit={commitPath} class="path-form">
-      <input
-        type="text"
-        aria-label="{title} path input"
-        class="mono path-input"
-        bind:value={pathInput}
-        onblur={() => (editingPath = false)}
-        use:autofocus
-      />
-    </form>
-  {:else}
-    <button class="path mono" title={pane.path} aria-label="{title} path" onclick={startPathEdit}
-      >{pane.path}</button
-    >
-  {/if}
-  <input type="text" class="filter" placeholder="Filter" bind:value={pane.filter} />
-</div>
+<FilePanePathBar {pane} {title} />
 
 {#snippet resizer(column: FileColumn, label: string)}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -150,41 +114,6 @@
   .acl-mode {
     font-size: 10px;
     padding: 1px 4px;
-  }
-
-  .pathbar {
-    display: flex;
-    gap: 6px;
-    padding: 5px 8px;
-  }
-
-  .path,
-  .path-input {
-    flex: 1;
-    min-width: 0;
-    text-align: left;
-    font-size: 11px;
-    padding: 3px 8px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    direction: rtl;
-  }
-
-  .path-form {
-    flex: 1;
-    display: flex;
-  }
-
-  .path-input {
-    direction: ltr;
-    width: 100%;
-  }
-
-  .filter {
-    width: 84px;
-    font-size: 11px;
-    padding: 3px 7px;
   }
 
   .cols {
