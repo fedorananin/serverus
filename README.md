@@ -171,7 +171,9 @@ specific app); every save auto‑uploads with an unobtrusive "Uploaded ✓". Tem
 copies are cleaned up on tab/app close. Local files open the same way, edited
 in place. With the system default app, anything it would *run* rather than
 open — apps, `.command`, `.exe`, `.bat`, installers, shortcuts, extensionless
-executables — opens as plain text instead.
+executables — opens as plain text instead. Files the system has no app for,
+and files without an extension (`Makefile`, `.env`), go to the editor you set
+for them in Settings → Editor, or the system text editor.
 
 ### 🔒 Auto‑lock
 Locks on an inactivity timeout (default 15 min; 0 = never) and on sleep —

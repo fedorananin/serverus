@@ -3,6 +3,7 @@
 // host OS in all three.
 
 export const isMac = /mac/i.test(navigator.platform || navigator.userAgent);
+export const isWindows = !isMac && /win/i.test(navigator.platform || navigator.userAgent);
 
 /** The primary "command" modifier: ⌘ on macOS, Ctrl elsewhere. */
 export function isMod(e: KeyboardEvent | MouseEvent | PointerEvent): boolean {

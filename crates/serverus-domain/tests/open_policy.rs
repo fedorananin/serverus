@@ -95,3 +95,70 @@ fn linux_executables_and_launchers_open_as_text() {
         OpenAs::Default
     );
 }
+
+mod opener {
+    use serverus_domain::open_policy::{choose_opener, Opener, Platform};
+
+    const ALL: [Platform; 3] = [Platform::MacOs, Platform::Windows, Platform::Linux];
+
+    #[test]
+    fn documents_with_an_app_keep_it_even_with_a_fallback_set() {
+        for platform in ALL {
+            for fallback in [false, true] {
+                assert_eq!(
+                    choose_opener(platform, "report.pdf", false, fallback, || true),
+                    Opener::SystemDefault
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn files_no_app_opens_go_to_the_fallback_editor() {
+        for platform in ALL {
+            assert_eq!(
+                choose_opener(platform, "data.xyz", false, true, || false),
+                Opener::Fallback
+            );
+            assert_eq!(
+                choose_opener(platform, "data.xyz", false, false, || false),
+                Opener::SystemText
+            );
+        }
+    }
+
+    #[test]
+    fn names_without_an_extension_never_ask_the_system() {
+        for platform in ALL {
+            for name in ["Makefile", "README", ".bashrc", ".env", "notes."] {
+                let opener = choose_opener(platform, name, false, true, || {
+                    panic!("{name}: the name alone decides")
+                });
+                assert_eq!(opener, Opener::Fallback, "{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn files_that_would_run_open_as_text_in_the_fallback_editor() {
+        let cases = [
+            (Platform::MacOs, "deploy.command", false),
+            (Platform::MacOs, "server", true),
+            (Platform::Windows, "setup.exe", false),
+            (Platform::Linux, "build.sh", true),
+        ];
+        for (platform, name, executable) in cases {
+            let ask = || panic!("{name}: would run, no need to ask");
+            assert_eq!(
+                choose_opener(platform, name, executable, true, ask),
+                Opener::Fallback,
+                "{name}"
+            );
+            assert_eq!(
+                choose_opener(platform, name, executable, false, || true),
+                Opener::SystemText,
+                "{name}"
+            );
+        }
+    }
+}

@@ -66,6 +66,12 @@ pub struct EditorSettings {
     /// When false, `custom_app` names the editor application to use.
     pub use_system_default: bool,
     pub custom_app: Option<String>,
+    /// With the system default on: the editor for files the system has no
+    /// app for, files without an extension, and files the opener would run
+    /// (see `serverus_domain::open_policy::choose_opener`). `None` = the
+    /// system text editor. Missing in vaults written before #36.
+    #[serde(default)]
+    pub fallback_app: Option<String>,
 }
 
 impl Default for EditorSettings {
@@ -73,6 +79,7 @@ impl Default for EditorSettings {
         EditorSettings {
             use_system_default: true,
             custom_app: None,
+            fallback_app: None,
         }
     }
 }

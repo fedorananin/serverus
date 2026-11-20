@@ -206,7 +206,11 @@ Bash sandbox disabled (symptom otherwise: "Permission denied" on chmod/rename).
   extensionless executable; Linux: any executable) — those open as text
   (`open -t`, `notepad.exe`; Linux has no such opener, so it refuses and
   points at Settings → Editor). Folders are refused (`open X.app` launches
-  it). The lists were checked against Launch Services; scripts whose default
+  it). Those files, extensionless names, and types no app is registered
+  for (`watcher/editor/association.rs`: Launch Services, `AssocQueryStringW`,
+  `xdg-mime`; "can't tell" always means "has an app") go to
+  `EditorSettings::fallback_app` when set (`open_policy::choose_opener`,
+  #36), else the system text editor. The lists were checked against Launch Services; scripts whose default
   handler is an editor (`.sh`, `.py` on macOS) stay out on purpose.
 - **A vault may have no master password** (#34) — the user's call, not
   ours. It is the same file with the DEK wrapped under the empty password

@@ -134,3 +134,41 @@ fn extension(name: &str) -> Option<String> {
     }
     Some(extension.to_ascii_lowercase())
 }
+
+/// What opens a file while "Open files with the system default app" is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Opener {
+    /// The default application for the file's type.
+    SystemDefault,
+    /// The editor the user chose for files the system can't (or mustn't)
+    /// open: no app for the type, no extension, or it would run.
+    Fallback,
+    /// The system's text editor (`open -t`, Notepad), when no fallback
+    /// editor is set. Linux has none.
+    SystemText,
+}
+
+/// Who opens `name` on `platform`.
+///
+/// Files the opener would execute ([`open_as`] says [`OpenAs::Text`]),
+/// files without an extension, and files no application is registered for
+/// all go to the fallback editor, or the system text editor without one.
+/// `has_default_app` asks the system about the last case; it is only called
+/// when the name alone doesn't decide, and should answer `true` whenever it
+/// can't tell, so a doubt never takes a document away from its app.
+pub fn choose_opener(
+    platform: Platform,
+    name: &str,
+    unix_executable: bool,
+    fallback_configured: bool,
+    has_default_app: impl FnOnce() -> bool,
+) -> Opener {
+    let needs_editor = open_as(platform, name, unix_executable) == OpenAs::Text
+        || extension(name).is_none()
+        || !has_default_app();
+    match (needs_editor, fallback_configured) {
+        (false, _) => Opener::SystemDefault,
+        (true, true) => Opener::Fallback,
+        (true, false) => Opener::SystemText,
+    }
+}

@@ -124,7 +124,8 @@ fn import_never_grants_agent_access_nor_changes_editor_or_security() {
             "security": { "auto_lock_minutes": 0, "lock_on_sleep": false, "touch_id": false },
             "transfers": { "max_parallel_per_server": 2, "conflict_policy": "ask",
                            "preserve_mtime": true, "tar_acceleration": true },
-            "editor": { "use_system_default": false, "custom_app": "Terminal" },
+            "editor": { "use_system_default": false, "custom_app": "Terminal",
+                        "fallback_app": "Terminal" },
             "terminal": { "font_family": "Menlo", "font_size": 12, "scrollback": 1000 },
             "panels": { "show_hidden": false, "size_format": "kib", "default_local_dir": null,
                         "sidebar_width": 5000 },
@@ -149,6 +150,7 @@ fn import_never_grants_agent_access_nor_changes_editor_or_security() {
     assert!(!p.settings.agent.enabled);
     assert!(!p.settings.agent.full_access);
     assert_eq!(p.settings.editor.custom_app, None);
+    assert_eq!(p.settings.editor.fallback_app, None);
     assert!(p.settings.editor.use_system_default);
     assert_eq!(p.settings.security.auto_lock_minutes, 15);
     assert!(p.settings.security.lock_on_sleep);

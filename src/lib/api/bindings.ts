@@ -447,6 +447,13 @@ export type EditorSettings = {
 	/**  When false, `custom_app` names the editor application to use. */
 	use_system_default: boolean,
 	custom_app: string | null,
+	/**
+	 *  With the system default on: the editor for files the system has no
+	 *  app for, files without an extension, and files the opener would run
+	 *  (see `serverus_domain::open_policy::choose_opener`). `None` = the
+	 *  system text editor. Missing in vaults written before #36.
+	 */
+	fallback_app?: string | null,
 };
 
 export type FtpOptions = {
