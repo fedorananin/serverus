@@ -373,7 +373,11 @@ Gotchas); file-pane Size/Date/Mode columns are drag-resizable
 fits its dates (#35); transfer fixes — tar confined to the downloaded
 folder and only where nothing is overwritten unasked, partials only once
 opened, retries keep a Rename, FTP `LIST -a`; dialogs stack (see
-Gotchas). v1.5.1: the
+Gotchas). v1.9.0 (#36): the window frame can be remembered (Settings →
+Window, off by default, see Gotchas); pane path bars are breadcrumbs
+(`src/lib/path-segments.ts`, `file-pane/FilePanePathBar.svelte`); a
+fallback editor opens files with no app, no extension, or that would run
+(see the system-opener Gotcha). v1.5.1: the
 "hide local junk" setting also keeps `.DS_Store`/`Thumbs.db` out of recursive
 uploads and downloads (per-file walks and tar: `tar_stream/archive.rs`
 `pack_tree` / `unpack_confined`); comparison unchanged. Also v1.4.0: settings-dialog polish —
